@@ -52,6 +52,10 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.Require().NoError(s.conn.Ping(ctx))
 
 	s.repo, s.dbMaintainer = db.NewRepository(s.conn)
+
+	// Apply migrations
+	err = s.dbMaintainer.ApplyMigrations(ctx)
+	s.Require().NoError(err)
 }
 
 func (s *IntegrationTestSuite) TearDownSuite() {

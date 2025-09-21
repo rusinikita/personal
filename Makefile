@@ -27,5 +27,11 @@ format:
 	@go fmt ./...
 	@gci write -s standard -s default -s localmodule --skip-generated --skip-vendor .
 
+build:
+	GOOS=linux GOARCH=amd64 go build -a -o ./build/app main.go
+
+test:
+	go test ./...
+
 install-tools:
 	@go install github.com/daixiang0/gci@latest
