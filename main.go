@@ -1,21 +1,66 @@
 package main
 
 import (
-	"fmt"
+	"log"
+	"log/slog"
+	"net/http"
+	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	sloggin "github.com/samber/slog-gin"
+
+	"personal/action/auth"
+	"personal/action/say_hi"
 )
 
-//TIP <p>To run your code, right-click the code and select <b>Run</b>.</p> <p>Alternatively, click
-// the <icon src="AllIcons.Actions.Execute"/> icon in the gutter and select the <b>Run</b> menu item from here.</p>
-
 func main() {
-	//TIP <p>Press <shortcut actionId="ShowIntentionActions"/> when your caret is at the underlined text
-	// to see how GoLand suggests fixing the warning.</p><p>Alternatively, if available, click the lightbulb to view possible fixes.</p>
-	s := "gopher"
-	fmt.Printf("Hello and welcome, %s!\n", s)
+	// Create a server with a single tool.
+	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
+	mcp.AddTool(server, &say_hi.MCPDefinition, say_hi.SayHi)
 
-	for i := 1; i <= 5; i++ {
-		//TIP <p>To start your debugging session, right-click your code in the editor and select the Debug option.</p> <p>We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint
-		// for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.</p>
-		fmt.Println("i =", 100/i)
+	// Create the streamable HTTP handler.
+	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	url := "127.0.0.1:8081"
+	log.Printf("MCP server listening on %s", url)
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	config := sloggin.Config{
+		WithRequestID:      true,
+		WithRequestBody:    true,
+		WithRequestHeader:  true,
+		WithResponseBody:   true,
+		WithResponseHeader: true,
+	}
+
+	router := gin.New()
+	router.Use(sloggin.NewWithConfig(logger, config), gin.Recovery())
+
+	gin.SetMode(gin.DebugMode)
+
+	auth.BaseAuthURL = "https://splendid-chicken-42.telebit.io"
+
+	router.GET("/.well-known/oauth-authorization-server", auth.WellKnownHandler)
+	router.GET("/.well-known/oauth-authorization-server/*path", auth.WellKnownHandler)
+	router.GET("/.well-known/oauth-protected-resource/*path", auth.WellKnownHandler)
+	router.Any("/oauth/authorize", auth.AuthorizeHandler)
+	router.POST("/oauth/token", auth.TokenHandler)
+	router.POST("/oauth/register", auth.RegisterClientHandler)
+
+	authRequired := router.Group("/app")
+	authRequired.Use(auth.Middleware())
+
+	authRequired.Any("/mcp", func(ctx *gin.Context) {
+		handler.ServeHTTP(ctx.Writer, ctx.Request)
+	})
+
+	err := router.Run(":8081")
+	if err != nil {
+		log.Fatal(err)
 	}
 }

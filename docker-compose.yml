@@ -1,0 +1,15 @@
+services:
+  random_coffee:
+    build:
+      dockerfile: Dockerfile
+    env_file: .env
+    restart: unless-stopped
+    networks:
+      - caddy
+    labels:
+      caddy: personal-mcp.rusiniqf.beget.tech
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+
+networks:
+  caddy:
+    external: true

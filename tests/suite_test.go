@@ -2,20 +2,26 @@ package tests
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/suite"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"personal/gateways"
+	"personal/gateways/db"
 )
 
 type IntegrationTestSuite struct {
 	suite.Suite
 	pgContainer *postgres.PostgresContainer
-	db          *sql.DB
+	conn        *pgx.Conn
+
+	repo         gateways.DB
+	dbMaintainer gateways.DBMaintainer
 }
 
 func (s *IntegrationTestSuite) SetupSuite() {
@@ -40,8 +46,12 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	dbURL, err := s.pgContainer.ConnectionString(ctx, "sslmode=disable")
 	s.Require().NoError(err)
 
-	s.db, err = sql.Open("pgx", dbURL)
+	s.conn, err = pgx.Connect(ctx, dbURL)
 	s.Require().NoError(err)
+
+	s.Require().NoError(s.conn.Ping(ctx))
+
+	s.repo, s.dbMaintainer = db.NewRepository(s.conn)
 }
 
 func (s *IntegrationTestSuite) TearDownSuite() {
@@ -49,7 +59,7 @@ func (s *IntegrationTestSuite) TearDownSuite() {
 	err := s.pgContainer.Terminate(ctx)
 	s.Require().NoError(err)
 
-	err = s.db.Close()
+	err = s.conn.Close(ctx)
 	s.Require().NoError(err)
 }
 
@@ -57,6 +67,10 @@ func TestIntegrationTestSuite(t *testing.T) {
 	suite.Run(t, new(IntegrationTestSuite))
 }
 
-func (s *IntegrationTestSuite) DB() *sql.DB {
-	return s.db
+func (s *IntegrationTestSuite) DB() *pgx.Conn {
+	return s.conn
+}
+
+func (s *IntegrationTestSuite) Repo() gateways.DB {
+	return s.repo
 }
