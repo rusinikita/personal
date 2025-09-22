@@ -17,7 +17,12 @@ var MCPDefinition = mcp.Tool{
 }
 
 // LogFood is the main MCP handler for logging food consumption
-func LogFood(ctx context.Context, _ *mcp.CallToolRequest, input LogFoodInput, db gateways.DB) (*mcp.CallToolResult, LogFoodOutput, error) {
+func LogFood(ctx context.Context, _ *mcp.CallToolRequest, input LogFoodInput) (*mcp.CallToolResult, LogFoodOutput, error) {
+	// Get database from context
+	db := gateways.DBFromContext(ctx)
+	if db == nil {
+		return nil, LogFoodOutput{}, fmt.Errorf("database not available in context")
+	}
 	// 1. Validate input
 	if err := validateInput(input); err != nil {
 		return nil, LogFoodOutput{}, fmt.Errorf("validation error: %w", err)

@@ -1,26 +1,60 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	sloggin "github.com/samber/slog-gin"
 
+	"personal/action/add_food"
 	"personal/action/auth"
 	"personal/action/log_food"
 	"personal/action/say_hi"
+	"personal/gateways"
+	"personal/gateways/db"
 )
 
 func main() {
+	// Initialize database connection
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://user:password@localhost/personal?sslmode=disable"
+	}
+
+	conn, err := pgx.Connect(context.Background(), dbURL)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer conn.Close(context.Background())
+
+	// Create database repository
+	repo, dbMaintainer := db.NewRepository(conn)
+
+	// Apply migrations
+	if err := dbMaintainer.ApplyMigrations(context.Background()); err != nil {
+		log.Printf("Warning: Failed to apply migrations: %v", err)
+	}
+
 	// Create a server with a single tool.
 	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
+
+	server.AddReceivingMiddleware(func(handler mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (result mcp.Result, err error) {
+			// Add database to context
+			ctx = gateways.WithDB(ctx, repo)
+			return handler(ctx, method, req)
+		}
+	})
+
 	mcp.AddTool(server, &say_hi.MCPDefinition, say_hi.SayHi)
-	// TODO: Add log_food tool with database connection
-	_ = log_food.MCPDefinition
+	mcp.AddTool(server, &add_food.MCPDefinition, add_food.AddFood)
+	mcp.AddTool(server, &log_food.MCPDefinition, log_food.LogFood)
 
 	// Create the streamable HTTP handler.
 	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
@@ -61,7 +95,7 @@ func main() {
 		handler.ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
-	err := router.Run(":8081")
+	err = router.Run(":8081")
 	if err != nil {
 		log.Fatal(err)
 	}

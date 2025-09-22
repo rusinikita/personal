@@ -32,14 +32,25 @@ type AddFoodOutput struct {
 	Message string `json:"message" jsonschema:"description=Success message"`
 }
 
-func AddFood(ctx context.Context, _ *mcp.CallToolRequest, input AddFoodInput, db gateways.DB) (*mcp.CallToolResult, AddFoodOutput, error) {
+func AddFood(ctx context.Context, _ *mcp.CallToolRequest, input AddFoodInput) (*mcp.CallToolResult, AddFoodOutput, error) {
+	// Get database from context
+	db := gateways.DBFromContext(ctx)
+	if db == nil {
+		return nil, AddFoodOutput{}, fmt.Errorf("database not available in context")
+	}
 	// 1. Validate input
 	if err := validateInput(input); err != nil {
 		return nil, AddFoodOutput{}, fmt.Errorf("validation error: %w", err)
 	}
 
-	// 2. Check for duplicates (simple name check for now)
-	// TODO: Implement proper duplicate checking by name and barcode
+	// 2. Check for duplicates
+	duplicateMsg, err := checkForDuplicates(ctx, input, db)
+	if err != nil {
+		return nil, AddFoodOutput{}, fmt.Errorf("duplicate check error: %w", err)
+	}
+	if duplicateMsg != "" {
+		return nil, AddFoodOutput{}, fmt.Errorf("duplicate food found: %s", duplicateMsg)
+	}
 
 	// 3. Handle nutrients calculation
 	nutrients, err := calculateNutrients(ctx, input, db)
@@ -125,49 +136,41 @@ func calculateNutrientsFromComposition(ctx context.Context, composition domain.F
 
 		// Calculate proportional nutrients (component.AmountG / 100g * nutrient value)
 		ratio := component.AmountG / 100.0
-		addProportionalNutrients(totalNutrients, componentFood.Nutrients, ratio)
+		domain.AddProportionalNutrients(totalNutrients, componentFood.Nutrients, ratio)
 	}
 
 	return totalNutrients, nil
 }
 
-func addProportionalNutrients(total *domain.Nutrients, component *domain.Nutrients, ratio float64) {
-	// Macronutrients
-	if component.Calories != nil {
-		if total.Calories == nil {
-			val := *component.Calories * ratio
-			total.Calories = &val
-		} else {
-			*total.Calories += *component.Calories * ratio
+// checkForDuplicates searches for duplicate foods by name and barcode
+// Returns error message if duplicate found, empty string if no duplicates
+func checkForDuplicates(ctx context.Context, input AddFoodInput, db gateways.DB) (string, error) {
+	// Check for name duplicates first (exact name match)
+	nameFilter := &domain.FoodFilter{Name: &input.Name}
+	nameMatches, err := db.SearchFood(ctx, *nameFilter)
+	if err != nil {
+		return "", fmt.Errorf("name search failed: %w", err)
+	}
+
+	if len(nameMatches) > 0 {
+		food := nameMatches[0]
+		return fmt.Sprintf("food with name '%s' already exists (ID: %d)", food.Name, food.ID), nil
+	}
+
+	// Check for barcode duplicates (if barcode is provided)
+	if input.Barcode != nil && *input.Barcode != "" {
+		barcodeFilter := &domain.FoodFilter{Barcode: input.Barcode}
+		barcodeMatches, err := db.SearchFood(ctx, *barcodeFilter)
+		if err != nil {
+			return "", fmt.Errorf("barcode search failed: %w", err)
+		}
+
+		if len(barcodeMatches) > 0 {
+			food := barcodeMatches[0]
+			barcode := *input.Barcode
+			return fmt.Sprintf("food with barcode '%s' already exists: '%s' (ID: %d)", barcode, food.Name, food.ID), nil
 		}
 	}
 
-	if component.ProteinG != nil {
-		if total.ProteinG == nil {
-			val := *component.ProteinG * ratio
-			total.ProteinG = &val
-		} else {
-			*total.ProteinG += *component.ProteinG * ratio
-		}
-	}
-
-	if component.TotalFatG != nil {
-		if total.TotalFatG == nil {
-			val := *component.TotalFatG * ratio
-			total.TotalFatG = &val
-		} else {
-			*total.TotalFatG += *component.TotalFatG * ratio
-		}
-	}
-
-	if component.CarbohydratesG != nil {
-		if total.CarbohydratesG == nil {
-			val := *component.CarbohydratesG * ratio
-			total.CarbohydratesG = &val
-		} else {
-			*total.CarbohydratesG += *component.CarbohydratesG * ratio
-		}
-	}
-
-	// TODO: Add similar calculations for other nutrients as needed
+	return "", nil
 }

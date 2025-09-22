@@ -50,7 +50,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario1_WithIDs() {
 	}
 
 	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(ctx, nil, input, s.Repo())
+	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
 
 	// Verify the response
@@ -121,7 +121,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario2_WithNames() {
 	}
 
 	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(ctx, nil, input, s.Repo())
+	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
 
 	// Verify the response
@@ -174,7 +174,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario3_WithBarcodes() {
 	}
 
 	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(ctx, nil, input, s.Repo())
+	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
 
 	// Verify the response
@@ -225,7 +225,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario4_DirectNutrients() {
 	}
 
 	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(ctx, nil, input, s.Repo())
+	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
 
 	// Verify the response
@@ -278,7 +278,7 @@ func (s *IntegrationTestSuite) TestLogFood_AmbiguousNameSearch() {
 	}
 
 	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(ctx, nil, input, s.Repo())
+	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
 
 	// Verify the response - should have no added items and one not found item
@@ -311,7 +311,7 @@ func (s *IntegrationTestSuite) TestLogFood_ValidationErrors() {
 	emptyInput := log_food.LogFoodInput{
 		ConsumedItems: []log_food.ConsumedFoodItem{},
 	}
-	_, _, err := log_food.LogFood(ctx, nil, emptyInput, s.Repo())
+	_, _, err := log_food.LogFood(s.ContextWithDB(ctx), nil, emptyInput)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "validation error")
 
@@ -324,7 +324,7 @@ func (s *IntegrationTestSuite) TestLogFood_ValidationErrors() {
 			},
 		},
 	}
-	_, _, err = log_food.LogFood(ctx, nil, invalidInput, s.Repo())
+	_, _, err = log_food.LogFood(s.ContextWithDB(ctx), nil, invalidInput)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "validation error")
 
@@ -337,7 +337,7 @@ func (s *IntegrationTestSuite) TestLogFood_ValidationErrors() {
 			},
 		},
 	}
-	_, _, err = log_food.LogFood(ctx, nil, negativeAmountInput, s.Repo())
+	_, _, err = log_food.LogFood(s.ContextWithDB(ctx), nil, negativeAmountInput)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "validation error")
 
@@ -350,7 +350,7 @@ func (s *IntegrationTestSuite) TestLogFood_ValidationErrors() {
 			},
 		},
 	}
-	_, _, err = log_food.LogFood(ctx, nil, negativeServingInput, s.Repo())
+	_, _, err = log_food.LogFood(s.ContextWithDB(ctx), nil, negativeServingInput)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "validation error")
 
@@ -369,7 +369,7 @@ func (s *IntegrationTestSuite) TestLogFood_ValidationErrors() {
 			},
 		},
 	}
-	_, _, err = log_food.LogFood(ctx, nil, invalidNutrientsInput, s.Repo())
+	_, _, err = log_food.LogFood(s.ContextWithDB(ctx), nil, invalidNutrientsInput)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "validation error")
 }
@@ -400,7 +400,7 @@ func (s *IntegrationTestSuite) TestLogFood_NutrientRounding() {
 	}
 
 	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(ctx, nil, input, s.Repo())
+	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
 
 	// Verify the response has properly rounded values

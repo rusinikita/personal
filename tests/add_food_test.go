@@ -28,7 +28,7 @@ func (s *IntegrationTestSuite) TestAddFood_Success() {
 	}
 
 	// Call MCP add_food handler
-	_, output, err := add_food.AddFood(ctx, nil, input, s.Repo())
+	_, output, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
 	require.NotZero(s.T(), output.ID)
 	assert.Contains(s.T(), output.Message, "Test Apple")
@@ -55,6 +55,89 @@ func (s *IntegrationTestSuite) TestAddFood_Success() {
 	// Verify timestamps were set
 	assert.False(s.T(), savedFood.CreatedAt.IsZero())
 	assert.False(s.T(), savedFood.UpdatedAt.IsZero())
+}
+
+func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
+	ctx := context.Background()
+
+	s.T().Run("duplicate by name", func(t *testing.T) {
+		// First, create a food item
+		input1 := add_food.AddFoodInput{
+			Name:     "Duplicate Test Food",
+			FoodType: "product",
+		}
+		_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input1)
+		require.NoError(t, err)
+
+		// Try to add the same food with same name
+		input2 := add_food.AddFoodInput{
+			Name:     "Duplicate Test Food", // Same name
+			FoodType: "product",
+		}
+		_, _, err = add_food.AddFood(s.ContextWithDB(ctx), nil, input2)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate food found")
+		assert.Contains(t, err.Error(), "food with name 'Duplicate Test Food' already exists")
+	})
+
+	s.T().Run("duplicate by barcode", func(t *testing.T) {
+		// First, create a food item with barcode
+		input1 := add_food.AddFoodInput{
+			Name:     "Barcode Test Food 1",
+			Barcode:  stringPtr("1234567890123"),
+			FoodType: "product",
+		}
+		_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input1)
+		require.NoError(t, err)
+
+		// Try to add different food with same barcode
+		input2 := add_food.AddFoodInput{
+			Name:     "Barcode Test Food 2",      // Different name
+			Barcode:  stringPtr("1234567890123"), // Same barcode
+			FoodType: "product",
+		}
+		_, _, err = add_food.AddFood(s.ContextWithDB(ctx), nil, input2)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate food found")
+		assert.Contains(t, err.Error(), "food with barcode '1234567890123' already exists")
+	})
+
+	s.T().Run("duplicate by both name and barcode", func(t *testing.T) {
+		// First, create a food item with both name and barcode
+		input1 := add_food.AddFoodInput{
+			Name:     "Both Name and Barcode Test",
+			Barcode:  stringPtr("9876543210987"),
+			FoodType: "product",
+		}
+		_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input1)
+		require.NoError(t, err)
+
+		// Try to add the exact same food
+		input2 := add_food.AddFoodInput{
+			Name:     "Both Name and Barcode Test", // Same name
+			Barcode:  stringPtr("9876543210987"),   // Same barcode
+			FoodType: "product",
+		}
+		_, _, err = add_food.AddFood(s.ContextWithDB(ctx), nil, input2)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate food found")
+		// With simplified logic, name check comes first, so should mention name
+		assert.Contains(t, err.Error(), "Both Name and Barcode Test")
+		assert.Contains(t, err.Error(), "food with name")
+	})
+
+	s.T().Run("no duplicate when both name and barcode are different", func(t *testing.T) {
+		// This should succeed - different name and barcode
+		input := add_food.AddFoodInput{
+			Name:     "Unique Test Food",
+			Barcode:  stringPtr("1111111111111"),
+			FoodType: "product",
+		}
+		_, output, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input)
+		require.NoError(t, err)
+		assert.NotZero(t, output.ID)
+		assert.Contains(t, output.Message, "added successfully")
+	})
 }
 
 func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
@@ -95,7 +178,7 @@ func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
 	for _, tc := range testCases {
 		s.T().Run(tc.name, func(t *testing.T) {
 			// Call MCP add_food handler with invalid data
-			_, _, err := add_food.AddFood(ctx, nil, tc.input, s.Repo())
+			_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, tc.input)
 
 			// Verify validation error occurred
 			require.Error(t, err)

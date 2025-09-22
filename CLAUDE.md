@@ -1,4 +1,4 @@
-# GEMINI.md
+# CLAUDE.md
 
 ## Project Overview
 
@@ -11,6 +11,13 @@ The project is structured with the following layers:
 - **Domain:** Contains the domain models.
 - **Gateways:** Contains interfaces for external services like databases.
 - **Tests:** Contains integration and unit tests.
+
+## Terms
+
+- **Model** - Go struct defining application object data structure and relations with other objects
+- **Action** - Controller handling user requests via interface (MCP, HTTP, bot request, or any combination)
+- **Gateway** - Wrapper around external API or database
+- **Feature document** - Markdown file documenting feature requirements and implementation
 
 ## Building and Running
 
@@ -36,33 +43,24 @@ make down
 ## Development Conventions
 
 *   **Code Style:** Follow the standard Go formatting guidelines. Use `gofmt` to format your code before committing.
-*   **Testing:** HTTP handlers, bot handlers and workers MUST be covered by end-to-end tests in root tests package following requirements from docs/architecture.md
+*   **Testing:** HTTP handlers, bot handlers, and workers MUST be covered by end-to-end tests in root tests package following requirements from docs/architecture.md
 *   **Commits:** Follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification.
-*   **Architecture** Follow project structure and architecture requirements written in docs/architecture.md
+*   **Architecture:** Follow project structure and architecture requirements written in docs/architecture.md
 
-## AI driven development convention
+## Feature Document Convention
 
-In each development session AI agent MUST follow these instructions. NO EXCEPTIONS.
+### Feature Document Template
 
-Terms:
-- Model - go struct defining application object data structure and relations with other objects
-- Action - controller handling user request via interface (it could be MCP, HTTP, bot request in any combination)
-- Gateway - wrapper around external API or database
-
-### Stage 0: Feature document
-
-Agent should find or create new feature document in docs folder.
-One document per each action. Action can contain different handlers.
-
-Document name: {name}_action
-
-Feature document template
 ```markdown
 # {Feature name}
 
 ## Requirements
 
 // TODO requirements specification
+
+## E2E Tests
+
+// TODO list of tests
 
 ## Implementation
 
@@ -77,55 +75,71 @@ Feature document template
 
 ### External API
 
-// TODO external api if present
+// TODO external API if present
 
-// TODO header and description per each interface
-### handler/command/tool/worker
+### Handler/Command/Tool/Worker
+
+// TODO header and description for each interface
 
 // TODO internal logic short description
 // TODO input and output data code blocks
 
 ```
 
-### Stage 1: Requirements gathering
+### Requirements
 
-Agent should ask for task details if not everything provided. Such as envolved entities, database tables, http requests and bot commands.
-Agent should ask about data flow if not everything provided. Such as input data formats, database data formats, state changes and data mutations.
+Agent should ask for task details if not everything is provided: involved entities, database tables, HTTP requests, and bot commands.
+Agent should ask about data flow if not everything is provided: input data formats, database data formats, state changes, and data mutations.
 
-Ask Nikita for APPROVAL or change request. Continue to writing to document and next step ONLY AFTER APPROAL. NO EXCEPTIONS.
+### Tests Idea
 
-Agent should write collected data using SHORT, UNDERSTANDABLE style.
-IF feature document already exist - agent MUST edit it with newly appeared requirements.
+Agent should write ideas for creating or modifying existing end-to-end tests in the tests package for this feature.
 
-### Stage 2: E2E tests
-
-Agent should provide idea for creation or modification of existed end-to-end tests in tests package for this feature.
-
-If there is no repository method or handler which required for test - leave todo note.
+If there is no repository method or handler required for the test - leave a TODO note.
 Example:
 
 ```go
 // Call repository to get nutrition log
 ```
 
-Ask Nikita for APPROVAL or change request. Continue to writing to document and next step ONLY AFTER APPROVAL. NO EXCEPTIONS.
+### Implementation Decision
 
-### Stage 3: Implementation decision
-
-Agent should provide implementation plan.
+Agent should provide an implementation plan.
 
 Implementation plan consists of:
-- domain structure (structs and fields)
-- repository interface methods specification. NO INTERNAL LOGIC
-- database tables and columns as mermaid ER diagram
-- handler/worker input and output data short description
-- handler/worker internal logic short description
+- Domain structure (structs and fields)
+- Repository interface methods specification (NO INTERNAL LOGIC)
+- Database tables and columns as Mermaid ER diagram
+- Handler/worker input and output data short description
+- Handler/worker internal logic short description
 
-Ask Nikita for APPROVAL or change request. Continue to writing to document and next step ONLY AFTER APPROVAL. NO EXCEPTIONS.
+## AI-Driven Development Convention
+
+In each development session, the AI agent MUST follow these instructions. NO EXCEPTIONS.
+
+### Stage 1: Create or Find Feature Document
+
+Agent should find or create a new feature document in the docs folder.
+One document per action. Each action can contain different handlers.
+
+Document name format: `{name}_action`
+
+Ask USER for APPROVAL or change request. Continue to next step ONLY AFTER EXPLICIT APPROVAL. NO EXCEPTIONS.
+
+### Stage 2: Planning and Working on Document
+
+Write implementation plan and discuss it with the user to make it optimal. Agent MUST NOT EDIT OR WRITE code files. Agent can write or update ONLY the feature document.
+Ask USER for APPROVAL or change request. Continue to next step ONLY AFTER EXPLICIT APPROVAL. NO EXCEPTIONS.
 
 Agent should write collected data using SHORT, UNDERSTANDABLE style.
-IF feature document already exist - agent MUST edit it with newly appeared requirements.
+IF feature document already exists - agent MUST edit it with newly appeared requirements.
 
-### Stage 4:
+### Stage 3: E2E Tests Implementation
 
-Implementation. Only after Stage 2 approval agent can write and edit any project files to make feature work.
+Write tests. Agent MUST NOT EDIT OR WRITE regular files, ONLY TESTS. Do not run tests, comment code if it does not compile.
+
+Ask USER for APPROVAL or change request. Continue to next step ONLY AFTER EXPLICIT APPROVAL. NO EXCEPTIONS.
+
+### Stage 4: Feature Implementation
+
+Only after Stage 3 approval can the agent write and edit any project files to make the feature work.

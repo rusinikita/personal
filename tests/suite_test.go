@@ -78,3 +78,8 @@ func (s *IntegrationTestSuite) DB() *pgx.Conn {
 func (s *IntegrationTestSuite) Repo() gateways.DB {
 	return s.repo
 }
+
+// ContextWithDB returns a context with the database repository
+func (s *IntegrationTestSuite) ContextWithDB(ctx context.Context) context.Context {
+	return gateways.WithDB(ctx, s.repo)
+}
