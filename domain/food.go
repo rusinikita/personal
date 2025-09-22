@@ -103,6 +103,12 @@ type Nutrients struct {
 	GlycemicLoad  *float64 `json:"glycemic_load,omitempty"`
 }
 
+type FoodFilter struct {
+	IDs     []int64 `json:"ids,omitempty"`
+	Name    *string `json:"name,omitempty"`
+	Barcode *string `json:"barcode,omitempty"`
+}
+
 type FoodComponent struct {
 	FoodID  int64   `json:"food_id"`
 	AmountG float64 `json:"amount_g"`
@@ -164,4 +170,15 @@ func (n *Nutrients) Scan(value interface{}) error {
 	}
 
 	return json.Unmarshal(bytes, n)
+}
+
+type ConsumptionLog struct {
+	UserID     int64      `json:"user_id" db:"user_id"`
+	ConsumedAt time.Time  `json:"consumed_at" db:"consumed_at"`
+	FoodID     *int64     `json:"food_id,omitempty" db:"food_id"` // Nullable для сценария 4
+	FoodName   string     `json:"food_name" db:"food_name"`       // Название продукта
+	AmountG    float64    `json:"amount_g" db:"amount_g"`
+	MealType   *string    `json:"meal_type,omitempty" db:"meal_type"`
+	Note       *string    `json:"note,omitempty" db:"note"`
+	Nutrients  *Nutrients `json:"nutrients,omitempty" db:"nutrients"`
 }

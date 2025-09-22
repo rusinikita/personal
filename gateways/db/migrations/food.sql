@@ -29,14 +29,16 @@ CREATE TABLE IF NOT EXISTS food (
 CREATE TABLE IF NOT EXISTS consumption_log (
                     user_id BIGINT NOT NULL,
                     consumed_at TIMESTAMP NOT NULL,
-                    food_id BIGINT NOT NULL,
+                    food_id BIGINT, -- Nullable для сценария с direct_nutrients
+                    food_name VARCHAR(255) NOT NULL, -- Название продукта
                     amount_g DECIMAL(8,2) NOT NULL CHECK (amount_g > 0),
                     meal_type VARCHAR(20), -- ('breakfast', 'lunch', 'dinner', 'snack', 'other')
                     note TEXT,
 
                     nutrients JSONB, -- Снимок всех нутриентов на момент потребления (те же что и в food)
 
-                    PRIMARY KEY (user_id, consumed_at)
+                    PRIMARY KEY (user_id, consumed_at),
+                    FOREIGN KEY (food_id) REFERENCES food(id)
     );
 
 -- =====================================================

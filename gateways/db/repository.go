@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -23,6 +24,7 @@ var migrationsFS embed.FS
 type postgres interface {
 	Ping(ctx context.Context) error
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
@@ -130,4 +132,165 @@ func (r *repository) ApplyMigrations(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (r *repository) AddConsumptionLog(ctx context.Context, log *domain.ConsumptionLog) error {
+	query := `
+		INSERT INTO consumption_log (user_id, consumed_at, food_id, food_name, amount_g, meal_type, note, nutrients)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+
+	_, err := r.db.Exec(ctx, query,
+		log.UserID,
+		log.ConsumedAt,
+		log.FoodID,
+		log.FoodName,
+		log.AmountG,
+		log.MealType,
+		log.Note,
+		log.Nutrients,
+	)
+
+	return err
+}
+
+func (r *repository) SearchFood(ctx context.Context, filter domain.FoodFilter) ([]*domain.Food, error) {
+	// Create PostgreSQL-compatible query builder
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	// Build the base SELECT query
+	query := psql.Select(
+		"id", "name", "description", "barcode", "food_type", "is_archived",
+		"serving_size_g", "serving_name", "nutrients", "food_composition",
+		"created_at", "updated_at",
+	).From("food")
+
+	// Add WHERE conditions based on filter
+	if len(filter.IDs) > 0 {
+		query = query.Where(squirrel.Eq{"id": filter.IDs})
+	}
+
+	if filter.Name != nil && *filter.Name != "" {
+		query = query.Where("LOWER(name) LIKE LOWER('%' || ? || '%')", *filter.Name)
+	}
+
+	if filter.Barcode != nil && *filter.Barcode != "" {
+		query = query.Where(squirrel.Eq{"barcode": *filter.Barcode})
+	}
+
+	// Add ORDER BY for consistent results
+	query = query.OrderBy("name ASC")
+
+	// Generate SQL and args
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build SQL query: %w", err)
+	}
+
+	// Execute the query
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Scan results
+	var foods []*domain.Food
+	for rows.Next() {
+		food := &domain.Food{}
+		err := rows.Scan(
+			&food.ID,
+			&food.Name,
+			&food.Description,
+			&food.Barcode,
+			&food.FoodType,
+			&food.IsArchived,
+			&food.ServingSizeG,
+			&food.ServingName,
+			&food.Nutrients,
+			&food.FoodComposition,
+			&food.CreatedAt,
+			&food.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		foods = append(foods, food)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return foods, nil
+}
+
+func (r *repository) GetConsumptionLog(ctx context.Context, userID int64, consumedAt time.Time) (*domain.ConsumptionLog, error) {
+	query := `
+		SELECT user_id, consumed_at, food_id, food_name, amount_g, meal_type, note, nutrients
+		FROM consumption_log
+		WHERE user_id = $1 AND consumed_at = $2`
+
+	log := &domain.ConsumptionLog{}
+	err := r.db.QueryRow(ctx, query, userID, consumedAt).Scan(
+		&log.UserID,
+		&log.ConsumedAt,
+		&log.FoodID,
+		&log.FoodName,
+		&log.AmountG,
+		&log.MealType,
+		&log.Note,
+		&log.Nutrients,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return log, nil
+}
+
+func (r *repository) GetConsumptionLogsByUser(ctx context.Context, userID int64) ([]*domain.ConsumptionLog, error) {
+	query := `
+		SELECT user_id, consumed_at, food_id, food_name, amount_g, meal_type, note, nutrients
+		FROM consumption_log
+		WHERE user_id = $1
+		ORDER BY consumed_at DESC`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*domain.ConsumptionLog
+	for rows.Next() {
+		log := &domain.ConsumptionLog{}
+		err := rows.Scan(
+			&log.UserID,
+			&log.ConsumedAt,
+			&log.FoodID,
+			&log.FoodName,
+			&log.AmountG,
+			&log.MealType,
+			&log.Note,
+			&log.Nutrients,
+		)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, log)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return logs, nil
+}
+
+func (r *repository) DeleteConsumptionLog(ctx context.Context, userID int64, consumedAt time.Time) error {
+	query := `DELETE FROM consumption_log WHERE user_id = $1 AND consumed_at = $2`
+
+	_, err := r.db.Exec(ctx, query, userID, consumedAt)
+	return err
 }

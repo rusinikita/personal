@@ -1,5 +1,5 @@
 services:
-  random_coffee:
+  personal-mcp:
     build:
       dockerfile: Dockerfile
     env_file: .env

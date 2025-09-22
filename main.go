@@ -8,10 +8,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	sloggin "github.com/samber/slog-gin"
 
 	"personal/action/auth"
+	"personal/action/log_food"
 	"personal/action/say_hi"
 )
 
@@ -19,6 +19,8 @@ func main() {
 	// Create a server with a single tool.
 	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
 	mcp.AddTool(server, &say_hi.MCPDefinition, say_hi.SayHi)
+	// TODO: Add log_food tool with database connection
+	_ = log_food.MCPDefinition
 
 	// Create the streamable HTTP handler.
 	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
