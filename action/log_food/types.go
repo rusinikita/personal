@@ -8,7 +8,7 @@ import (
 
 // Input types for MCP tool
 type LogFoodInput struct {
-	ConsumedItems []ConsumedFoodItem `json:"consumed_items" jsonschema:"required,description=List of consumed food items"`
+	ConsumedItems []ConsumedFoodItem `json:"consumed_items" jsonschema:"List of consumed food items"`
 	// UserID берется из константы в коде (не передается в запросе)
 }
 
@@ -50,9 +50,9 @@ type DirectNutrients struct {
 
 // Output types for MCP tool
 type LogFoodOutput struct {
-	AddedItems    []AddedConsumptionItem `json:"added_items" jsonschema:"description=Successfully logged consumption items"`
-	NotFoundItems []NotFoundFoodItem     `json:"not_found_items" jsonschema:"description=Food items that could not be found"`
-	Message       string                 `json:"message" jsonschema:"description=Summary message"`
+	AddedItems    []AddedConsumptionItem `json:"added_items" jsonschema:"Successfully logged consumption items"`
+	NotFoundItems []NotFoundFoodItem     `json:"not_found_items" jsonschema:"Food items that could not be found"`
+	Message       string                 `json:"message" jsonschema:"Summary message"`
 }
 
 type AddedConsumptionItem struct {

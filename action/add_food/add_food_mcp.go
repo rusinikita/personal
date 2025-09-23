@@ -17,19 +17,19 @@ var MCPDefinition = mcp.Tool{
 }
 
 type AddFoodInput struct {
-	Name            string                   `json:"name" jsonschema:"required,description=Food name"`
-	Description     *string                  `json:"description,omitempty" jsonschema:"description=Food description"`
-	Barcode         *string                  `json:"barcode,omitempty" jsonschema:"description=Product barcode"`
-	FoodType        string                   `json:"food_type" jsonschema:"required,enum=component|product|dish,description=Type of food item"`
-	ServingSizeG    *float64                 `json:"serving_size_g,omitempty" jsonschema:"description=Standard serving size in grams"`
-	ServingName     *string                  `json:"serving_name,omitempty" jsonschema:"description=Name of serving (e.g. cookie, slice)"`
-	Nutrients       *domain.Nutrients        `json:"nutrients,omitempty" jsonschema:"description=Nutritional information per 100g"`
-	FoodComposition domain.FoodComponentList `json:"food_composition,omitempty" jsonschema:"description=Recipe composition for dishes"`
+	Name            string                   `json:"name" jsonschema:"Food name"`
+	Description     *string                  `json:"description,omitempty" jsonschema:"Food description"`
+	Barcode         *string                  `json:"barcode,omitempty" jsonschema:"Product barcode"`
+	FoodType        string                   `json:"food_type" jsonschema:"Type of food item (component|product|dish)"`
+	ServingSizeG    *float64                 `json:"serving_size_g,omitempty" jsonschema:"Standard serving size in grams"`
+	ServingName     *string                  `json:"serving_name,omitempty" jsonschema:"Name of serving (e.g. cookie, slice)"`
+	Nutrients       *domain.Nutrients        `json:"nutrients,omitempty" jsonschema:"Nutritional information per 100g"`
+	FoodComposition domain.FoodComponentList `json:"food_composition,omitempty" jsonschema:"Recipe composition for dishes"`
 }
 
 type AddFoodOutput struct {
-	ID      int64  `json:"id" jsonschema:"description=Created food ID"`
-	Message string `json:"message" jsonschema:"description=Success message"`
+	ID      int64  `json:"id" jsonschema:"Created food ID"`
+	Message string `json:"message" jsonschema:"Success message"`
 }
 
 func AddFood(ctx context.Context, _ *mcp.CallToolRequest, input AddFoodInput) (*mcp.CallToolResult, AddFoodOutput, error) {

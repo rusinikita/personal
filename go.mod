@@ -3,9 +3,11 @@ module personal
 go 1.25.1
 
 require (
+	github.com/Masterminds/squirrel v1.5.4
 	github.com/gin-gonic/gin v1.11.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/jackc/pgx/v5 v5.5.4
+	github.com/joho/godotenv v1.5.1
 	github.com/modelcontextprotocol/go-sdk v0.6.0
 	github.com/samber/slog-gin v1.17.2
 	github.com/stretchr/testify v1.11.1
@@ -15,7 +17,6 @@ require (
 require (
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
-	github.com/Masterminds/squirrel v1.5.4 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect

@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/joho/godotenv"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	sloggin "github.com/samber/slog-gin"
 
@@ -21,10 +22,15 @@ import (
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file", err)
+	}
+
 	// Initialize database connection
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://user:password@localhost/personal?sslmode=disable"
+		log.Fatal("DATABASE_URL environment variable not set")
 	}
 
 	conn, err := pgx.Connect(context.Background(), dbURL)

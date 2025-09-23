@@ -71,7 +71,7 @@ var (
 		// Claude client
 		claudeClientID: {
 			ID:     claudeClientID,
-			Secret: "qWuZ-JuSv-CtLqgxk88xMQMTMgSitb9k_J-lKRE9ck0%3D",
+			Secret: "qWuZ-JuSv-CtLqgxk88xMQMTMgSitb9k_J-lKRE9ck0=",
 		},
 	}
 	users = map[string]*User{
