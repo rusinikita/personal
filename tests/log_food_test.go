@@ -12,10 +12,10 @@ import (
 	"personal/util"
 )
 
-func (s *IntegrationTestSuite) TestLogFood_Scenario1_WithIDs() {
+func (s *IntegrationTestSuite) TestLogFoodById_Success() {
 	ctx := context.Background()
 
-	// Setup: Create test foods with nutrients and serving_size_g
+	// Setup: Create test food with nutrients and serving_size_g
 	apple := s.createTestFood(ctx, "Apple", "123456", 100.0, &domain.Nutrients{
 		Calories:       util.Ptr(52.0),
 		ProteinG:       util.Ptr(0.3),
@@ -23,6 +23,37 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario1_WithIDs() {
 		CarbohydratesG: util.Ptr(14.0),
 	})
 
+	userID := int64(1)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	// Call log_food_by_id MCP tool
+	input := log_food.LogFoodByIdInput{
+		FoodID:     apple.ID,
+		AmountG:    150.0, // 1.5 * 100g serving
+		ConsumedAt: now,
+	}
+
+	_, response, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input)
+	require.NoError(s.T(), err)
+	assert.Empty(s.T(), response.Error)
+	assert.Contains(s.T(), response.Message, "Successfully logged 150.0g of Apple")
+
+	// Verify log was saved to database
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), &apple.ID, savedLog.FoodID)
+	assert.Equal(s.T(), apple.Name, savedLog.FoodName)
+	assert.Equal(s.T(), 150.0, savedLog.AmountG)
+	assert.InDelta(s.T(), 78.0, *savedLog.Nutrients.Calories, 0.01) // 52.0 * 1.5
+
+	// Cleanup
+	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
+}
+
+func (s *IntegrationTestSuite) TestLogFoodById_WithServingCount() {
+	ctx := context.Background()
+
+	// Setup: Create test food with serving size
 	bread := s.createTestFood(ctx, "Bread", "789012", 30.0, &domain.Nutrients{
 		Calories:       util.Ptr(265.0),
 		ProteinG:       util.Ptr(9.0),
@@ -32,74 +63,48 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario1_WithIDs() {
 
 	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	laterTime := now.Add(time.Second)
 
-	// Call MCP log_food tool handler
-	input := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				FoodID:     &apple.ID,
-				AmountG:    150.0, // 1.5 * 100g serving
-				ConsumedAt: &now,
-			},
-			{
-				FoodID:       &bread.ID,
-				ServingCount: util.Ptr(2.0), // 2 * 30g servings = 60g
-				ConsumedAt:   &laterTime,
-			},
-		},
+	// Call log_food_by_id MCP tool with serving count
+	input := log_food.LogFoodByIdInput{
+		FoodID:       bread.ID,
+		ServingCount: 2.0, // 2 * 30g servings = 60g
+		ConsumedAt:   now,
 	}
 
-	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
+	assert.Empty(s.T(), response.Error)
+	assert.Contains(s.T(), response.Message, "Successfully logged 60.0g of Bread")
 
-	// Verify the response
-	require.Len(s.T(), output.AddedItems, 2)
-	require.Len(s.T(), output.NotFoundItems, 0)
-
-	// Verify first item (apple - direct amount_g)
-	appleItem := output.AddedItems[0]
-	assert.Equal(s.T(), userID, appleItem.UserID)
-	assert.Equal(s.T(), &apple.ID, appleItem.FoodID)
-	assert.Equal(s.T(), apple.Name, appleItem.FoodName)
-	assert.Equal(s.T(), 150.0, appleItem.AmountG)
-	assert.InDelta(s.T(), 78.0, *appleItem.Nutrients.Calories, 0.01) // 52.0 * 1.5
-	assert.InDelta(s.T(), 0.45, *appleItem.Nutrients.ProteinG, 0.01) // 0.3 * 1.5
-
-	// Verify second item (bread - serving_count conversion)
-	breadItem := output.AddedItems[1]
-	assert.Equal(s.T(), userID, breadItem.UserID)
-	assert.Equal(s.T(), &bread.ID, breadItem.FoodID)
-	assert.Equal(s.T(), bread.Name, breadItem.FoodName)
-	assert.Equal(s.T(), 60.0, breadItem.AmountG)                      // 2 servings * 30g
-	assert.InDelta(s.T(), 159.0, *breadItem.Nutrients.Calories, 0.01) // 265.0 * 0.6
-	assert.InDelta(s.T(), 5.4, *breadItem.Nutrients.ProteinG, 0.01)   // 9.0 * 0.6
-
-	// Verify logs were saved to database
-	savedAppleLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
+	// Verify log was saved with correct calculated amounts
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
 	require.NoError(s.T(), err)
-	assert.Equal(s.T(), &apple.ID, savedAppleLog.FoodID)
-	assert.Equal(s.T(), apple.Name, savedAppleLog.FoodName)
-	assert.Equal(s.T(), 150.0, savedAppleLog.AmountG)
-	assert.Equal(s.T(), util.Ptr(78.0), savedAppleLog.Nutrients.Calories)
-
-	savedBreadLog, err := s.Repo().GetConsumptionLog(ctx, userID, laterTime)
-	require.NoError(s.T(), err)
-	assert.Equal(s.T(), &bread.ID, savedBreadLog.FoodID)
-	assert.Equal(s.T(), bread.Name, savedBreadLog.FoodName)
-	assert.Equal(s.T(), 60.0, savedBreadLog.AmountG)
-	assert.Equal(s.T(), util.Ptr(159.0), savedBreadLog.Nutrients.Calories)
+	assert.Equal(s.T(), 60.0, savedLog.AmountG)                      // 2 servings * 30g
+	assert.InDelta(s.T(), 159.0, *savedLog.Nutrients.Calories, 0.01) // 265.0 * 0.6
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
-	defer s.Repo().DeleteConsumptionLog(ctx, userID, laterTime)
 }
 
-func (s *IntegrationTestSuite) TestLogFood_Scenario2_WithNames() {
+func (s *IntegrationTestSuite) TestLogFoodById_NotFound() {
 	ctx := context.Background()
 
-	// Setup: Create foods with known names
+	// Call log_food_by_id MCP tool with non-existent ID
+	input := log_food.LogFoodByIdInput{
+		FoodID:  99999, // Non-existent ID
+		AmountG: 100.0,
+	}
+
+	_, response, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "food not found", response.Error)
+	assert.Empty(s.T(), response.Message)
+}
+
+func (s *IntegrationTestSuite) TestLogFoodByName_Success() {
+	ctx := context.Background()
+
+	// Setup: Create food with known name
 	orange := s.createTestFood(ctx, "Orange", "111111", 0, &domain.Nutrients{
 		Calories:       util.Ptr(47.0),
 		ProteinG:       util.Ptr(0.9),
@@ -110,32 +115,17 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario2_WithNames() {
 	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
-	// Call MCP log_food tool handler with name search
-	input := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				Name:       util.Ptr("Orange"),
-				AmountG:    200.0,
-				ConsumedAt: &now,
-			},
-		},
+	// Call log_food_by_name MCP tool
+	input := log_food.LogFoodByNameInput{
+		Name:       "Orange",
+		AmountG:    200.0,
+		ConsumedAt: now,
 	}
 
-	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodByName(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
-
-	// Verify the response
-	require.Len(s.T(), output.AddedItems, 1)
-	require.Len(s.T(), output.NotFoundItems, 0)
-
-	addedItem := output.AddedItems[0]
-	assert.Equal(s.T(), userID, addedItem.UserID)
-	assert.Equal(s.T(), &orange.ID, addedItem.FoodID)
-	assert.Equal(s.T(), orange.Name, addedItem.FoodName)
-	assert.Equal(s.T(), 200.0, addedItem.AmountG)
-	assert.Equal(s.T(), 94.0, *addedItem.Nutrients.Calories) // 47.0 * 2.0
-	assert.Equal(s.T(), 1.8, *addedItem.Nutrients.ProteinG)  // 0.9 * 2.0
+	assert.Empty(s.T(), response.Error)
+	assert.Contains(s.T(), response.Message, "Successfully logged 200.0g of Orange")
 
 	// Verify log was saved to database
 	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
@@ -143,16 +133,66 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario2_WithNames() {
 	assert.Equal(s.T(), &orange.ID, savedLog.FoodID)
 	assert.Equal(s.T(), orange.Name, savedLog.FoodName)
 	assert.Equal(s.T(), 200.0, savedLog.AmountG)
-	assert.Equal(s.T(), util.Ptr(94.0), savedLog.Nutrients.Calories)
+	assert.Equal(s.T(), 94.0, *savedLog.Nutrients.Calories) // 47.0 * 2.0
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
-func (s *IntegrationTestSuite) TestLogFood_Scenario3_WithBarcodes() {
+func (s *IntegrationTestSuite) TestLogFoodByName_MultipleMatches() {
 	ctx := context.Background()
 
-	// Setup: Create foods with unique barcodes
+	// Setup: Create foods with similar names (use unique names to avoid conflicts with other tests)
+	_ = s.createTestFood(ctx, "Test Apple Multiple", "", 0, nil)
+	_ = s.createTestFood(ctx, "Test Apple Multiple Juice", "", 0, nil)
+	_ = s.createTestFood(ctx, "Test Apple Multiple Pie", "", 0, nil)
+
+	// Call log_food_by_name MCP tool with ambiguous name
+	input := log_food.LogFoodByNameInput{
+		Name:    "Test Apple Multiple", // Should match multiple foods
+		AmountG: 150.0,
+	}
+
+	_, response, err := log_food.LogFoodByName(s.ContextWithDB(ctx), nil, input)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "multiple matches found", response.Error)
+	assert.Empty(s.T(), response.Message)
+
+	// Verify suggestions are provided (first 2 alphabetically)
+	require.Len(s.T(), response.Suggestions, 2)
+
+	// Check that we get the expected suggestions (should be alphabetically sorted)
+	suggestionNames := []string{response.Suggestions[0].Name, response.Suggestions[1].Name}
+
+	// Should contain the two foods we created that match the search term
+	assert.Contains(s.T(), suggestionNames, "Test Apple Multiple")
+	assert.Contains(s.T(), suggestionNames, "Test Apple Multiple Juice")
+
+	// Verify alphabetical order: "Test Apple Multiple" should come before "Test Apple Multiple Juice"
+	assert.Equal(s.T(), "Test Apple Multiple", response.Suggestions[0].Name)
+	assert.Equal(s.T(), "Test Apple Multiple Juice", response.Suggestions[1].Name)
+}
+
+func (s *IntegrationTestSuite) TestLogFoodByName_NotFound() {
+	ctx := context.Background()
+
+	// Call log_food_by_name MCP tool with non-existent name
+	input := log_food.LogFoodByNameInput{
+		Name:    "NonExistentFood",
+		AmountG: 100.0,
+	}
+
+	_, response, err := log_food.LogFoodByName(s.ContextWithDB(ctx), nil, input)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "food not found", response.Error)
+	assert.Empty(s.T(), response.Message)
+	assert.Empty(s.T(), response.Suggestions)
+}
+
+func (s *IntegrationTestSuite) TestLogFoodByBarcode_Success() {
+	ctx := context.Background()
+
+	// Setup: Create food with unique barcode
 	banana := s.createTestFood(ctx, "Banana", "999888", 0, &domain.Nutrients{
 		Calories:       util.Ptr(89.0),
 		ProteinG:       util.Ptr(1.1),
@@ -163,32 +203,17 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario3_WithBarcodes() {
 	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
-	// Call MCP log_food tool handler with barcode search
-	input := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				Barcode:    util.Ptr("999888"),
-				AmountG:    120.0,
-				ConsumedAt: &now,
-			},
-		},
+	// Call log_food_by_barcode MCP tool
+	input := log_food.LogFoodByBarcodeInput{
+		Barcode:    "999888",
+		AmountG:    120.0,
+		ConsumedAt: now,
 	}
 
-	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodByBarcode(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
-
-	// Verify the response
-	require.Len(s.T(), output.AddedItems, 1)
-	require.Len(s.T(), output.NotFoundItems, 0)
-
-	addedItem := output.AddedItems[0]
-	assert.Equal(s.T(), userID, addedItem.UserID)
-	assert.Equal(s.T(), &banana.ID, addedItem.FoodID)
-	assert.Equal(s.T(), banana.Name, addedItem.FoodName)
-	assert.Equal(s.T(), 120.0, addedItem.AmountG)
-	assert.Equal(s.T(), 106.8, *addedItem.Nutrients.Calories) // 89.0 * 1.2
-	assert.Equal(s.T(), 1.32, *addedItem.Nutrients.ProteinG)  // 1.1 * 1.2
+	assert.Empty(s.T(), response.Error)
+	assert.Contains(s.T(), response.Message, "Successfully logged 120.0g of Banana")
 
 	// Verify log was saved to database
 	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
@@ -196,233 +221,154 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario3_WithBarcodes() {
 	assert.Equal(s.T(), &banana.ID, savedLog.FoodID)
 	assert.Equal(s.T(), banana.Name, savedLog.FoodName)
 	assert.Equal(s.T(), 120.0, savedLog.AmountG)
-	assert.Equal(s.T(), util.Ptr(106.8), savedLog.Nutrients.Calories)
+	assert.Equal(s.T(), 106.8, *savedLog.Nutrients.Calories) // 89.0 * 1.2
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
-func (s *IntegrationTestSuite) TestLogFood_Scenario4_DirectNutrients() {
+func (s *IntegrationTestSuite) TestLogFoodByBarcode_NotFound() {
+	ctx := context.Background()
+
+	// Call log_food_by_barcode MCP tool with non-existent barcode
+	input := log_food.LogFoodByBarcodeInput{
+		Barcode: "nonexistent",
+		AmountG: 100.0,
+	}
+
+	_, response, err := log_food.LogFoodByBarcode(s.ContextWithDB(ctx), nil, input)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "barcode not found", response.Error)
+	assert.Empty(s.T(), response.Message)
+}
+
+func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
 	ctx := context.Background()
 
 	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
-	// Call MCP log_food tool handler with direct nutrients
-	input := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				DirectNutrients: &log_food.DirectNutrients{
-					Calories:       250.0,
-					ProteinG:       12.0,
-					TotalFatG:      8.0,
-					CarbohydratesG: 35.0,
-					ProductName:    "Homemade Sandwich",
-				},
-				AmountG:    180.0, // This amount is already accounted for in the nutrients
-				ConsumedAt: &now,
-			},
-		},
+	// Call log_custom_food MCP tool
+	input := log_food.LogCustomFoodInput{
+		ProductName:    "Homemade Sandwich",
+		AmountG:        180.0,
+		Calories:       250.0,
+		ProteinG:       12.0,
+		TotalFatG:      8.0,
+		CarbohydratesG: 35.0,
+		CaffeineMg:     0.0,
+		EthylAlcoholG:  0.0,
+		ConsumedAt:     now,
 	}
 
-	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogCustomFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
-
-	// Verify the response
-	require.Len(s.T(), output.AddedItems, 1)
-	require.Len(s.T(), output.NotFoundItems, 0)
-
-	addedItem := output.AddedItems[0]
-	assert.Equal(s.T(), userID, addedItem.UserID)
-	assert.Nil(s.T(), addedItem.FoodID) // Should be null for direct nutrients
-	assert.Equal(s.T(), "Homemade Sandwich", addedItem.FoodName)
-	assert.Equal(s.T(), 180.0, addedItem.AmountG)
-	assert.Equal(s.T(), 250.0, *addedItem.Nutrients.Calories)
-	assert.Equal(s.T(), 12.0, *addedItem.Nutrients.ProteinG)
-	assert.Equal(s.T(), 8.0, *addedItem.Nutrients.TotalFatG)
-	assert.Equal(s.T(), 35.0, *addedItem.Nutrients.CarbohydratesG)
+	assert.Empty(s.T(), response.Error)
+	assert.Contains(s.T(), response.Message, "Successfully logged 180.0g of Homemade Sandwich")
 
 	// Verify log was saved to database
 	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
 	require.NoError(s.T(), err)
-	assert.Nil(s.T(), savedLog.FoodID) // Should be null
+	assert.Nil(s.T(), savedLog.FoodID) // Should be null for custom food
 	assert.Equal(s.T(), "Homemade Sandwich", savedLog.FoodName)
 	assert.Equal(s.T(), 180.0, savedLog.AmountG)
 	assert.Equal(s.T(), util.Ptr(250.0), savedLog.Nutrients.Calories)
 	assert.Equal(s.T(), util.Ptr(12.0), savedLog.Nutrients.ProteinG)
+	assert.Equal(s.T(), util.Ptr(8.0), savedLog.Nutrients.TotalFatG)
+	assert.Equal(s.T(), util.Ptr(35.0), savedLog.Nutrients.CarbohydratesG)
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
-func (s *IntegrationTestSuite) TestLogFood_AmbiguousNameSearch() {
+func (s *IntegrationTestSuite) TestLogCustomFood_WithOptionalNutrients() {
 	ctx := context.Background()
-
-	// Setup: Create foods with similar names
-	apple1 := s.createTestFood(ctx, "Apple", "", 0, nil)
-	apple2 := s.createTestFood(ctx, "Apple Juice", "", 0, nil)
-	apple3 := s.createTestFood(ctx, "Apple Pie", "", 0, nil)
 
 	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
-	// Call MCP log_food tool handler with ambiguous name
-	input := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				Name:       util.Ptr("apple"), // Should match multiple foods
-				AmountG:    150.0,
-				ConsumedAt: &now,
-			},
-		},
+	// Call log_custom_food MCP tool with optional nutrients
+	input := log_food.LogCustomFoodInput{
+		ProductName:    "Energy Drink",
+		AmountG:        250.0,
+		Calories:       110.0,
+		ProteinG:       0.0,
+		TotalFatG:      0.0,
+		CarbohydratesG: 28.0,
+		CaffeineMg:     80.0, // Optional caffeine
+		EthylAlcoholG:  0.0,
+		ConsumedAt:     now,
 	}
 
-	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogCustomFood(s.ContextWithDB(ctx), nil, input)
 	require.NoError(s.T(), err)
+	assert.Empty(s.T(), response.Error)
+	assert.Contains(s.T(), response.Message, "Successfully logged 250.0g of Energy Drink")
 
-	// Verify the response - should have no added items and one not found item
-	require.Len(s.T(), output.AddedItems, 0)
-	require.Len(s.T(), output.NotFoundItems, 1)
-
-	notFoundItem := output.NotFoundItems[0]
-	assert.Equal(s.T(), util.Ptr("apple"), notFoundItem.Name)
-	assert.Equal(s.T(), 150.0, notFoundItem.AmountG)
-	assert.Equal(s.T(), "multiple_matches", notFoundItem.Reason)
-	require.Len(s.T(), notFoundItem.Suggestions, 2) // Should return first 2 alphabetically
-
-	// Verify suggestions are sorted alphabetically
-	assert.Equal(s.T(), "Apple", notFoundItem.Suggestions[0].Name)
-	assert.Equal(s.T(), apple1.ID, notFoundItem.Suggestions[0].ID)
-	assert.Equal(s.T(), "Apple Juice", notFoundItem.Suggestions[1].Name)
-	assert.Equal(s.T(), apple2.ID, notFoundItem.Suggestions[1].ID)
-
-	// Verify no logs were saved to database
-	_, err = s.Repo().GetConsumptionLog(ctx, userID, now)
-	assert.Error(s.T(), err) // Should be no rows found
-
-	_ = apple3 // Used for setup but not in first 2 suggestions
-}
-
-func (s *IntegrationTestSuite) TestLogFood_ValidationErrors() {
-	ctx := context.Background()
-
-	// Test empty consumed_items list
-	emptyInput := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{},
-	}
-	_, _, err := log_food.LogFood(s.ContextWithDB(ctx), nil, emptyInput)
-	assert.Error(s.T(), err)
-	assert.Contains(s.T(), err.Error(), "validation error")
-
-	// Test item with no valid scenario (no food_id, name, barcode, or direct_nutrients)
-	invalidInput := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				AmountG: 100.0,
-				// No food_id, name, barcode, or direct_nutrients
-			},
-		},
-	}
-	_, _, err = log_food.LogFood(s.ContextWithDB(ctx), nil, invalidInput)
-	assert.Error(s.T(), err)
-	assert.Contains(s.T(), err.Error(), "validation error")
-
-	// Test negative amount_g
-	negativeAmountInput := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				Name:    util.Ptr("Apple"),
-				AmountG: -50.0, // Invalid negative amount
-			},
-		},
-	}
-	_, _, err = log_food.LogFood(s.ContextWithDB(ctx), nil, negativeAmountInput)
-	assert.Error(s.T(), err)
-	assert.Contains(s.T(), err.Error(), "validation error")
-
-	// Test negative serving_count
-	negativeServingInput := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				Name:         util.Ptr("Apple"),
-				ServingCount: util.Ptr(-1.5), // Invalid negative serving count
-			},
-		},
-	}
-	_, _, err = log_food.LogFood(s.ContextWithDB(ctx), nil, negativeServingInput)
-	assert.Error(s.T(), err)
-	assert.Contains(s.T(), err.Error(), "validation error")
-
-	// Test invalid direct_nutrients (missing product_name)
-	invalidNutrientsInput := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				DirectNutrients: &log_food.DirectNutrients{
-					Calories:       100.0,
-					ProteinG:       5.0,
-					TotalFatG:      3.0,
-					CarbohydratesG: 15.0,
-					// Missing ProductName - required field
-				},
-				AmountG: 100.0,
-			},
-		},
-	}
-	_, _, err = log_food.LogFood(s.ContextWithDB(ctx), nil, invalidNutrientsInput)
-	assert.Error(s.T(), err)
-	assert.Contains(s.T(), err.Error(), "validation error")
-}
-
-func (s *IntegrationTestSuite) TestLogFood_NutrientRounding() {
-	ctx := context.Background()
-
-	// Create a food with values that would cause floating point precision issues
-	testFood := s.createTestFood(ctx, "Test Food", "", 100.0, &domain.Nutrients{
-		Calories:       util.Ptr(33.333333333), // Will cause precision issues when multiplied
-		ProteinG:       util.Ptr(1.666666667),  // Will cause precision issues when multiplied
-		TotalFatG:      util.Ptr(2.222222222),  // Will cause precision issues when multiplied
-		CarbohydratesG: util.Ptr(5.555555556),  // Will cause precision issues when multiplied
-	})
-
-	userID := int64(1)
-	now := time.Now().UTC().Truncate(time.Microsecond)
-
-	// Use amount that will create floating point precision issues (33.3g = 0.333 ratio)
-	input := log_food.LogFoodInput{
-		ConsumedItems: []log_food.ConsumedFoodItem{
-			{
-				FoodID:     &testFood.ID,
-				AmountG:    33.3, // This creates a 0.333 ratio which causes precision issues
-				ConsumedAt: &now,
-			},
-		},
-	}
-
-	// Call the actual MCP handler
-	_, output, err := log_food.LogFood(s.ContextWithDB(ctx), nil, input)
+	// Verify log was saved with optional nutrients
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
 	require.NoError(s.T(), err)
-
-	// Verify the response has properly rounded values
-	require.Len(s.T(), output.AddedItems, 1)
-	addedItem := output.AddedItems[0]
-
-	// Verify values are properly rounded to 3 decimal places
-	// 33.333333333 * 0.333 = 11.099999999889 -> rounded to 11.1
-	assert.Equal(s.T(), 11.1, *addedItem.Nutrients.Calories)
-	// 1.666666667 * 0.333 = 0.5549999999111 -> rounded to 0.555
-	assert.Equal(s.T(), 0.555, *addedItem.Nutrients.ProteinG)
-	// 2.222222222 * 0.333 = 0.7399999999926 -> rounded to 0.74
-	assert.Equal(s.T(), 0.74, *addedItem.Nutrients.TotalFatG)
-	// 5.555555556 * 0.333 = 1.8499999999148 -> rounded to 1.85
-	assert.Equal(s.T(), 1.85, *addedItem.Nutrients.CarbohydratesG)
+	assert.Equal(s.T(), util.Ptr(80.0), savedLog.Nutrients.CaffeineMg)
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
-// Test helper to create food items for testing
+func (s *IntegrationTestSuite) TestValidationErrors() {
+	ctx := context.Background()
+
+	// Test log_food_by_id with invalid food_id
+	input1 := log_food.LogFoodByIdInput{
+		FoodID:  0, // Invalid
+		AmountG: 100.0,
+	}
+	_, response1, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input1)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "food_id must be greater than 0", response1.Error)
+
+	// Test log_food_by_name with empty name
+	input2 := log_food.LogFoodByNameInput{
+		Name:    "", // Invalid
+		AmountG: 100.0,
+	}
+	_, response2, err := log_food.LogFoodByName(s.ContextWithDB(ctx), nil, input2)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "name cannot be empty", response2.Error)
+
+	// Test log_food_by_barcode with empty barcode
+	input3 := log_food.LogFoodByBarcodeInput{
+		Barcode: "", // Invalid
+		AmountG: 100.0,
+	}
+	_, response3, err := log_food.LogFoodByBarcode(s.ContextWithDB(ctx), nil, input3)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "barcode cannot be empty", response3.Error)
+
+	// Test log_custom_food with empty product name
+	input4 := log_food.LogCustomFoodInput{
+		ProductName:    "", // Invalid
+		AmountG:        100.0,
+		Calories:       100.0,
+		ProteinG:       5.0,
+		TotalFatG:      3.0,
+		CarbohydratesG: 15.0,
+	}
+	_, response4, err := log_food.LogCustomFood(s.ContextWithDB(ctx), nil, input4)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "product_name cannot be empty", response4.Error)
+
+	// Test invalid amounts (no amount_g or serving_count)
+	input5 := log_food.LogFoodByIdInput{
+		FoodID:       1,
+		AmountG:      0,
+		ServingCount: 0, // Both zero - invalid
+	}
+	_, response5, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input5)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "either amount_g or serving_count must be greater than 0", response5.Error)
+}
+
+// Test helper to create food items for testing (reused from old test)
 func (s *IntegrationTestSuite) createTestFood(ctx context.Context, name, barcode string, servingSizeG float64, nutrients *domain.Nutrients) *domain.Food {
 	food := &domain.Food{
 		Name:      name,

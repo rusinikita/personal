@@ -22,7 +22,10 @@ func MCPServer(db gateways.DB) *mcp.Server {
 	})
 
 	mcp.AddTool(server, &add_food.MCPDefinition, add_food.AddFood)
-	mcp.AddTool(server, &log_food.MCPDefinition, log_food.LogFood)
+	mcp.AddTool(server, &log_food.LogFoodByIdMCPDefinition, log_food.LogFoodById)
+	mcp.AddTool(server, &log_food.LogFoodByNameMCPDefinition, log_food.LogFoodByName)
+	mcp.AddTool(server, &log_food.LogFoodByBarcodeMCPDefinition, log_food.LogFoodByBarcode)
+	mcp.AddTool(server, &log_food.LogCustomFoodMCPDefinition, log_food.LogCustomFood)
 
 	return server
 }

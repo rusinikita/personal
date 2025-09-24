@@ -135,9 +135,8 @@ func calculateNutrientsFromComposition(ctx context.Context, composition domain.F
 			continue // Skip components without nutrition data
 		}
 
-		// Calculate proportional nutrients (component.AmountG / 100g * nutrient value)
-		ratio := component.AmountG / 100.0
-		domain.AddProportionalNutrients(totalNutrients, componentFood.Nutrients, ratio)
+		// Calculate proportional nutrients (component.AmountG * nutrient value)
+		domain.AddProportionalNutrients(totalNutrients, componentFood.Nutrients, component.AmountG)
 	}
 
 	return totalNutrients, nil

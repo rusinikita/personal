@@ -12,7 +12,9 @@ func RoundTo3Decimals(value float64) float64 {
 
 // CalculateProportionalNutrients calculates proportional nutrients based on ratio using reflection
 // This creates a new Nutrients struct with values proportionally scaled by the given ratio
-func CalculateProportionalNutrients(baseNutrients *Nutrients, ratio float64) *Nutrients {
+func CalculateProportionalNutrients(baseNutrients *Nutrients, amountG float64) *Nutrients {
+	ratio := amountG / 100.0
+
 	nutrients := &Nutrients{}
 
 	baseValue := reflect.ValueOf(baseNutrients).Elem()
@@ -60,9 +62,9 @@ func CalculateProportionalNutrients(baseNutrients *Nutrients, ratio float64) *Nu
 
 // AddProportionalNutrients adds proportional nutrients to the total nutrients
 // This modifies the total nutrients in place by adding scaled component nutrients
-func AddProportionalNutrients(total *Nutrients, component *Nutrients, ratio float64) {
+func AddProportionalNutrients(total *Nutrients, component *Nutrients, amountG float64) {
 	// Calculate proportional component nutrients
-	proportionalComponent := CalculateProportionalNutrients(component, ratio)
+	proportionalComponent := CalculateProportionalNutrients(component, amountG)
 
 	// Add each field from proportional component to total
 	totalValue := reflect.ValueOf(total).Elem()
