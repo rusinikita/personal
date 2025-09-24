@@ -17,13 +17,13 @@ func (s *IntegrationTestSuite) TestAddFood_Success() {
 	// Prepare test input with valid food data
 	input := add_food.AddFoodInput{
 		Name:        "Test Apple",
-		Description: stringPtr("Fresh red apple"),
+		Description: "Fresh red apple",
 		FoodType:    "product",
-		Nutrients: &domain.Nutrients{
-			Calories:       floatPtr(52.0),
-			ProteinG:       floatPtr(0.3),
-			TotalFatG:      floatPtr(0.2),
-			CarbohydratesG: floatPtr(14.0),
+		Nutrients: &domain.BasicNutrients{
+			Calories:       52.0,
+			ProteinG:       0.3,
+			TotalFatG:      0.2,
+			CarbohydratesG: 14.0,
 		},
 	}
 
@@ -39,18 +39,18 @@ func (s *IntegrationTestSuite) TestAddFood_Success() {
 	require.NoError(s.T(), err)
 	require.NotNil(s.T(), savedFood)
 
-	// Verify all fields match input
+	// Verify all fields match input (Description converted from zero value to nil pointer)
 	assert.Equal(s.T(), input.Name, savedFood.Name)
-	assert.Equal(s.T(), input.Description, savedFood.Description)
+	assert.Equal(s.T(), &input.Description, savedFood.Description)
 	assert.Equal(s.T(), input.FoodType, savedFood.FoodType)
 	assert.False(s.T(), savedFood.IsArchived)
 
-	// Verify nutrients were saved correctly
+	// Verify nutrients were saved correctly (BasicNutrients converted to Nutrients with pointers)
 	require.NotNil(s.T(), savedFood.Nutrients)
-	assert.Equal(s.T(), input.Nutrients.Calories, savedFood.Nutrients.Calories)
-	assert.Equal(s.T(), input.Nutrients.ProteinG, savedFood.Nutrients.ProteinG)
-	assert.Equal(s.T(), input.Nutrients.TotalFatG, savedFood.Nutrients.TotalFatG)
-	assert.Equal(s.T(), input.Nutrients.CarbohydratesG, savedFood.Nutrients.CarbohydratesG)
+	assert.Equal(s.T(), &input.Nutrients.Calories, savedFood.Nutrients.Calories)
+	assert.Equal(s.T(), &input.Nutrients.ProteinG, savedFood.Nutrients.ProteinG)
+	assert.Equal(s.T(), &input.Nutrients.TotalFatG, savedFood.Nutrients.TotalFatG)
+	assert.Equal(s.T(), &input.Nutrients.CarbohydratesG, savedFood.Nutrients.CarbohydratesG)
 
 	// Verify timestamps were set
 	assert.False(s.T(), savedFood.CreatedAt.IsZero())
@@ -84,7 +84,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 		// First, create a food item with barcode
 		input1 := add_food.AddFoodInput{
 			Name:     "Barcode Test Food 1",
-			Barcode:  stringPtr("1234567890123"),
+			Barcode:  "1234567890123",
 			FoodType: "product",
 		}
 		_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input1)
@@ -92,8 +92,8 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 
 		// Try to add different food with same barcode
 		input2 := add_food.AddFoodInput{
-			Name:     "Barcode Test Food 2",      // Different name
-			Barcode:  stringPtr("1234567890123"), // Same barcode
+			Name:     "Barcode Test Food 2", // Different name
+			Barcode:  "1234567890123",       // Same barcode
 			FoodType: "product",
 		}
 		_, _, err = add_food.AddFood(s.ContextWithDB(ctx), nil, input2)
@@ -106,7 +106,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 		// First, create a food item with both name and barcode
 		input1 := add_food.AddFoodInput{
 			Name:     "Both Name and Barcode Test",
-			Barcode:  stringPtr("9876543210987"),
+			Barcode:  "9876543210987",
 			FoodType: "product",
 		}
 		_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input1)
@@ -115,7 +115,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 		// Try to add the exact same food
 		input2 := add_food.AddFoodInput{
 			Name:     "Both Name and Barcode Test", // Same name
-			Barcode:  stringPtr("9876543210987"),   // Same barcode
+			Barcode:  "9876543210987",              // Same barcode
 			FoodType: "product",
 		}
 		_, _, err = add_food.AddFood(s.ContextWithDB(ctx), nil, input2)
@@ -130,7 +130,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 		// This should succeed - different name and barcode
 		input := add_food.AddFoodInput{
 			Name:     "Unique Test Food",
-			Barcode:  stringPtr("1111111111111"),
+			Barcode:  "1111111111111",
 			FoodType: "product",
 		}
 		_, output, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input)
@@ -169,7 +169,7 @@ func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
 			input: add_food.AddFoodInput{
 				Name:         "Test Food",
 				FoodType:     "product",
-				ServingSizeG: floatPtr(-10.0),
+				ServingSizeG: -10.0,
 			},
 			expectedError: "serving_size_g must be positive",
 		},
@@ -185,13 +185,4 @@ func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
 			assert.Contains(t, err.Error(), tc.expectedError)
 		})
 	}
-}
-
-// Helper functions
-func stringPtr(s string) *string {
-	return &s
-}
-
-func floatPtr(f float64) *float64 {
-	return &f
 }

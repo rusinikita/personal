@@ -9,6 +9,7 @@ import (
 
 	"personal/domain"
 	"personal/gateways"
+	"personal/util"
 )
 
 var MCPDefinition = mcp.Tool{
@@ -18,12 +19,12 @@ var MCPDefinition = mcp.Tool{
 
 type AddFoodInput struct {
 	Name            string                   `json:"name" jsonschema:"Food name"`
-	Description     *string                  `json:"description,omitempty" jsonschema:"Food description"`
-	Barcode         *string                  `json:"barcode,omitempty" jsonschema:"Product barcode"`
+	Description     string                   `json:"description,omitempty" jsonschema:"Food one sentence summary description"`
+	Barcode         string                   `json:"barcode,omitempty" jsonschema:"Product barcode"`
 	FoodType        string                   `json:"food_type" jsonschema:"Type of food item (component|product|dish)"`
-	ServingSizeG    *float64                 `json:"serving_size_g,omitempty" jsonschema:"Standard serving size in grams"`
-	ServingName     *string                  `json:"serving_name,omitempty" jsonschema:"Name of serving (e.g. cookie, slice)"`
-	Nutrients       *domain.Nutrients        `json:"nutrients,omitempty" jsonschema:"Nutritional information per 100g"`
+	ServingSizeG    float64                  `json:"serving_size_g,omitempty" jsonschema:"Standard serving size in grams"`
+	ServingName     string                   `json:"serving_name,omitempty" jsonschema:"Name of serving (e.g. cookie, slice)"`
+	Nutrients       *domain.BasicNutrients   `json:"nutrients,omitempty" jsonschema:"Nutritional information per 100g"`
 	FoodComposition domain.FoodComponentList `json:"food_composition,omitempty" jsonschema:"Recipe composition for dishes"`
 }
 
@@ -61,12 +62,12 @@ func AddFood(ctx context.Context, _ *mcp.CallToolRequest, input AddFoodInput) (*
 	// 4. Create domain Food object
 	food := &domain.Food{
 		Name:            input.Name,
-		Description:     input.Description,
-		Barcode:         input.Barcode,
+		Description:     util.PtrIfNotEmpty(input.Description),
+		Barcode:         util.PtrIfNotEmpty(input.Barcode),
 		FoodType:        input.FoodType,
 		IsArchived:      false,
-		ServingSizeG:    input.ServingSizeG,
-		ServingName:     input.ServingName,
+		ServingSizeG:    util.PtrIfNotZero(input.ServingSizeG),
+		ServingName:     util.PtrIfNotEmpty(input.ServingName),
 		Nutrients:       nutrients,
 		FoodComposition: input.FoodComposition,
 	}
@@ -98,7 +99,7 @@ func validateInput(input AddFoodInput) error {
 		return fmt.Errorf("food_type must be one of: component, product, dish")
 	}
 
-	if input.ServingSizeG != nil && *input.ServingSizeG <= 0 {
+	if input.ServingSizeG != 0 && input.ServingSizeG <= 0 {
 		return fmt.Errorf("serving_size_g must be positive")
 	}
 
@@ -108,7 +109,7 @@ func validateInput(input AddFoodInput) error {
 func calculateNutrients(ctx context.Context, input AddFoodInput, db gateways.DB) (*domain.Nutrients, error) {
 	// If nutrients are provided directly, use them
 	if input.Nutrients != nil {
-		return input.Nutrients, nil
+		return input.Nutrients.ToFull(), nil
 	}
 
 	// If only composition is provided, calculate nutrients from components
@@ -158,8 +159,8 @@ func checkForDuplicates(ctx context.Context, input AddFoodInput, db gateways.DB)
 	}
 
 	// Check for barcode duplicates (if barcode is provided)
-	if input.Barcode != nil && *input.Barcode != "" {
-		barcodeFilter := &domain.FoodFilter{Barcode: input.Barcode}
+	if input.Barcode != "" {
+		barcodeFilter := &domain.FoodFilter{Barcode: &input.Barcode}
 		barcodeMatches, err := db.SearchFood(ctx, *barcodeFilter)
 		if err != nil {
 			return "", fmt.Errorf("barcode search failed: %w", err)
@@ -167,8 +168,7 @@ func checkForDuplicates(ctx context.Context, input AddFoodInput, db gateways.DB)
 
 		if len(barcodeMatches) > 0 {
 			food := barcodeMatches[0]
-			barcode := *input.Barcode
-			return fmt.Sprintf("food with barcode '%s' already exists: '%s' (ID: %d)", barcode, food.Name, food.ID), nil
+			return fmt.Sprintf("food with barcode '%s' already exists: '%s' (ID: %d)", input.Barcode, food.Name, food.ID), nil
 		}
 	}
 

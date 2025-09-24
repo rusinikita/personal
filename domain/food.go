@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"personal/util"
 )
 
 type Food struct {
@@ -20,6 +22,31 @@ type Food struct {
 	UpdatedAt       time.Time         `json:"updated_at" db:"updated_at"`
 	Nutrients       *Nutrients        `json:"nutrients,omitempty" db:"nutrients"`
 	FoodComposition FoodComponentList `json:"food_composition,omitempty" db:"food_composition"`
+}
+
+type BasicNutrients struct {
+	// Макронутриенты (на 100г продукта)
+	Calories       float64 `json:"calories,omitempty"`
+	ProteinG       float64 `json:"protein_g,omitempty"`
+	TotalFatG      float64 `json:"total_fat_g,omitempty"`
+	CarbohydratesG float64 `json:"carbohydrates_g,omitempty"`
+	DietaryFiberG  float64 `json:"dietary_fiber_g,omitempty"`
+	TotalSugarsG   float64 `json:"total_sugars_g,omitempty"`
+	AddedSugarsG   float64 `json:"added_sugars_g,omitempty"`
+	WaterG         float64 `json:"water_g,omitempty"`
+}
+
+func (n BasicNutrients) ToFull() *Nutrients {
+	return &Nutrients{
+		Calories:       util.Ptr(n.Calories),
+		ProteinG:       util.Ptr(n.ProteinG),
+		TotalFatG:      util.Ptr(n.TotalFatG),
+		CarbohydratesG: util.Ptr(n.CarbohydratesG),
+		DietaryFiberG:  util.Ptr(n.DietaryFiberG),
+		TotalSugarsG:   util.Ptr(n.TotalSugarsG),
+		AddedSugarsG:   util.Ptr(n.AddedSugarsG),
+		WaterG:         util.Ptr(n.WaterG),
+	}
 }
 
 type Nutrients struct {

@@ -13,12 +13,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	sloggin "github.com/samber/slog-gin"
 
-	"personal/action/add_food"
 	"personal/action/auth"
-	"personal/action/log_food"
-	"personal/action/say_hi"
-	"personal/gateways"
 	"personal/gateways/db"
+	"personal/transport"
 )
 
 func main() {
@@ -47,25 +44,18 @@ func main() {
 		log.Printf("Warning: Failed to apply migrations: %v", err)
 	}
 
-	// Create a server with a single tool.
-	server := mcp.NewServer(&mcp.Implementation{Name: "greeter", Version: "v1.0.0"}, nil)
-
-	server.AddReceivingMiddleware(func(handler mcp.MethodHandler) mcp.MethodHandler {
-		return func(ctx context.Context, method string, req mcp.Request) (result mcp.Result, err error) {
-			// Add database to context
-			ctx = gateways.WithDB(ctx, repo)
-			return handler(ctx, method, req)
-		}
-	})
-
-	mcp.AddTool(server, &say_hi.MCPDefinition, say_hi.SayHi)
-	mcp.AddTool(server, &add_food.MCPDefinition, add_food.AddFood)
-	mcp.AddTool(server, &log_food.MCPDefinition, log_food.LogFood)
+	server := transport.MCPServer(repo)
 
 	// Create the streamable HTTP handler.
-	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
-		return server
-	}, nil)
+	handler := mcp.NewStreamableHTTPHandler(
+		func(req *http.Request) *mcp.Server {
+			return server
+		},
+		&mcp.StreamableHTTPOptions{
+			Stateless:    true,
+			JSONResponse: true,
+		},
+	)
 
 	url := "127.0.0.1:8081"
 	log.Printf("MCP server listening on %s", url)

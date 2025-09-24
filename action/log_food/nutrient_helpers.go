@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"personal/domain"
+	"personal/util"
 )
 
 // calculateNutrients calculates nutrients based on amount for found food
@@ -52,20 +53,20 @@ func createDirectNutrients(direct DirectNutrients) *domain.Nutrients {
 	carbs := domain.RoundTo3Decimals(direct.CarbohydratesG)
 
 	nutrients := &domain.Nutrients{
-		Calories:       &calories,
-		ProteinG:       &protein,
-		TotalFatG:      &totalFat,
-		CarbohydratesG: &carbs,
+		Calories:       util.Ptr(calories),
+		ProteinG:       util.Ptr(protein),
+		TotalFatG:      util.Ptr(totalFat),
+		CarbohydratesG: util.Ptr(carbs),
 	}
 
 	// Add optional nutrients if provided
 	if direct.CaffeineMg != nil {
 		caffeine := domain.RoundTo3Decimals(*direct.CaffeineMg)
-		nutrients.CaffeineMg = &caffeine
+		nutrients.CaffeineMg = util.Ptr(caffeine)
 	}
 	if direct.EthylAlcoholG != nil {
 		alcohol := domain.RoundTo3Decimals(*direct.EthylAlcoholG)
-		nutrients.EthylAlcoholG = &alcohol
+		nutrients.EthylAlcoholG = util.Ptr(alcohol)
 	}
 
 	return nutrients

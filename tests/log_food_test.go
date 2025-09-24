@@ -9,6 +9,7 @@ import (
 
 	"personal/action/log_food"
 	"personal/domain"
+	"personal/util"
 )
 
 func (s *IntegrationTestSuite) TestLogFood_Scenario1_WithIDs() {
@@ -16,17 +17,17 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario1_WithIDs() {
 
 	// Setup: Create test foods with nutrients and serving_size_g
 	apple := s.createTestFood(ctx, "Apple", "123456", 100.0, &domain.Nutrients{
-		Calories:       floatPtr(52.0),
-		ProteinG:       floatPtr(0.3),
-		TotalFatG:      floatPtr(0.2),
-		CarbohydratesG: floatPtr(14.0),
+		Calories:       util.Ptr(52.0),
+		ProteinG:       util.Ptr(0.3),
+		TotalFatG:      util.Ptr(0.2),
+		CarbohydratesG: util.Ptr(14.0),
 	})
 
 	bread := s.createTestFood(ctx, "Bread", "789012", 30.0, &domain.Nutrients{
-		Calories:       floatPtr(265.0),
-		ProteinG:       floatPtr(9.0),
-		TotalFatG:      floatPtr(3.2),
-		CarbohydratesG: floatPtr(49.0),
+		Calories:       util.Ptr(265.0),
+		ProteinG:       util.Ptr(9.0),
+		TotalFatG:      util.Ptr(3.2),
+		CarbohydratesG: util.Ptr(49.0),
 	})
 
 	userID := int64(1)
@@ -43,7 +44,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario1_WithIDs() {
 			},
 			{
 				FoodID:       &bread.ID,
-				ServingCount: floatPtr(2.0), // 2 * 30g servings = 60g
+				ServingCount: util.Ptr(2.0), // 2 * 30g servings = 60g
 				ConsumedAt:   &laterTime,
 			},
 		},
@@ -81,14 +82,14 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario1_WithIDs() {
 	assert.Equal(s.T(), &apple.ID, savedAppleLog.FoodID)
 	assert.Equal(s.T(), apple.Name, savedAppleLog.FoodName)
 	assert.Equal(s.T(), 150.0, savedAppleLog.AmountG)
-	assert.Equal(s.T(), floatPtr(78.0), savedAppleLog.Nutrients.Calories)
+	assert.Equal(s.T(), util.Ptr(78.0), savedAppleLog.Nutrients.Calories)
 
 	savedBreadLog, err := s.Repo().GetConsumptionLog(ctx, userID, laterTime)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), &bread.ID, savedBreadLog.FoodID)
 	assert.Equal(s.T(), bread.Name, savedBreadLog.FoodName)
 	assert.Equal(s.T(), 60.0, savedBreadLog.AmountG)
-	assert.Equal(s.T(), floatPtr(159.0), savedBreadLog.Nutrients.Calories)
+	assert.Equal(s.T(), util.Ptr(159.0), savedBreadLog.Nutrients.Calories)
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
@@ -100,10 +101,10 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario2_WithNames() {
 
 	// Setup: Create foods with known names
 	orange := s.createTestFood(ctx, "Orange", "111111", 0, &domain.Nutrients{
-		Calories:       floatPtr(47.0),
-		ProteinG:       floatPtr(0.9),
-		TotalFatG:      floatPtr(0.1),
-		CarbohydratesG: floatPtr(12.0),
+		Calories:       util.Ptr(47.0),
+		ProteinG:       util.Ptr(0.9),
+		TotalFatG:      util.Ptr(0.1),
+		CarbohydratesG: util.Ptr(12.0),
 	})
 
 	userID := int64(1)
@@ -113,7 +114,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario2_WithNames() {
 	input := log_food.LogFoodInput{
 		ConsumedItems: []log_food.ConsumedFoodItem{
 			{
-				Name:       stringPtr("Orange"),
+				Name:       util.Ptr("Orange"),
 				AmountG:    200.0,
 				ConsumedAt: &now,
 			},
@@ -142,7 +143,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario2_WithNames() {
 	assert.Equal(s.T(), &orange.ID, savedLog.FoodID)
 	assert.Equal(s.T(), orange.Name, savedLog.FoodName)
 	assert.Equal(s.T(), 200.0, savedLog.AmountG)
-	assert.Equal(s.T(), floatPtr(94.0), savedLog.Nutrients.Calories)
+	assert.Equal(s.T(), util.Ptr(94.0), savedLog.Nutrients.Calories)
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
@@ -153,10 +154,10 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario3_WithBarcodes() {
 
 	// Setup: Create foods with unique barcodes
 	banana := s.createTestFood(ctx, "Banana", "999888", 0, &domain.Nutrients{
-		Calories:       floatPtr(89.0),
-		ProteinG:       floatPtr(1.1),
-		TotalFatG:      floatPtr(0.3),
-		CarbohydratesG: floatPtr(23.0),
+		Calories:       util.Ptr(89.0),
+		ProteinG:       util.Ptr(1.1),
+		TotalFatG:      util.Ptr(0.3),
+		CarbohydratesG: util.Ptr(23.0),
 	})
 
 	userID := int64(1)
@@ -166,7 +167,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario3_WithBarcodes() {
 	input := log_food.LogFoodInput{
 		ConsumedItems: []log_food.ConsumedFoodItem{
 			{
-				Barcode:    stringPtr("999888"),
+				Barcode:    util.Ptr("999888"),
 				AmountG:    120.0,
 				ConsumedAt: &now,
 			},
@@ -195,7 +196,7 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario3_WithBarcodes() {
 	assert.Equal(s.T(), &banana.ID, savedLog.FoodID)
 	assert.Equal(s.T(), banana.Name, savedLog.FoodName)
 	assert.Equal(s.T(), 120.0, savedLog.AmountG)
-	assert.Equal(s.T(), floatPtr(106.8), savedLog.Nutrients.Calories)
+	assert.Equal(s.T(), util.Ptr(106.8), savedLog.Nutrients.Calories)
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
@@ -248,8 +249,8 @@ func (s *IntegrationTestSuite) TestLogFood_Scenario4_DirectNutrients() {
 	assert.Nil(s.T(), savedLog.FoodID) // Should be null
 	assert.Equal(s.T(), "Homemade Sandwich", savedLog.FoodName)
 	assert.Equal(s.T(), 180.0, savedLog.AmountG)
-	assert.Equal(s.T(), floatPtr(250.0), savedLog.Nutrients.Calories)
-	assert.Equal(s.T(), floatPtr(12.0), savedLog.Nutrients.ProteinG)
+	assert.Equal(s.T(), util.Ptr(250.0), savedLog.Nutrients.Calories)
+	assert.Equal(s.T(), util.Ptr(12.0), savedLog.Nutrients.ProteinG)
 
 	// Cleanup
 	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
@@ -270,7 +271,7 @@ func (s *IntegrationTestSuite) TestLogFood_AmbiguousNameSearch() {
 	input := log_food.LogFoodInput{
 		ConsumedItems: []log_food.ConsumedFoodItem{
 			{
-				Name:       stringPtr("apple"), // Should match multiple foods
+				Name:       util.Ptr("apple"), // Should match multiple foods
 				AmountG:    150.0,
 				ConsumedAt: &now,
 			},
@@ -286,7 +287,7 @@ func (s *IntegrationTestSuite) TestLogFood_AmbiguousNameSearch() {
 	require.Len(s.T(), output.NotFoundItems, 1)
 
 	notFoundItem := output.NotFoundItems[0]
-	assert.Equal(s.T(), stringPtr("apple"), notFoundItem.Name)
+	assert.Equal(s.T(), util.Ptr("apple"), notFoundItem.Name)
 	assert.Equal(s.T(), 150.0, notFoundItem.AmountG)
 	assert.Equal(s.T(), "multiple_matches", notFoundItem.Reason)
 	require.Len(s.T(), notFoundItem.Suggestions, 2) // Should return first 2 alphabetically
@@ -332,7 +333,7 @@ func (s *IntegrationTestSuite) TestLogFood_ValidationErrors() {
 	negativeAmountInput := log_food.LogFoodInput{
 		ConsumedItems: []log_food.ConsumedFoodItem{
 			{
-				Name:    stringPtr("Apple"),
+				Name:    util.Ptr("Apple"),
 				AmountG: -50.0, // Invalid negative amount
 			},
 		},
@@ -345,8 +346,8 @@ func (s *IntegrationTestSuite) TestLogFood_ValidationErrors() {
 	negativeServingInput := log_food.LogFoodInput{
 		ConsumedItems: []log_food.ConsumedFoodItem{
 			{
-				Name:         stringPtr("Apple"),
-				ServingCount: floatPtr(-1.5), // Invalid negative serving count
+				Name:         util.Ptr("Apple"),
+				ServingCount: util.Ptr(-1.5), // Invalid negative serving count
 			},
 		},
 	}
@@ -379,10 +380,10 @@ func (s *IntegrationTestSuite) TestLogFood_NutrientRounding() {
 
 	// Create a food with values that would cause floating point precision issues
 	testFood := s.createTestFood(ctx, "Test Food", "", 100.0, &domain.Nutrients{
-		Calories:       floatPtr(33.333333333), // Will cause precision issues when multiplied
-		ProteinG:       floatPtr(1.666666667),  // Will cause precision issues when multiplied
-		TotalFatG:      floatPtr(2.222222222),  // Will cause precision issues when multiplied
-		CarbohydratesG: floatPtr(5.555555556),  // Will cause precision issues when multiplied
+		Calories:       util.Ptr(33.333333333), // Will cause precision issues when multiplied
+		ProteinG:       util.Ptr(1.666666667),  // Will cause precision issues when multiplied
+		TotalFatG:      util.Ptr(2.222222222),  // Will cause precision issues when multiplied
+		CarbohydratesG: util.Ptr(5.555555556),  // Will cause precision issues when multiplied
 	})
 
 	userID := int64(1)

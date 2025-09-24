@@ -174,14 +174,14 @@ erDiagram
 **Input:**
 ```go
 type AddFoodInput struct {
-    Name            string            `json:"name" jsonschema:"required,food name"`
-    Description     *string           `json:"description,omitempty" jsonschema:"food description"`
-    Barcode         *string           `json:"barcode,omitempty" jsonschema:"product barcode"`
-    FoodType        string            `json:"food_type" jsonschema:"required,enum=component|product|dish"`
-    ServingSizeG    *float64          `json:"serving_size_g,omitempty" jsonschema:"serving size in grams"`
-    ServingName     *string           `json:"serving_name,omitempty" jsonschema:"serving name"`
-    Nutrients       *Nutrients        `json:"nutrients,omitempty" jsonschema:"nutrition data"`
-    FoodComposition FoodComponentList `json:"food_composition,omitempty" jsonschema:"recipe composition"`
+    Name            string                   `json:"name" jsonschema:"required,food name"`
+    Description     string                   `json:"description,omitempty" jsonschema:"food description"`
+    Barcode         string                   `json:"barcode,omitempty" jsonschema:"product barcode"`
+    FoodType        string                   `json:"food_type" jsonschema:"required,enum=component|product|dish"`
+    ServingSizeG    float64                  `json:"serving_size_g,omitempty" jsonschema:"serving size in grams"`
+    ServingName     string                   `json:"serving_name,omitempty" jsonschema:"serving name"`
+    Nutrients       *domain.BasicNutrients   `json:"nutrients,omitempty" jsonschema:"nutrition data"`
+    FoodComposition domain.FoodComponentList `json:"food_composition,omitempty" jsonschema:"recipe composition"`
 }
 ```
 
@@ -194,16 +194,21 @@ type AddFoodOutput struct {
 ```
 
 **Internal logic:**
-1. Валидация входных данных (name required, food_type enum)
-2. Проверка дубликатов по name и barcode
+1. Валидация входных данных (name required, food_type enum, positive serving_size_g if provided)
+2. Проверка дубликатов по name и barcode (пустые строки игнорируются)
 3. Обработка нутриентов:
    - Если Nutrients указаны - использовать их
    - Если только FoodComposition - рассчитать нутриенты из компонентов
    - Получить нутриенты каждого компонента через repository.GetFood()
    - Суммировать нутриенты пропорционально amount_g
-4. Создание domain.Food объекта
+4. Создание domain.Food объекта (zero values конвертируются в nil для опциональных полей)
 5. Сохранение через repository.AddFood()
 6. Возврат ID и сообщения об успехе
+
+**Обработка Zero Values:**
+- Пустые строки (Description, Barcode, ServingName) → nil в domain.Food
+- ServingSizeG = 0 → nil в domain.Food
+- Пустые коллекции FoodComposition остаются пустыми
 
 **JSONB Support:**
 - Nutrients и FoodComponentList реализуют driver.Valuer и sql.Scanner интерфейсы
