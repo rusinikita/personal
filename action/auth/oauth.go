@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 var BaseAuthURL = "http://localhost:8081"
@@ -19,7 +19,7 @@ var BaseAuthURL = "http://localhost:8081"
 type Claims struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 }
 
 // OAuthAuthorizationServer represents the response for the `/.well-known/oauth-authorization-server` endpoint.
@@ -242,9 +242,11 @@ func TokenHandler(c *gin.Context) {
 	claims := &Claims{
 		Email: user.Email,
 		Name:  user.ID,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(1 * time.Hour).Unix(),
-			Issuer:    BaseAuthURL,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: &jwt.NumericDate{
+				Time: time.Now().Add(10 * time.Minute),
+			},
+			Issuer: BaseAuthURL,
 		},
 	}
 
