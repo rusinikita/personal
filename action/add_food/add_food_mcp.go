@@ -122,6 +122,11 @@ func calculateNutrients(ctx context.Context, input AddFoodInput, db gateways.DB)
 }
 
 func calculateNutrientsFromComposition(ctx context.Context, composition domain.FoodComponentList, db gateways.DB) (*domain.Nutrients, error) {
+	totalGrams := 0.0
+	for _, component := range composition {
+		totalGrams += component.AmountG
+	}
+
 	totalNutrients := &domain.Nutrients{}
 
 	for _, component := range composition {
@@ -135,8 +140,11 @@ func calculateNutrientsFromComposition(ctx context.Context, composition domain.F
 			continue // Skip components without nutrition data
 		}
 
+		// Пересчет на то сколько граммов в 100 граммах приготовленного
+		relativeAmount := component.AmountG * 100 / totalGrams
+
 		// Calculate proportional nutrients (component.AmountG * nutrient value)
-		domain.AddProportionalNutrients(totalNutrients, componentFood.Nutrients, component.AmountG)
+		domain.AddProportionalNutrients(totalNutrients, componentFood.Nutrients, relativeAmount)
 	}
 
 	return totalNutrients, nil

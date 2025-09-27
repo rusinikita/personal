@@ -77,7 +77,10 @@ func main() {
 
 	gin.SetMode(gin.DebugMode)
 
-	auth.BaseAuthURL = "https://splendid-chicken-42.telebit.io"
+	auth.BaseAuthURL = os.Getenv("BASE_URL")
+	if auth.BaseAuthURL == "" {
+		log.Fatal("BASE_URL environment variable not set")
+	}
 
 	router.GET("/.well-known/oauth-authorization-server", auth.WellKnownHandler)
 	router.GET("/.well-known/oauth-authorization-server/*path", auth.WellKnownHandler)
