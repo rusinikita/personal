@@ -24,11 +24,6 @@ func main() {
 		log.Println("Error loading .env.local file", err)
 	}
 
-	err = godotenv.Load(".env")
-	if err != nil {
-		log.Fatal("Error loading .env file", err)
-	}
-
 	// Initialize database connection
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -66,9 +61,6 @@ func main() {
 			JSONResponse: true,
 		},
 	)
-
-	url := "127.0.0.1:8081"
-	log.Printf("MCP server listening on %s", url)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
