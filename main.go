@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	sloggin "github.com/samber/slog-gin"
@@ -19,7 +19,12 @@ import (
 )
 
 func main() {
-	err := godotenv.Load()
+	err := godotenv.Load(".env.local")
+	if err != nil {
+		log.Println("Error loading .env.local file", err)
+	}
+
+	err = godotenv.Load(".env")
 	if err != nil {
 		log.Fatal("Error loading .env file", err)
 	}
@@ -30,11 +35,16 @@ func main() {
 		log.Fatal("DATABASE_URL environment variable not set")
 	}
 
-	conn, err := pgx.Connect(context.Background(), dbURL)
+	pgxPoolConfig, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		log.Fatal("DATABASE_URL format err", err)
+	}
+
+	conn, err := pgxpool.NewWithConfig(context.Background(), pgxPoolConfig)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer conn.Close(context.Background())
+	defer conn.Close()
 
 	// Create database repository
 	repo, dbMaintainer := db.NewRepository(conn)
@@ -91,7 +101,12 @@ func main() {
 		handler.ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
-	err = router.Run(":8081")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8081"
+	}
+
+	err = router.Run(":" + port)
 	if err != nil {
 		log.Fatal(err)
 	}
