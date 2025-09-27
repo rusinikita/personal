@@ -239,12 +239,14 @@ func TokenHandler(c *gin.Context) {
 		return
 	}
 
+	expiresIn := 14 * 24 * time.Hour
+
 	claims := &Claims{
 		Email: user.Email,
 		Name:  user.ID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: &jwt.NumericDate{
-				Time: time.Now().Add(10 * time.Minute),
+				Time: time.Now().Add(expiresIn),
 			},
 			Issuer: BaseAuthURL,
 		},
@@ -260,7 +262,7 @@ func TokenHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": tokenString,
 		"token_type":   "Bearer",
-		"expires_in":   3600,
+		"expires_in":   expiresIn.Seconds(),
 	})
 }
 
@@ -311,7 +313,7 @@ func Middleware() gin.HandlerFunc {
 			return
 		}
 
-		tokenString := authHeader[len("Bearer "):]
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 			return jwtSecret, nil
 		})
