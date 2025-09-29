@@ -20,6 +20,10 @@ type DB interface {
 	GetConsumptionLog(ctx context.Context, userID int64, consumedAt time.Time) (*domain.ConsumptionLog, error)
 	GetConsumptionLogsByUser(ctx context.Context, userID int64) ([]*domain.ConsumptionLog, error)
 	DeleteConsumptionLog(ctx context.Context, userID int64, consumedAt time.Time) error
+
+	// Nutrition stats methods
+	GetLastConsumptionTime(ctx context.Context, userID int64) (*time.Time, error)
+	GetNutritionStats(ctx context.Context, filter domain.NutritionStatsFilter) ([]domain.NutritionStats, error)
 }
 
 type DBMaintainer interface {
