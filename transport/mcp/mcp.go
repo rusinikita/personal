@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"personal/action/add_food"
+	"personal/action/find_food"
 	"personal/action/log_food"
 	"personal/gateways"
 )
@@ -50,8 +51,8 @@ func Server(db gateways.DB) *mcp.Server {
 	}, promptHandler)
 
 	mcp.AddTool(server, &add_food.MCPDefinition, add_food.AddFood)
+	mcp.AddTool(server, &find_food.ResolveFoodIdByNameMCPDefinition, find_food.ResolveFoodIdByName)
 	mcp.AddTool(server, &log_food.LogFoodByIdMCPDefinition, log_food.LogFoodById)
-	mcp.AddTool(server, &log_food.LogFoodByNameMCPDefinition, log_food.LogFoodByName)
 	mcp.AddTool(server, &log_food.LogFoodByBarcodeMCPDefinition, log_food.LogFoodByBarcode)
 	mcp.AddTool(server, &log_food.LogCustomFoodMCPDefinition, log_food.LogCustomFood)
 
@@ -75,13 +76,53 @@ func promptHandler(_ context.Context, request *mcp.GetPromptRequest) (*mcp.GetPr
 	}, nil
 }
 
-func completionHandler(_ context.Context, req *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
+func completionHandler(ctx context.Context, req *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
 	if req.Params.Argument.Name == "food_name" {
+		// Get database from context
+		db := gateways.DBFromContext(ctx)
+		if db == nil {
+			// Fallback to hardcoded values if no database
+			return &mcp.CompleteResult{
+				Completion: mcp.CompletionResultDetails{
+					HasMore: false,
+					Total:   2,
+					Values:  []string{"банан", "яйцо"},
+				},
+			}, nil
+		}
+
+		// Use real database search for completion
+		searchTerm := req.Params.Argument.Value
+		if searchTerm == "" {
+			searchTerm = "банан" // Default search term
+		}
+
+		foods, err := find_food.SearchFoodsByName(ctx, db, searchTerm)
+		if err != nil {
+			// Fallback to hardcoded values on error
+			return &mcp.CompleteResult{
+				Completion: mcp.CompletionResultDetails{
+					HasMore: false,
+					Total:   2,
+					Values:  []string{"банан", "яйцо"},
+				},
+			}, nil
+		}
+
+		// Extract food names for completion
+		values := make([]string, 0, len(foods))
+		for _, food := range foods {
+			values = append(values, food.Name)
+			if len(values) >= 5 { // Limit to 5 suggestions
+				break
+			}
+		}
+
 		return &mcp.CompleteResult{
 			Completion: mcp.CompletionResultDetails{
-				HasMore: false,
-				Total:   2,
-				Values:  []string{"банан", "яйцо"},
+				HasMore: len(foods) > 5,
+				Total:   len(values),
+				Values:  values,
 			},
 		}, nil
 	}

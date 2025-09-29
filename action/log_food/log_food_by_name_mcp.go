@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"personal/action/find_food"
 	"personal/domain"
 	"personal/gateways"
 )
@@ -32,9 +33,8 @@ func LogFoodByName(ctx context.Context, _ *mcp.CallToolRequest, input LogFoodByN
 		return nil, LogFoodByNameOutput{Error: "either amount_g or serving_count must be greater than 0"}, nil
 	}
 
-	// 2. Search foods by name
-	filter := domain.FoodFilter{Name: &input.Name}
-	foods, err := db.SearchFood(ctx, filter)
+	// 2. Search foods by name using shared search function
+	foods, err := find_food.SearchFoodsByName(ctx, db, input.Name)
 	if err != nil {
 		return nil, LogFoodByNameOutput{Error: fmt.Sprintf("search failed: %v", err)}, nil
 	}
