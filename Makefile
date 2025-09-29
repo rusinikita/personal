@@ -20,7 +20,7 @@ down:
 	docker compose -f ./docs/postgres/docker-compose.yml down
 
 reverse-proxy:
-	~/telebit http 8081
+	~/telebit http 8881
 
 format:
 	@echo 'formatting'

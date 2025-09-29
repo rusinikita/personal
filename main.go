@@ -15,7 +15,7 @@ import (
 
 	"personal/action/auth"
 	"personal/gateways/db"
-	"personal/transport"
+	mcp2 "personal/transport/mcp"
 )
 
 func main() {
@@ -41,6 +41,11 @@ func main() {
 	}
 	defer conn.Close()
 
+	err = conn.Ping(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
+
 	// Create database repository
 	repo, dbMaintainer := db.NewRepository(conn)
 
@@ -49,7 +54,7 @@ func main() {
 		log.Printf("Warning: Failed to apply migrations: %v", err)
 	}
 
-	server := transport.MCPServer(repo)
+	server := mcp2.Server(repo)
 
 	// Create the streamable HTTP handler.
 	handler := mcp.NewStreamableHTTPHandler(
@@ -82,15 +87,18 @@ func main() {
 		log.Fatal("BASE_URL environment variable not set")
 	}
 
-	router.GET("/.well-known/oauth-authorization-server", auth.WellKnownHandler)
-	router.GET("/.well-known/oauth-authorization-server/*path", auth.WellKnownHandler)
-	router.GET("/.well-known/oauth-protected-resource/*path", auth.WellKnownHandler)
-	router.Any("/oauth/authorize", auth.AuthorizeHandler)
-	router.POST("/oauth/token", auth.TokenHandler)
-	router.POST("/oauth/register", auth.RegisterClientHandler)
-
 	authRequired := router.Group("/app")
-	authRequired.Use(auth.Middleware())
+
+	if os.Getenv("AUTH_DISABLED") == "" {
+		router.GET("/.well-known/oauth-authorization-server", auth.WellKnownHandler)
+		router.GET("/.well-known/oauth-authorization-server/*path", auth.WellKnownHandler)
+		router.GET("/.well-known/oauth-protected-resource/*path", auth.WellKnownHandler)
+		router.Any("/oauth/authorize", auth.AuthorizeHandler)
+		router.POST("/oauth/token", auth.TokenHandler)
+		router.POST("/oauth/register", auth.RegisterClientHandler)
+
+		authRequired.Use(auth.Middleware())
+	}
 
 	authRequired.Any("/mcp", func(ctx *gin.Context) {
 		handler.ServeHTTP(ctx.Writer, ctx.Request)

@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"personal/transport"
+	mcp2 "personal/transport/mcp"
 )
 
 func (s *IntegrationTestSuite) TestClient() {
@@ -17,7 +17,7 @@ func (s *IntegrationTestSuite) TestClient() {
 	t1, t2 := mcp.NewInMemoryTransports()
 
 	go func() {
-		server := transport.MCPServer(s.repo)
+		server := mcp2.Server(s.repo)
 		s.Require().NoError(server.Run(ctx, t1))
 	}()
 
