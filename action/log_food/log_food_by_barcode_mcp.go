@@ -9,11 +9,16 @@ import (
 
 	"personal/domain"
 	"personal/gateways"
+	"personal/util"
 )
 
 var LogFoodByBarcodeMCPDefinition = mcp.Tool{
 	Name:        "log_food_by_barcode",
 	Description: "Find food by barcode and log consumption",
+	Annotations: &mcp.ToolAnnotations{
+		DestructiveHint: util.Ptr(true),
+		Title:           "Add consumed food by barcode",
+	},
 }
 
 // LogFoodByBarcode is the MCP handler for logging food consumption by barcode search

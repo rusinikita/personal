@@ -12,6 +12,11 @@ import (
 var ResolveFoodIdByNameMCPDefinition = mcp.Tool{
 	Name:        "resolve_food_id_by_name",
 	Description: "Search for foods by 1-5 name variants and return ranked results with match counts",
+	Annotations: &mcp.ToolAnnotations{
+		ReadOnlyHint:   true,
+		IdempotentHint: true,
+		Title:          "Check food by name",
+	},
 }
 
 // ResolveFoodIdByName is the MCP handler for finding foods by name variants

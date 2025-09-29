@@ -9,11 +9,16 @@ import (
 
 	"personal/domain"
 	"personal/gateways"
+	"personal/util"
 )
 
 var LogCustomFoodMCPDefinition = mcp.Tool{
 	Name:        "log_custom_food",
-	Description: "Log food consumption with direct nutrient specification",
+	Description: "Log food consumption with direct nutrient specification, to add unspecified food consumption without adding food into database",
+	Annotations: &mcp.ToolAnnotations{
+		DestructiveHint: util.Ptr(true),
+		Title:           "Add unspecified consumed food",
+	},
 }
 
 // LogCustomFood is the MCP handler for logging custom food with direct nutrients

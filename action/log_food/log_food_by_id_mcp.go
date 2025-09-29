@@ -9,11 +9,16 @@ import (
 
 	"personal/domain"
 	"personal/gateways"
+	"personal/util"
 )
 
 var LogFoodByIdMCPDefinition = mcp.Tool{
 	Name:        "log_food_by_id",
 	Description: "Log food consumption by known food ID",
+	Annotations: &mcp.ToolAnnotations{
+		DestructiveHint: util.Ptr(true),
+		Title:           "Add consumed food by id",
+	},
 }
 
 // LogFoodById is the MCP handler for logging food consumption by ID

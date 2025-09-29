@@ -15,6 +15,11 @@ import (
 var MCPDefinition = mcp.Tool{
 	Name:        "add_food",
 	Description: "Add a new food item to the database with nutritional information",
+	Annotations: &mcp.ToolAnnotations{
+		DestructiveHint: util.Ptr(true),
+		IdempotentHint:  false,
+		Title:           "Add new food item",
+	},
 }
 
 type AddFoodInput struct {
