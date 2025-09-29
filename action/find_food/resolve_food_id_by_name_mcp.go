@@ -10,13 +10,31 @@ import (
 )
 
 var ResolveFoodIdByNameMCPDefinition = mcp.Tool{
-	Name:        "resolve_food_id_by_name",
-	Description: "Search for foods by 1-5 name variants and return ranked results with match counts",
+	Name: "resolve_food_id_by_name",
 	Annotations: &mcp.ToolAnnotations{
 		ReadOnlyHint:   true,
 		IdempotentHint: true,
-		Title:          "Check food by name",
+		Title:          "Search foods by name variants",
 	},
+	Description: `Search for existing foods in the database using multiple name variations to find the best matches.
+
+This tool allows you to provide 1-5 different name variants (e.g., "банан", "желтый банан", "banana") and returns all matching foods ranked by relevance. Each result includes the food ID, exact name, serving information, and match count.
+
+Key features:
+- Accepts 1-5 name variants for flexible searching
+- Returns results ranked by match count (how many variants found each food)
+- Includes food ID, exact database name, serving_name, and match_count for each result
+- Performs fuzzy matching - finds foods containing any of the search terms
+- Deduplicates results automatically while tracking match frequency
+- Returns empty list (not error) when no foods are found
+
+Perfect for:
+- Finding existing foods before logging consumption
+- Resolving ambiguous food names with multiple variants
+- Getting food IDs for use in other tools like log_food_by_id
+- Checking what foods exist in the database
+
+This is a read-only search tool that doesn't modify any data.`,
 }
 
 // ResolveFoodIdByName is the MCP handler for finding foods by name variants

@@ -13,12 +13,38 @@ import (
 )
 
 var LogCustomFoodMCPDefinition = mcp.Tool{
-	Name:        "log_custom_food",
-	Description: "Log food consumption with direct nutrient specification, to add unspecified food consumption without adding food into database",
+	Name: "log_custom_food",
 	Annotations: &mcp.ToolAnnotations{
 		DestructiveHint: util.Ptr(true),
-		Title:           "Add unspecified consumed food",
+		Title:           "Log custom food with direct nutrition values",
 	},
+	Description: `Log food consumption with direct nutritional values without adding the food to the database.
+
+This tool is perfect for one-time food entries or unknown foods where you know the nutritional content but don't want to permanently add the food to the database. You provide the food name and exact nutritional values.
+
+Required input:
+- product_name: Name/description of the food being consumed
+- amount_g: Amount consumed in grams (must be positive)
+- calories: Total calories per 100g (must be non-negative)
+- protein_g: Protein content per 100g in grams (must be non-negative)
+- total_fat_g: Total fat content per 100g in grams (must be non-negative)
+- carbohydrates_g: Total carbohydrates per 100g in grams (must be non-negative)
+
+Optional input:
+- caffeine_mg: Caffeine content per 100g in milligrams (for coffee, tea, energy drinks)
+- ethyl_alcohol_g: Alcohol content per 100g in grams (for alcoholic beverages)
+- meal_type: breakfast/lunch/dinner/snack categorization
+- consumed_at: specific timestamp (defaults to current time)
+- note: any additional notes about this consumption
+
+Perfect for:
+- Restaurant meals or homemade dishes with known nutrition facts
+- One-time foods you'll never log again
+- Foods not worth adding to the permanent database
+- Quick logging when you have nutrition label information
+- Travel situations with unfamiliar local foods
+
+The tool calculates proportional nutrition based on the actual amount consumed and creates a consumption log entry without storing the food permanently.`,
 }
 
 // LogCustomFood is the MCP handler for logging custom food with direct nutrients

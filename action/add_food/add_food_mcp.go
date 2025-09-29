@@ -13,13 +13,24 @@ import (
 )
 
 var MCPDefinition = mcp.Tool{
-	Name:        "add_food",
-	Description: "Add a new food item to the database with nutritional information",
+	Name: "add_food",
 	Annotations: &mcp.ToolAnnotations{
 		DestructiveHint: util.Ptr(true),
 		IdempotentHint:  false,
 		Title:           "Add new food item",
 	},
+	Description: `Add a new food item to the database with complete nutritional information.
+
+This tool creates a new food entry with name, food_type (component/product/dish), and nutritional data. Required fields are 'name' and 'food_type'. Optional fields include description, barcode, serving information, and detailed nutrients.
+
+Key features:
+- Supports both basic nutrients (calories, protein, fat, carbs) and detailed micronutrients
+- Handles food composition for recipes (list of ingredient foods with amounts)
+- Automatically calculates nutrients from composition if not provided directly
+- Validates against duplicates by name and barcode
+- Returns the new food ID and success message
+
+Use this when you need to add a completely new food item that doesn't exist in the database yet.`,
 }
 
 type AddFoodInput struct {

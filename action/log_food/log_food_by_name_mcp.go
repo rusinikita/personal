@@ -10,11 +10,41 @@ import (
 	"personal/action/find_food"
 	"personal/domain"
 	"personal/gateways"
+	"personal/util"
 )
 
 var LogFoodByNameMCPDefinition = mcp.Tool{
-	Name:        "log_food_by_name",
-	Description: "Search food by name and log consumption",
+	Name: "log_food_by_name",
+	Annotations: &mcp.ToolAnnotations{
+		DestructiveHint: util.Ptr(true),
+		Title:           "Search and log food consumption by name",
+	},
+	Description: `Search for a food by name and immediately log its consumption in one convenient step.
+
+This tool combines food search and consumption logging into a single operation. You provide a food name, and the tool searches the database, handles the results, and creates a consumption log entry.
+
+Required input:
+- name: The food name to search for (e.g., "банан", "chicken breast")
+- Either amount_g (grams) OR serving_count (number of servings) - never both
+
+Optional input:
+- meal_type: breakfast/lunch/dinner/snack categorization
+- consumed_at: specific timestamp (defaults to current time)
+- note: any additional notes about this consumption
+
+Smart behavior:
+- If exactly 1 food found: automatically logs consumption
+- If 0 foods found: returns "food not found" error
+- If multiple foods found: returns up to 2 suggestions with IDs and names for you to choose from
+
+The tool automatically calculates nutritional values and records the consumption with all relevant data.
+
+Use this tool when:
+- You want to quickly log food without knowing the exact ID
+- You're confident about the food name (single expected match)
+- You want the convenience of search + log in one step
+
+For ambiguous names, use resolve_food_id_by_name first, then log_food_by_id for precision.`,
 }
 
 // LogFoodByName is the MCP handler for logging food consumption by name search

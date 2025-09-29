@@ -13,12 +13,37 @@ import (
 )
 
 var LogFoodByBarcodeMCPDefinition = mcp.Tool{
-	Name:        "log_food_by_barcode",
-	Description: "Find food by barcode and log consumption",
+	Name: "log_food_by_barcode",
 	Annotations: &mcp.ToolAnnotations{
 		DestructiveHint: util.Ptr(true),
-		Title:           "Add consumed food by barcode",
+		Title:           "Log food consumption by barcode scan",
 	},
+	Description: `Find a food product by its barcode (UPC/EAN) and log its consumption.
+
+This tool is perfect for logging packaged food products that have barcodes. Simply scan or enter the barcode, and the tool will find the exact product in the database and log your consumption.
+
+Required input:
+- barcode: The product barcode (UPC, EAN-13, EAN-8, etc.)
+- Either amount_g (grams) OR serving_count (number of servings) - never both
+
+Optional input:
+- meal_type: breakfast/lunch/dinner/snack categorization
+- consumed_at: specific timestamp (defaults to current time)
+- note: any additional notes about this consumption
+
+The tool:
+- Searches for foods with matching barcode in the database
+- Returns "food not found" error if no product with that barcode exists
+- Automatically logs consumption with calculated nutritional values
+- Uses the product's serving size information for accurate nutrition calculation
+
+Perfect for:
+- Logging packaged foods, snacks, drinks with barcodes
+- Quick and precise product identification without name ambiguity
+- Mobile apps with barcode scanning functionality
+- Ensuring exact product match (brand, variant, size specific)
+
+This creates a permanent consumption log entry linked to the specific product.`,
 }
 
 // LogFoodByBarcode is the MCP handler for logging food consumption by barcode search

@@ -13,12 +13,36 @@ import (
 )
 
 var LogFoodByIdMCPDefinition = mcp.Tool{
-	Name:        "log_food_by_id",
-	Description: "Log food consumption by known food ID",
+	Name: "log_food_by_id",
 	Annotations: &mcp.ToolAnnotations{
 		DestructiveHint: util.Ptr(true),
-		Title:           "Add consumed food by id",
+		Title:           "Log food consumption by database ID",
 	},
+	Description: `Log food consumption using a known food database ID for precise tracking.
+
+This tool records a consumption entry when you already know the exact food_id from the database. It's the most precise way to log food consumption as it directly references an existing food without any ambiguity.
+
+Required input:
+- food_id: The exact database ID of the food to log
+- Either amount_g (grams) OR serving_count (number of servings) - never both
+
+Optional input:
+- meal_type: breakfast/lunch/dinner/snack categorization
+- consumed_at: specific timestamp (defaults to current time)
+- note: any additional notes about this consumption
+
+The tool automatically:
+- Validates the food exists in the database
+- Calculates nutritional values proportionally based on amount
+- Converts serving_count to grams using the food's serving_size_g
+- Records consumption with calculated nutrients for tracking
+
+Use this tool when:
+- You have the exact food_id from resolve_food_id_by_name results
+- You want precise logging without name ambiguity
+- You're building automated food logging workflows
+
+This creates a permanent consumption log entry in the database.`,
 }
 
 // LogFoodById is the MCP handler for logging food consumption by ID

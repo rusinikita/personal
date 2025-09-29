@@ -12,16 +12,44 @@ import (
 	"personal/gateways"
 )
 
+const instructions = `Personal food tracking and nutrition logging system for comprehensive dietary monitoring.
+
+This MCP server provides tools for managing a personal food database and logging consumption for nutrition tracking. The system is designed to help track what you eat, when you eat it, and calculate nutritional intake.
+
+## Core Workflow:
+
+1. **Food Management:**
+   - Use 'add_food' to create new food entries with complete nutritional information
+   - Foods can be basic ingredients, packaged products, or complex recipes/dishes
+
+2. **Food Discovery:**
+   - Use 'resolve_food_id_by_name' to search existing foods with multiple name variants
+   - Get ranked results with exact food IDs for precise logging
+
+3. **Consumption Logging:**
+   - Use 'log_food_by_id' for precise logging when you have the exact food ID
+   - Use 'log_food_by_barcode' for packaged products with barcodes
+   - Use 'log_custom_food' for one-time entries without saving to database
+
+## Best Practices:
+
+- Search first with 'resolve_food_id_by_name' for ambiguous food names
+- Use 'log_food_by_id' after search for most accurate logging
+- Add foods to database with 'add_food' for frequently consumed items
+- Use 'log_custom_food' for restaurant meals or temporary entries
+
+All consumption logs include calculated nutrition values, timestamps, and optional meal categorization for comprehensive dietary tracking.`
+
 func Server(db gateways.DB) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "personal", Title: "Nikita personal food and activities logging", Version: "v1.0.0"},
 		&mcp.ServerOptions{
-			Instructions: "",
-			HasPrompts:   true,
-			// HasResources:                true,
+			HasPrompts:        true,
 			HasTools:          true,
 			CompletionHandler: completionHandler,
-		})
+			Instructions:      instructions,
+		},
+	)
 
 	server.AddReceivingMiddleware(func(handler mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (result mcp.Result, err error) {
@@ -53,6 +81,7 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &add_food.MCPDefinition, add_food.AddFood)
 	mcp.AddTool(server, &find_food.ResolveFoodIdByNameMCPDefinition, find_food.ResolveFoodIdByName)
 	mcp.AddTool(server, &log_food.LogFoodByIdMCPDefinition, log_food.LogFoodById)
+	mcp.AddTool(server, &log_food.LogFoodByNameMCPDefinition, log_food.LogFoodByName)
 	mcp.AddTool(server, &log_food.LogFoodByBarcodeMCPDefinition, log_food.LogFoodByBarcode)
 	mcp.AddTool(server, &log_food.LogCustomFoodMCPDefinition, log_food.LogCustomFood)
 
