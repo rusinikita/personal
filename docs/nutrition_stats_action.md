@@ -6,7 +6,7 @@
 2. **Input data**: Нет параметров (используется DEFAULT_USER_ID = 1)
 3. **External API**: Только PostgreSQL база данных
 4. **Data format**: JSON для выходных данных
-5. **Timezone**: Asia/Nicosia (Кипр)
+5. **Timezone**: UTC (универсальный часовой пояс, не зависит от локации пользователя)
 6. **Relations**: Работает с существующей таблицей consumption_log
 
 **Core functionality:**
@@ -15,8 +15,9 @@
   2. **last_4_days** - статистика за последние 4 дня (поза-позавчера, позавчера, вчера, сегодня), только те дни, где есть данные
 - Каждая статистика содержит: калории, БЖУ, общий вес в граммах
 - Использует GROUP BY для агрегации дневной статистики в SQL
-- Временные расчеты в timezone Asia/Nicosia
+- Временные расчеты в UTC timezone
 - last_4_days содержит только дни с данными (от 0 до 4 элементов)
+- Repository работает только с UTC, не имеет знаний о часовых поясах
 
 ## Implementation
 
@@ -53,9 +54,8 @@ const (
 
 type NutritionStatsFilter struct {
     UserID      int64                `db:"user_id"`
-    From        time.Time            `db:"from"`          // Начало временного окна
-    To          time.Time            `db:"to"`            // Конец временного окна
-    Timezone    *time.Location       `db:"-"`             // Для корректной работы GROUP BY date
+    From        time.Time            `db:"from"`          // Начало временного окна (в UTC)
+    To          time.Time            `db:"to"`            // Конец временного окна (в UTC)
     Aggregation AggregationType      `db:"-"`             // Тип агрегации
 }
 
@@ -82,10 +82,10 @@ type DB interface {
   - Возвращает массив с одним агрегированным объектом (или пустой массив)
   - period_start = filter.From, period_end = filter.To
 - Если filter.Aggregation == "by_day":
-  - GROUP BY DATE(consumed_at AT TIME ZONE filter.Timezone)
+  - GROUP BY date_trunc('day', consumed_at) - все расчеты в UTC
   - ORDER BY date ASC
   - Возвращает массив объектов (0-N элементов, только дни с данными)
-  - period_start = начало дня (00:00:00), period_end = конец дня (23:59:59)
+  - period_start = начало дня UTC (00:00:00), period_end = конец дня UTC (23:59:59)
 
 ```mermaid
 erDiagram
@@ -124,7 +124,7 @@ type GetNutritionStatsOutput struct {
 
 **Internal logic:**
 
-1. Загрузить timezone location для Asia/Nicosia
+1. Загрузить timezone location для Asia/Nicosia (для отображения пользователю)
 2. Получить текущее время в этой timezone
 3. **Last meal calculation:**
    - Вызвать repository.GetLastConsumptionTime(ctx, DEFAULT_USER_ID)
@@ -145,12 +145,13 @@ type GetNutritionStatsOutput struct {
        UserID: DEFAULT_USER_ID,
        From: startDate at 00:00:00,
        To: currentDate at 23:59:59,
-       Timezone: Asia/Nicosia location,
        Aggregation: AggregationTypeByDay,
      }
    - Вызвать repository.GetNutritionStats(ctx, filter)
    - Вернуть массив как есть (от 0 до 4 элементов с данными)
 5. Вернуть GetNutritionStatsOutput с last_meal и last_4_days
+
+**Важно:** Action знает про timezone Asia/Nicosia и использует его для расчета границ дней для пользователя, но Repository работает только с UTC и не имеет знаний о часовых поясах.
 
 ## E2E Tests
 
@@ -162,8 +163,9 @@ type GetNutritionStatsOutput struct {
 
 ### TestGetNutritionStats_Success
 - **Test Data:**
-    - Генератор создает random количество записей (5-15) за последние 3 дня (позавчера, вчера, сегодня)
+    - Генератор создает random количество записей (5-15) за последние 3 дня (позавчера, вчера, сегодня) в UTC
     - Для каждой записи: random время внутри дня, random nutrients и amount_g
+    - Для уникальности: timestamp'ы отслеживаются в map, при коллизии добавляется 1 микросекунда
     - Генератор параллельно вычисляет ожидаемые агрегации:
         - expected_last_meal: сумма записей за час ДО последней записи (включая последнюю)
         - expected_last_4_days: массив из 3 элементов с суммами по дням
@@ -177,6 +179,7 @@ type GetNutritionStatsOutput struct {
     - last_4_days содержит ровно 3 элемента
     - Каждый элемент last_4_days совпадает с соответствующим expected_last_4_days элементом
     - Порядок элементов chronological (oldest to newest)
+    - Все timestamp сравнения используют time.Equal() для корректного сравнения независимо от timezone
 
 ### TestGetNutritionStats_EmptyDatabase
 - **Setup:** Пустая таблица consumption_log
@@ -184,9 +187,9 @@ type GetNutritionStatsOutput struct {
 - **Expected:** last_meal с нулевыми значениями, last_4_days = пустой массив
 
 ### TestGetNutritionStats_TimezoneBoundaries
-- **Setup:** Создать записи на границах дней (23:59, 00:01) в Asia/Nicosia timezone
+- **Setup:** Создать записи на границах дней (23:59, 00:01) в UTC timezone
 - **Input:** MCP tool call
-- **Expected:** Записи попадают в правильные дневные периоды согласно Asia/Nicosia timezone
+- **Expected:** Записи попадают в правильные дневные периоды согласно UTC timezone (repository работает только с UTC)
 
 **Test Dependencies:**
 ```go

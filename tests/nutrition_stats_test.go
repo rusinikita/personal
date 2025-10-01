@@ -23,12 +23,11 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 		_ = s.Repo().DeleteConsumptionLog(ctx, userID, log.ConsumedAt)
 	}
 
-	// Load timezone for test
-	location, err := time.LoadLocation("Asia/Nicosia")
-	require.NoError(s.T(), err)
+	// Use UTC timezone
+	location := time.UTC
 
-	// Get current time in Asia/Nicosia timezone
-	now := time.Now().In(location)
+	// Get current time in UTC
+	now := time.Now().UTC()
 
 	// Define 3 test days: day before yesterday, yesterday, today
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
@@ -44,21 +43,30 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 	expectedByDay := make(map[string]*domain.NutritionStats)
 	var allRecords []*domain.ConsumptionLog
 	var lastRecordTime time.Time
+	usedTimestamps := make(map[time.Time]bool)
 
 	// Generate at least one record per day to ensure all 3 days are represented
 	for _, day := range days {
-		// Random time within the day (but ensure it's before "now" for today)
+		// Generate random time within the day
 		var consumedAt time.Time
 		if day.Equal(today) {
-			// For today, use current time minus random hours
-			hoursAgo := rng.Intn(12) + 1 // 1-12 hours ago
-			consumedAt = now.Add(-time.Duration(hoursAgo) * time.Hour)
+			// For today, ensure time is before now
+			maxHour := now.Hour()
+			if maxHour == 0 {
+				maxHour = 1 // Avoid division by zero
+			}
+			hour := rng.Intn(maxHour)
+			minute := rng.Intn(60)
+			second := rng.Intn(60)
+			ns := rng.Intn(1000000000)
+			consumedAt = time.Date(day.Year(), day.Month(), day.Day(), hour, minute, second, ns, location)
 		} else {
-			// For past days, use random time within the day
+			// For past days, use any time within the day
 			hour := rng.Intn(24)
 			minute := rng.Intn(60)
 			second := rng.Intn(60)
-			consumedAt = time.Date(day.Year(), day.Month(), day.Day(), hour, minute, second, 0, location)
+			ns := rng.Intn(1000000000)
+			consumedAt = time.Date(day.Year(), day.Month(), day.Day(), hour, minute, second, ns, location)
 		}
 
 		// Random nutrients and amount
@@ -67,6 +75,12 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 		fat := rng.Float64() * 30        // 0-30g fat
 		carbs := rng.Float64() * 100     // 0-100g carbs
 		weight := rng.Float64()*200 + 50 // 50-250g weight
+
+		// Ensure timestamp is unique
+		for usedTimestamps[consumedAt] {
+			consumedAt = consumedAt.Add(time.Microsecond)
+		}
+		usedTimestamps[consumedAt] = true
 
 		record := &domain.ConsumptionLog{
 			UserID:     userID,
@@ -110,11 +124,18 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 		// Pick random day
 		day := days[rng.Intn(len(days))]
 
-		// Random time within the day
+		// Generate random time within the day
 		var consumedAt time.Time
 		if day.Equal(today) {
-			hoursAgo := rng.Intn(12) + 1
-			consumedAt = now.Add(-time.Duration(hoursAgo) * time.Hour)
+			// For today, ensure time is before now
+			maxHour := now.Hour()
+			if maxHour == 0 {
+				maxHour = 1
+			}
+			hour := rng.Intn(maxHour)
+			minute := rng.Intn(60)
+			second := rng.Intn(60)
+			consumedAt = time.Date(day.Year(), day.Month(), day.Day(), hour, minute, second, 0, location)
 		} else {
 			hour := rng.Intn(24)
 			minute := rng.Intn(60)
@@ -128,6 +149,12 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 		fat := rng.Float64() * 30        // 0-30g fat
 		carbs := rng.Float64() * 100     // 0-100g carbs
 		weight := rng.Float64()*200 + 50 // 50-250g weight
+
+		// Ensure timestamp is unique
+		for usedTimestamps[consumedAt] {
+			consumedAt = consumedAt.Add(time.Microsecond)
+		}
+		usedTimestamps[consumedAt] = true
 
 		record := &domain.ConsumptionLog{
 			UserID:     userID,
@@ -221,8 +248,8 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 	require.Len(s.T(), output.Last4Days, len(expectedLast4Days))
 	for i, expected := range expectedLast4Days {
 		actual := output.Last4Days[i]
-		assert.Equal(s.T(), expected.PeriodStart, actual.PeriodStart)
-		assert.Equal(s.T(), expected.PeriodEnd, actual.PeriodEnd)
+		assert.True(s.T(), expected.PeriodStart.Equal(actual.PeriodStart), "PeriodStart mismatch: expected %v, got %v", expected.PeriodStart, actual.PeriodStart)
+		assert.True(s.T(), expected.PeriodEnd.Equal(actual.PeriodEnd), "PeriodEnd mismatch: expected %v, got %v", expected.PeriodEnd, actual.PeriodEnd)
 		assert.InDelta(s.T(), expected.TotalCalories, actual.TotalCalories, 0.01)
 		assert.InDelta(s.T(), expected.TotalProtein, actual.TotalProtein, 0.01)
 		assert.InDelta(s.T(), expected.TotalFat, actual.TotalFat, 0.01)
@@ -262,12 +289,11 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_TimezoneBoundaries() {
 		_ = s.Repo().DeleteConsumptionLog(ctx, userID, log.ConsumedAt)
 	}
 
-	// Load timezone
-	location, err := time.LoadLocation("Asia/Nicosia")
-	require.NoError(s.T(), err)
+	// Use UTC timezone
+	location := time.UTC
 
-	// Get current date and time in Asia/Nicosia
-	now := time.Now().In(location)
+	// Get current date and time in UTC
+	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	yesterday := today.AddDate(0, 0, -1)
 
