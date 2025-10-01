@@ -117,29 +117,25 @@ Implementation plan consists of:
 
 In each development session, the AI agent MUST follow these instructions. NO EXCEPTIONS.
 
-### Stage 1: Create or Find Feature Document
+### Stage 1: Planning and Working on Feature Document
 
 Agent should find or create a new feature document in the docs folder.
 One document per action. Each action can contain different handlers.
 
 Document name format: `{name}_action`
 
-Ask USER for APPROVAL or change request. Continue to next step ONLY AFTER EXPLICIT APPROVAL. NO EXCEPTIONS.
-
-### Stage 2: Planning and Working on Document
-
-Write implementation plan and discuss it with the user to make it optimal. Agent MUST NOT EDIT OR WRITE code files. Agent can write or update ONLY the feature document.
+Write requirements, implementation plan and discuss it with the user to make it optimal. Agent MUST NOT EDIT OR WRITE code files. Agent can write or update ONLY the feature document.
 Ask USER for APPROVAL or change request. Continue to next step ONLY AFTER EXPLICIT APPROVAL. NO EXCEPTIONS.
 
 Agent should write collected data using SHORT, UNDERSTANDABLE style.
 IF feature document already exists - agent MUST edit it with newly appeared requirements.
 
-### Stage 3: E2E Tests Implementation
+### Stage 2: E2E Tests Implementation
 
 Write tests. Agent MUST NOT EDIT OR WRITE regular files, ONLY TESTS. Do not run tests, comment code if it does not compile.
 
 Ask USER for APPROVAL or change request. Continue to next step ONLY AFTER EXPLICIT APPROVAL. NO EXCEPTIONS.
 
-### Stage 4: Feature Implementation
+### Stage 3: Feature Implementation
 
 Only after Stage 3 approval can the agent write and edit any project files to make the feature work.

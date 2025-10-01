@@ -97,7 +97,6 @@ func GetNutritionStats(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) 
 		UserID:      DEFAULT_USER_ID,
 		From:        startDate,
 		To:          time.Date(today.Year(), today.Month(), today.Day(), 23, 59, 59, 0, location),
-		Timezone:    location,
 		Aggregation: domain.AggregationTypeByDay,
 	}
 

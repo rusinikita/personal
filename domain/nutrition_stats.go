@@ -15,7 +15,6 @@ type NutritionStatsFilter struct {
 	UserID      int64           // User ID to filter by
 	From        time.Time       // Start of time window
 	To          time.Time       // End of time window
-	Timezone    *time.Location  // Timezone for correct GROUP BY date
 	Aggregation AggregationType // Type of aggregation
 }
 

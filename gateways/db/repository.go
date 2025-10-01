@@ -316,100 +316,77 @@ func (r *repository) GetLastConsumptionTime(ctx context.Context, userID int64) (
 }
 
 func (r *repository) GetNutritionStats(ctx context.Context, filter domain.NutritionStatsFilter) ([]domain.NutritionStats, error) {
+	// Build query using squirrel
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	// Base SELECT with aggregations
+	selectBuilder := psql.Select(
+		"COALESCE(SUM((nutrients->>'calories')::numeric), 0) as total_calories",
+		"COALESCE(SUM((nutrients->>'protein_g')::numeric), 0) as total_protein",
+		"COALESCE(SUM((nutrients->>'total_fat_g')::numeric), 0) as total_fat",
+		"COALESCE(SUM((nutrients->>'carbohydrates_g')::numeric), 0) as total_carbs",
+		"COALESCE(SUM(amount_g), 0) as total_weight",
+	).From("consumption_log").
+		Where(squirrel.Eq{"user_id": filter.UserID}).
+		Where(squirrel.GtOrEq{"consumed_at": filter.From}).
+		Where(squirrel.LtOrEq{"consumed_at": filter.To})
+
+	// Add aggregation-specific columns
 	switch filter.Aggregation {
 	case domain.AggregationTypeTotal:
-		return r.getNutritionStatsTotal(ctx, filter)
+		// For total: return filter time range as period_start
+		selectBuilder = selectBuilder.
+			Column(squirrel.Expr("min(consumed_at) as period_start")).
+			Column(squirrel.Expr("max(consumed_at) as period_end"))
+
 	case domain.AggregationTypeByDay:
-		return r.getNutritionStatsByDay(ctx, filter)
+		// For by_day: return start of each day as period_start, then group and sort
+		selectBuilder = selectBuilder.
+			Column(squirrel.Expr("date_trunc('day', consumed_at) as period_start")).
+			Column(squirrel.Expr("(date_trunc('day', consumed_at) + (INTERVAL '1 day' - INTERVAL '1 second')) as period_end")).
+			GroupBy("period_start", "period_end").
+			OrderBy("period_start ASC")
+
 	default:
 		return nil, fmt.Errorf("unknown aggregation type: %s", filter.Aggregation)
 	}
-}
 
-func (r *repository) getNutritionStatsTotal(ctx context.Context, filter domain.NutritionStatsFilter) ([]domain.NutritionStats, error) {
-	query := `
-		SELECT
-			$2::timestamptz as period_start,
-			$3::timestamptz as period_end,
-			COALESCE(SUM((nutrients->>'calories')::numeric), 0) as total_calories,
-			COALESCE(SUM((nutrients->>'protein_g')::numeric), 0) as total_protein,
-			COALESCE(SUM((nutrients->>'total_fat_g')::numeric), 0) as total_fat,
-			COALESCE(SUM((nutrients->>'carbohydrates_g')::numeric), 0) as total_carbs,
-			COALESCE(SUM(amount_g), 0) as total_weight
-		FROM consumption_log
-		WHERE user_id = $1
-		  AND consumed_at >= $2
-		  AND consumed_at <= $3`
-
-	var stats domain.NutritionStats
-	err := r.db.QueryRow(ctx, query, filter.UserID, filter.From, filter.To).Scan(
-		&stats.PeriodStart,
-		&stats.PeriodEnd,
-		&stats.TotalCalories,
-		&stats.TotalProtein,
-		&stats.TotalFat,
-		&stats.TotalCarbs,
-		&stats.TotalWeight,
-	)
+	// Generate SQL
+	query, args, err := selectBuilder.ToSql()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build SQL query: %w", err)
 	}
 
-	// Return empty array if no data
-	if stats.TotalCalories == 0 && stats.TotalProtein == 0 && stats.TotalFat == 0 &&
-		stats.TotalCarbs == 0 && stats.TotalWeight == 0 {
-		return []domain.NutritionStats{}, nil
-	}
-
-	return []domain.NutritionStats{stats}, nil
-}
-
-func (r *repository) getNutritionStatsByDay(ctx context.Context, filter domain.NutritionStatsFilter) ([]domain.NutritionStats, error) {
-	if filter.Timezone == nil {
-		return nil, fmt.Errorf("timezone is required for by_day aggregation")
-	}
-
-	query := `
-		SELECT
-			date_trunc('day', consumed_at AT TIME ZONE $4)::date as day,
-			COALESCE(SUM((nutrients->>'calories')::numeric), 0) as total_calories,
-			COALESCE(SUM((nutrients->>'protein_g')::numeric), 0) as total_protein,
-			COALESCE(SUM((nutrients->>'total_fat_g')::numeric), 0) as total_fat,
-			COALESCE(SUM((nutrients->>'carbohydrates_g')::numeric), 0) as total_carbs,
-			COALESCE(SUM(amount_g), 0) as total_weight
-		FROM consumption_log
-		WHERE user_id = $1
-		  AND consumed_at >= $2
-		  AND consumed_at <= $3
-		GROUP BY day
-		ORDER BY day ASC`
-
-	rows, err := r.db.Query(ctx, query, filter.UserID, filter.From, filter.To, filter.Timezone.String())
+	// Execute query
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to execute SQL query: %w", err)
 	}
 	defer rows.Close()
 
+	// Parse results
 	var results []domain.NutritionStats
 	for rows.Next() {
-		var dayDate time.Time
 		var stats domain.NutritionStats
 
 		err := rows.Scan(
-			&dayDate,
 			&stats.TotalCalories,
 			&stats.TotalProtein,
 			&stats.TotalFat,
 			&stats.TotalCarbs,
 			&stats.TotalWeight,
+			&stats.PeriodStart,
+			&stats.PeriodEnd,
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
 
-		// Set period start and end for the day in the specified timezone
-		stats.PeriodStart = time.Date(dayDate.Year(), dayDate.Month(), dayDate.Day(), 0, 0, 0, 0, filter.Timezone)
-		stats.PeriodEnd = time.Date(dayDate.Year(), dayDate.Month(), dayDate.Day(), 23, 59, 59, 0, filter.Timezone)
+		// Skip empty results (all zeros)
+		if stats.TotalCalories == 0 && stats.TotalProtein == 0 && stats.TotalFat == 0 &&
+			stats.TotalCarbs == 0 && stats.TotalWeight == 0 {
+			continue
+		}
 
 		results = append(results, stats)
 	}
