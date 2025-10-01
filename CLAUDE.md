@@ -119,23 +119,75 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 
 ### Stage 1: Planning and Working on Feature Document
 
-Agent should find or create a new feature document in the docs folder.
-One document per action. Each action can contain different handlers.
+**What agent MUST do:**
+- Find existing or create NEW feature document in `docs/` folder
+- Document name format: `docs/{name}_action.md` (MUST include .md extension)
+- One document per action (each action can contain different handlers: HTTP, bot, MCP tool, worker)
+- Write requirements section by asking user for complete information
+- Write E2E tests section with test scenarios
+- Write implementation section with domain structures, database schemas, handler specifications
+- Use SHORT, UNDERSTANDABLE style in all sections
+- If feature document already exists - agent MUST EDIT it to add newly appeared requirements
 
-Document name format: `{name}_action`
+**What agent MUST NOT do:**
+- NEVER write or edit ANY .go files (including test files)
+- NEVER write or edit ANY code files in ANY programming language
+- NEVER create any files outside docs/ folder
+- NEVER proceed to Stage 2 without explicit user approval
 
-Write requirements, implementation plan and discuss it with the user to make it optimal. Agent MUST NOT EDIT OR WRITE code files. Agent can write or update ONLY the feature document.
-Ask USER for APPROVAL or change request. Continue to next step ONLY AFTER EXPLICIT APPROVAL. NO EXCEPTIONS.
+**Communication rules:**
+- Ask user for missing information via TODO comments inside feature document
+- Ask user for missing information via chat if needed
+- After completing feature document, ask user in chat: "Feature document ready. Please review and provide APPROVAL or change request."
+- Agent can iterate multiple times on feature document based on user feedback
+- Continue to Stage 2 ONLY after user explicitly says "APPROVED" or "proceed to stage 2" or similar explicit approval
 
-Agent should write collected data using SHORT, UNDERSTANDABLE style.
-IF feature document already exists - agent MUST edit it with newly appeared requirements.
+**Stage 1 deliverable:** Complete feature document with all sections filled (Requirements, E2E Tests, Implementation)
 
 ### Stage 2: E2E Tests Implementation
 
-Write tests. Agent MUST NOT EDIT OR WRITE regular files, ONLY TESTS. Do not run tests, comment code if it does not compile.
+**What agent MUST do:**
+- Write or modify ONLY test files in `tests/` package
+- Test files MUST have `_test.go` suffix
+- Follow E2E test scenarios from feature document
+- If test requires non-existent repository method or handler, leave TODO comment like: `// TODO: implement Repository.GetNutritionLog method`
+- If test code doesn't compile due to missing implementation, COMMENT OUT the test code and leave explanation comment
+- NEVER fix compilation errors by creating stubs in non-test files
 
-Ask USER for APPROVAL or change request. Continue to next step ONLY AFTER EXPLICIT APPROVAL. NO EXCEPTIONS.
+**What agent MUST NOT do:**
+- NEVER edit or create ANY .go files outside tests/ folder
+- NEVER edit or create implementation files (actions/, domain/, gateways/, common/)
+- NEVER create stub implementations to make tests compile
+- NEVER run the tests (compilation check is optional but not required)
+- NEVER proceed to Stage 3 without explicit user approval
+
+**Communication rules:**
+- After completing test implementation, ask user in chat: "E2E tests written. Please review and provide APPROVAL or change request."
+- Continue to Stage 3 ONLY after user explicitly says "APPROVED" or "proceed to stage 3" or similar explicit approval
+
+**Stage 2 deliverable:** E2E test files in tests/ package (may have commented code or TODO comments for missing implementations)
 
 ### Stage 3: Feature Implementation
 
-Only after Stage 3 approval can the agent write and edit any project files to make the feature work.
+**What agent MUST do:**
+- Implement feature according to feature document plan
+- Edit or create ANY .go files as needed to complete the feature
+- Uncomment test code from Stage 2
+- Implement missing methods referenced in tests
+- Run `make build` to check compilation (NEVER use `go build` directly)
+- Run `make tests` to verify tests pass (NEVER use `go test` directly)
+- Fix any build or test failures
+- Follow project architecture from docs/architecture.md
+- Use existing patterns from codebase
+
+**What agent MUST NOT do:**
+- NEVER run `go build` commands directly - always use `make build`
+- NEVER run `go test` commands directly - always use `make tests`
+
+**What agent CAN do:**
+- Create new files if absolutely necessary
+- Edit existing files
+- Refactor code if needed for feature
+- Iterate on implementation until all tests pass
+
+**Stage 3 deliverable:** Working, tested feature implementation with all E2E tests passing
