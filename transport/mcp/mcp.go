@@ -10,6 +10,7 @@ import (
 	"personal/action/find_food"
 	"personal/action/log_food"
 	"personal/action/nutrition_stats"
+	"personal/action/top_products"
 	"personal/gateways"
 )
 
@@ -26,18 +27,43 @@ This MCP server provides tools for managing a personal food database and logging
 2. **Food Discovery:**
    - Use 'resolve_food_id_by_name' to search existing foods with multiple name variants
    - Get ranked results with exact food IDs for precise logging
+   - Use 'get_top_products' to see your 30 most frequently logged products from last 3 months
 
 3. **Consumption Logging:**
    - Use 'log_food_by_id' for precise logging when you have the exact food ID
    - Use 'log_food_by_barcode' for packaged products with barcodes
+   - Use 'log_food_by_name' for quick logging by name (searches and logs in one step)
    - Use 'log_custom_food' for one-time entries without saving to database
+
+4. **Analytics & Insights:**
+   - Use 'get_nutrition_stats' to view nutrition summary for last meal and last 4 days
+   - Use 'get_top_products' to identify your most frequently logged foods
+
+## Optimal User Experience Strategy:
+
+**For Quick Logging (Recommended):**
+1. Start with 'get_top_products' to see your frequently logged items
+2. Use 'log_food_by_id' with IDs from top products for instant logging
+3. This avoids search and provides fastest logging experience
+
+**For New or Less Common Foods:**
+1. Search with 'resolve_food_id_by_name' to find the exact food
+2. Use 'log_food_by_id' with the returned food_id
+3. Add to database with 'add_food' if you'll log it frequently
+
+**For Analytics:**
+- Check 'get_nutrition_stats' after meals to track daily nutrition intake
+- Review 'get_top_products' weekly to understand eating patterns
 
 ## Best Practices:
 
+- Start sessions by calling 'get_top_products' to see frequently logged foods
+- Use 'log_food_by_id' for fastest and most accurate logging
 - Search first with 'resolve_food_id_by_name' for ambiguous food names
-- Use 'log_food_by_id' after search for most accurate logging
 - Add foods to database with 'add_food' for frequently consumed items
 - Use 'log_custom_food' for restaurant meals or temporary entries
+- After successful logging, ALWAYS ask user if they want to see nutrition statistics
+- If user agrees, call 'get_nutrition_stats' to show current nutrition summary
 
 All consumption logs include calculated nutrition values, timestamps, and optional meal categorization for comprehensive dietary tracking.`
 
@@ -86,6 +112,7 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &log_food.LogFoodByBarcodeMCPDefinition, log_food.LogFoodByBarcode)
 	mcp.AddTool(server, &log_food.LogCustomFoodMCPDefinition, log_food.LogCustomFood)
 	mcp.AddTool(server, &nutrition_stats.GetNutritionStatsMCPDefinition, nutrition_stats.GetNutritionStats)
+	mcp.AddTool(server, &top_products.GetTopProductsMCPDefinition, top_products.GetTopProducts)
 
 	return server
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"personal/action/top_products"
 	"personal/domain"
 	"personal/util"
 )
@@ -22,9 +23,6 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 	for _, log := range existingLogs {
 		_ = s.Repo().DeleteConsumptionLog(ctx, userID, log.ConsumedAt)
 	}
-
-	// Use UTC timezone
-	location := time.UTC
 
 	// Get current time in UTC
 	now := time.Now().UTC()
@@ -66,12 +64,12 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 	foodRecords := make(map[int64]*domain.Food)
 	for foodID := int64(1); foodID <= 40; foodID++ {
 		food := &domain.Food{
-			ID:          util.Ptr(foodID),
-			Name:        util.Ptr(GenerateRandomFoodName(rng)),
+			ID:          foodID,
+			Name:        GenerateRandomFoodName(rng),
 			Description: nil,
 			Barcode:     nil,
-			FoodType:    util.Ptr("product"),
-			IsArchived:  util.Ptr(false),
+			FoodType:    "product",
+			IsArchived:  false,
 			Nutrients:   GenerateRandomNutrients(rng),
 		}
 
@@ -110,7 +108,7 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 				UserID:     userID,
 				ConsumedAt: consumedAt,
 				FoodID:     util.Ptr(foodID),
-				FoodName:   *foodRecords[foodID].Name,
+				FoodName:   foodRecords[foodID].Name,
 				AmountG:    weight,
 				Nutrients:  GenerateRandomNutrients(rng),
 			}
@@ -143,7 +141,7 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 
 		foodStats = append(foodStats, foodStat{
 			foodID:      foodID,
-			foodName:    *food.Name,
+			foodName:    food.Name,
 			servingName: servingName,
 			logCount:    frequency,
 		})
@@ -163,29 +161,15 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 		expectedTop30 = foodStats[:30]
 	}
 
-	// TODO: Call MCP get_top_products tool handler
-	// _, output, err := top_products.GetTopProducts(s.ContextWithDB(ctx), nil, struct{}{})
-	// require.NoError(s.T(), err)
-
-	// TODO: Verify results once handler is implemented
-	// require.Len(s.T(), output.Products, len(expectedTop30))
-	//
-	// for i, expected := range expectedTop30 {
-	// 	actual := output.Products[i]
-	// 	assert.Equal(s.T(), expected.foodID, actual.FoodID)
-	// 	assert.Equal(s.T(), expected.foodName, actual.FoodName)
-	// 	assert.Equal(s.T(), expected.servingName, actual.ServingName)
-	// 	assert.Equal(s.T(), expected.logCount, actual.LogCount)
-	// }
-
-	// Verify at least that we can call repository method
-	threeMonthsAgo := now.AddDate(0, -3, 0)
-	topProducts, err := s.Repo().GetTopProducts(ctx, userID, threeMonthsAgo, now, 30)
+	// Call MCP get_top_products tool handler
+	_, output, err := top_products.GetTopProducts(s.ContextWithDB(ctx), nil, struct{}{})
 	require.NoError(s.T(), err)
-	require.Len(s.T(), topProducts, len(expectedTop30))
+
+	// Verify results
+	require.Len(s.T(), output.Products, len(expectedTop30))
 
 	for i, expected := range expectedTop30 {
-		actual := topProducts[i]
+		actual := output.Products[i]
 		assert.Equal(s.T(), expected.foodID, actual.FoodID)
 		assert.Equal(s.T(), expected.foodName, actual.FoodName)
 		assert.Equal(s.T(), expected.servingName, actual.ServingName)

@@ -10,7 +10,9 @@ import (
 type DB interface {
 	// Existing methods
 	AddFood(ctx context.Context, food *domain.Food) (int64, error)
+	CreateFood(ctx context.Context, food *domain.Food) error
 	GetFood(ctx context.Context, id int64) (*domain.Food, error)
+	DeleteFood(ctx context.Context, id int64) error
 
 	// New methods for consumption logging
 	AddConsumptionLog(ctx context.Context, log *domain.ConsumptionLog) error
@@ -24,6 +26,9 @@ type DB interface {
 	// Nutrition stats methods
 	GetLastConsumptionTime(ctx context.Context, userID int64) (*time.Time, error)
 	GetNutritionStats(ctx context.Context, filter domain.NutritionStatsFilter) ([]domain.NutritionStats, error)
+
+	// Top products methods
+	GetTopProducts(ctx context.Context, userID int64, from time.Time, to time.Time, limit int) ([]domain.FoodStats, error)
 }
 
 type DBMaintainer interface {

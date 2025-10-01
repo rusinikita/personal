@@ -209,3 +209,11 @@ type ConsumptionLog struct {
 	Note       *string    `json:"note,omitempty" db:"note"`
 	Nutrients  *Nutrients `json:"nutrients,omitempty" db:"nutrients"`
 }
+
+// FoodStats represents statistics about a frequently logged food item
+type FoodStats struct {
+	FoodID      int64  `json:"food_id" db:"food_id"`
+	FoodName    string `json:"food_name" db:"food_name"`
+	ServingName string `json:"serving_name,omitempty" db:"serving_name"`
+	LogCount    int    `json:"log_count" db:"log_count"`
+}

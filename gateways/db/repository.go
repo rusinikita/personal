@@ -70,6 +70,33 @@ func (r *repository) AddFood(ctx context.Context, food *domain.Food) (int64, err
 	return id, err
 }
 
+func (r *repository) CreateFood(ctx context.Context, food *domain.Food) error {
+	query := `
+		INSERT INTO food (id, name, description, barcode, food_type, is_archived,
+		                 serving_size_g, serving_name, nutrients, food_composition,
+		                 created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+
+	now := time.Now()
+
+	_, err := r.db.Exec(ctx, query,
+		food.ID,
+		food.Name,
+		food.Description,
+		food.Barcode,
+		food.FoodType,
+		food.IsArchived,
+		food.ServingSizeG,
+		food.ServingName,
+		food.Nutrients,
+		food.FoodComposition,
+		now,
+		now,
+	)
+
+	return err
+}
+
 func (r *repository) GetFood(ctx context.Context, id int64) (*domain.Food, error) {
 	query := `
 		SELECT id, name, description, barcode, food_type, is_archived,
@@ -295,6 +322,13 @@ func (r *repository) DeleteConsumptionLog(ctx context.Context, userID int64, con
 	return err
 }
 
+func (r *repository) DeleteFood(ctx context.Context, id int64) error {
+	query := `DELETE FROM food WHERE id = $1`
+
+	_, err := r.db.Exec(ctx, query, id)
+	return err
+}
+
 func (r *repository) GetLastConsumptionTime(ctx context.Context, userID int64) (*time.Time, error) {
 	query := `
 		SELECT consumed_at
@@ -388,6 +422,50 @@ func (r *repository) GetNutritionStats(ctx context.Context, filter domain.Nutrit
 			continue
 		}
 
+		results = append(results, stats)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return results, nil
+}
+
+func (r *repository) GetTopProducts(ctx context.Context, userID int64, from time.Time, to time.Time, limit int) ([]domain.FoodStats, error) {
+	query := `
+		SELECT cl.food_id,
+		       f.name as food_name,
+		       COALESCE(f.serving_name, '') as serving_name,
+		       COUNT(*) as log_count
+		FROM consumption_log cl
+		JOIN food f ON cl.food_id = f.id
+		WHERE cl.user_id = $1
+		  AND cl.consumed_at >= $2
+		  AND cl.consumed_at <= $3
+		  AND cl.food_id IS NOT NULL
+		GROUP BY cl.food_id, f.name, f.serving_name
+		ORDER BY log_count DESC, cl.food_id ASC
+		LIMIT $4`
+
+	rows, err := r.db.Query(ctx, query, userID, from, to, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	var results []domain.FoodStats
+	for rows.Next() {
+		var stats domain.FoodStats
+		err := rows.Scan(
+			&stats.FoodID,
+			&stats.FoodName,
+			&stats.ServingName,
+			&stats.LogCount,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
 		results = append(results, stats)
 	}
 

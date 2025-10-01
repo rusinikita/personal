@@ -9,14 +9,13 @@ import (
 
 	"personal/domain"
 	"personal/gateways"
-	"personal/util"
 )
 
 var GetNutritionStatsMCPDefinition = mcp.Tool{
 	Name: "get_nutrition_stats",
 	Annotations: &mcp.ToolAnnotations{
-		DestructiveHint: util.Ptr(false),
-		Title:           "Get nutrition statistics",
+		ReadOnlyHint: true,
+		Title:        "Get nutrition statistics",
 	},
 	Description: `Get nutrition statistics for the last meal and last 4 days.
 
