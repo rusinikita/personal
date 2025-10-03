@@ -48,8 +48,9 @@ type Exercise struct {
 }
 
 type ExerciseSearch struct {
-    UserID int
-    Limit  int
+    UserID int64
+    IDS    []int64
+    Limit  int64
 }
 
 type EquipmentType string

@@ -87,8 +87,20 @@ type Exercise struct {
 }
 
 type ExerciseSearch struct {
-    UserID int
-    Limit  int
+    UserID int64
+    IDS    []int64
+    Limit  int64
+}
+
+type WorkoutSearch struct {
+    UserID int64
+    IDS    []int64
+}
+
+type SetSearch struct {
+    UserID int64
+    From   time.Time
+    To     time.Time
 }
 ```
 
@@ -97,8 +109,9 @@ type ExerciseSearch struct {
 ```go
 // gateways/workout_repository.go
 type WorkoutRepository interface {
-    ListWorkouts(ctx context.Context, params ExerciseSearch) ([]Workout, error)
-    ListSets(ctx context.Context, workoutID int64) ([]Set, error)
+    ListWorkouts(ctx context.Context, params WorkoutSearch) ([]Workout, error)
+    ListExercises(ctx context.Context, params ExerciseSearch) ([]Exercise, error)
+    ListSets(ctx context.Context, params SetSearch) ([]Set, error)
 }
 ```
 
@@ -177,10 +190,12 @@ erDiagram
 
 **Logic:**
 - Use default user_id (single-user mode)
-- Create ExerciseSearch params with user_id and limit (default 10)
-- Call WorkoutRepository.ListWorkouts(params) - returns workouts sorted by started_at DESC
-- For each workout:
-  - Call WorkoutRepository.ListSets(workout_id) - returns sets for that workout
-  - Group sets by exercise_id
-  - For each unique exercise, create exercise object with name, equipment_type, and its sets
+- Create SetSearch params with user_id, from=NOW()-30days, to=NOW()
+- Call WorkoutRepository.ListSets(params) - returns all sets sorted by created_at DESC
+- Extract unique workout_ids and exercise_ids from sets
+- Call WorkoutRepository.ListWorkouts(WorkoutSearch{user_id, workout_ids}) to get workout details
+- Call WorkoutRepository.ListExercises(ExerciseSearch{user_id, exercise_ids}) to get exercise details
+- Group sets by workout_id, then by exercise_id
+- Merge workout, exercise, and set data
+- Sort workouts by started_at DESC, limit to first N workouts (default 10)
 - Return workouts with grouped exercises and sets as JSON

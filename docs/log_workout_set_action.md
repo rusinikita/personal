@@ -110,6 +110,7 @@ type WorkoutSet struct {
 // gateways/workout_repository.go
 type WorkoutRepository interface {
     CreateWorkout(ctx context.Context, workout Workout) (int64, error)
+    CloseWorkout(ctx context.Context, workoutID int64) error
     CreateSet(ctx context.Context, set *Set) error
     GetLastSet(ctx context.Context, userID int64) (WorkoutSet, error)
 }

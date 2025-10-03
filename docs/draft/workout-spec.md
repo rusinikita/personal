@@ -284,7 +284,7 @@ type WorkoutRepository interface {
 	// Workout operations
 	CreateWorkout(ctx context.Context, workout Workout) (int64, error)
 	CloseWorkout(ctx context.Context, workoutID int64) error
-	ListWorkouts(ctx context.Context, params ExerciseSearch) ([]Workout, error)
+	ListWorkouts(ctx context.Context, params WorkoutSearch) ([]Workout, error)
 
 	// Set operations
 	CreateSet(ctx context.Context, set *Set) error
