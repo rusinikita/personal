@@ -255,7 +255,7 @@ type WorkoutSet struct {
 
 type ExerciseSearch struct {
 	UserID  int
-	Limit   int 
+	Limit   int
 }
 
 
