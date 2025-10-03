@@ -204,7 +204,9 @@ CREATE INDEX idx_sets_created_at ON sets(created_at DESC);
 ```go
 package workout
 
-import "time"
+import (
+	"time"
+)
 
 // EquipmentType represents the type of equipment used for an exercise
 type EquipmentType string
@@ -218,8 +220,8 @@ const (
 
 // Exercise represents a workout exercise
 type Exercise struct {
-	ID            int           `json:"id"`
-	UserID        int           `json:"user_id"`
+	ID            int64           `json:"id"`
+	UserID        int64           `json:"user_id"`
 	Name          string        `json:"name"`
 	EquipmentType EquipmentType `json:"equipment_type"`
 	CreatedAt     time.Time     `json:"created_at"`
@@ -228,52 +230,55 @@ type Exercise struct {
 
 // Workout represents a training session
 type Workout struct {
-	ID          int        `json:"id"`
-	UserID      int        `json:"user_id"`
+	ID          int64        `json:"id"`
+	UserID      int64        `json:"user_id"`
 	StartedAt   time.Time  `json:"started_at"`
 	CompletedAt *time.Time `json:"completed_at"` // NULL means active
 }
 
 // Set represents a single set within a workout
 type Set struct {
-	ID              int        `json:"id"`
-	UserID          int        `json:"user_id"`
-	WorkoutID       int        `json:"workout_id"`
-	ExerciseID      int        `json:"exercise_id"`
-	Reps            *int       `json:"reps"`             // NULL for static exercises
-	DurationSeconds *int       `json:"duration_seconds"` // NULL for rep-based exercises
-	WeightKg        *float64   `json:"weight_kg"`        // NULL for bodyweight
-	CreatedAt       time.Time  `json:"created_at"`
+	ID              int64       `json:"id"`
+	UserID          int64       `json:"user_id"`
+	WorkoutID       int64       `json:"workout_id"`
+	ExerciseID      int64       `json:"exercise_id"`
+	Reps            *int64      `json:"reps"`             // NULL for static exercises
+	DurationSeconds *int64      `json:"duration_seconds"` // NULL for rep-based exercises
+	WeightKg        *float64  `json:"weight_kg"`        // NULL for bodyweight
+	CreatedAt       time.Time `json:"created_at"`
 }
 
-// CreateExerciseParams contains parameters for creating a new exercise
-type CreateExerciseParams struct {
-	UserID        int           `json:"user_id"` // From auth context
-	Name          string        `json:"name"`
-	EquipmentType EquipmentType `json:"equipment_type"`
+type WorkoutSet struct {
+	Workout
+	Set
 }
 
-// LogSetParams contains parameters for logging a set
-type LogSetParams struct {
-	UserID          int      `json:"user_id"` // From auth context
-	ExerciseID      int      `json:"exercise_id"`
-	Reps            *int     `json:"reps,omitempty"`
-	DurationSeconds *int     `json:"duration_seconds,omitempty"`
-	WeightKg        *float64 `json:"weight_kg,omitempty"`
+type ExerciseSearch struct {
+	UserID  int
+	Limit   int 
 }
 
-// Validate ensures at least one metric is provided
-func (p *LogSetParams) Validate() error {
-	if p.Reps == nil && p.DurationSeconds == nil {
-		return fmt.Errorf("either reps or duration_seconds must be provided")
-	}
-	return nil
-}
 
-// LogSetResult contains the result of logging a set
-type LogSetResult struct {
-	SetID        int  `json:"set_id"`
-	WorkoutID    int  `json:"workout_id"`
-	IsNewWorkout bool `json:"is_new_workout"` // True if workout was auto-created
+
+```
+
+## DB Repository interface
+
+```go
+// gateways/workout_repository.go
+type WorkoutRepository interface {
+	// Exercise operations
+	CreateExercise(ctx context.Context, exercise Exercise) (int64, error)
+	ListExercises(ctx context.Context, params ExerciseSearch) ([]*Exercise, error)
+
+	// Workout operations
+	CreateWorkout(ctx context.Context, workout Workout) (int64, error)
+	CloseWorkout(ctx context.Context, workoutID int64) error
+	ListWorkouts(ctx context.Context, params ExerciseSearch) ([]Workout, error)
+
+	// Set operations
+	CreateSet(ctx context.Context, set *Set) error
+	ListSets(ctx context.Context, workoutID int64) ([]Set, error)
+	GetLastSet(ctx context.Context, userID int64) (WorkoutSet, error)
 }
 ```
