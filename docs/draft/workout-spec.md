@@ -269,7 +269,7 @@ type ExerciseSearch struct {
 type WorkoutRepository interface {
 	// Exercise operations
 	CreateExercise(ctx context.Context, exercise Exercise) (int64, error)
-	ListExercises(ctx context.Context, params ExerciseSearch) ([]*Exercise, error)
+	ListExercises(ctx context.Context, params ExerciseSearch) ([]Exercise, error)
 
 	// Workout operations
 	CreateWorkout(ctx context.Context, workout Workout) (int64, error)
