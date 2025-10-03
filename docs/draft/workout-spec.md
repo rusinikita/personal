@@ -254,11 +254,21 @@ type WorkoutSet struct {
 }
 
 type ExerciseSearch struct {
-	UserID  int
-	Limit   int
+	UserID  int64
+	IDS     []int64
+	Limit   int64
 }
 
+type WorkoutSearch struct {
+	UserID  int64
+	IDS     []int64
+}
 
+type SetSearch struct {
+	UserID  int64
+	From    time.Time
+	To      time.Time
+}
 
 ```
 
@@ -278,7 +288,7 @@ type WorkoutRepository interface {
 
 	// Set operations
 	CreateSet(ctx context.Context, set *Set) error
-	ListSets(ctx context.Context, workoutID int64) ([]Set, error)
+	ListSets(ctx context.Context, params SetSearch) ([]Set, error)
 	GetLastSet(ctx context.Context, userID int64) (WorkoutSet, error)
 }
 ```
