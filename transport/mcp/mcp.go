@@ -17,11 +17,11 @@ import (
 	"personal/gateways"
 )
 
-const instructions = `Personal food tracking and nutrition logging system for comprehensive dietary monitoring.
+const instructions = `Personal tracking system for nutrition and workout logging.
 
-This MCP server provides tools for managing a personal food database and logging consumption for nutrition tracking. The system is designed to help track what you eat, when you eat it, and calculate nutritional intake.
+This MCP server provides tools for managing food database, nutrition tracking, and workout logging. The system helps track what you eat, when you eat it, and your workout sessions with exercises and sets.
 
-## Core Workflow:
+## Food Tracking Workflow:
 
 1. **Food Management:**
    - Use 'add_food' to create new food entries with complete nutritional information
@@ -37,37 +37,51 @@ This MCP server provides tools for managing a personal food database and logging
    - Use 'log_food_by_barcode' for packaged products with barcodes
    - Use 'log_custom_food' for one-time entries without saving to database
 
-4. **Analytics & Insights:**
+4. **Nutrition Analytics:**
    - Use 'get_nutrition_stats' to view nutrition summary for last meal and last 4 days
    - Use 'get_top_products' to identify your most frequently logged foods
 
-## Optimal User Experience Strategy:
+## Workout Tracking Workflow:
 
-**For Quick Logging (Recommended):**
-1. Start with 'get_top_products' to see your frequently logged items
+1. **Exercise Management:**
+   - Use 'create_exercise' to add new exercises with equipment type (machine, barbell, dumbbells, bodyweight)
+   - Use 'list_exercises' to see available exercises sorted by last usage
+
+2. **Workout Logging:**
+   - Use 'log_workout_set' to log exercise sets with reps/duration and weight
+   - Automatically creates or reuses active workouts (active for 2 hours)
+   - Track reps-based exercises (bench press, squats) or time-based (plank, running)
+
+3. **Workout History:**
+   - Use 'list_workouts' to see recent workouts (last 30 days) with all exercises and sets
+   - View active and completed workouts with detailed set information
+
+## Optimal User Experience:
+
+**For Quick Food Logging:**
+1. Start with 'get_top_products' to see frequently logged items
 2. Use 'log_food_by_id' with IDs from top products for instant logging
-3. This avoids search and provides fastest logging experience
+3. Check 'get_nutrition_stats' after meals to track daily intake
 
-**For New or Less Common Foods:**
-1. Search with 'resolve_food_id_by_name' to find the exact food
-2. Use 'log_food_by_id' with the returned food_id
-3. Add to database with 'add_food' if you'll log it frequently
-
-**For Analytics:**
-- Check 'get_nutrition_stats' after meals to track daily nutrition intake
-- Review 'get_top_products' weekly to understand eating patterns
+**For Workout Sessions:**
+1. Use 'list_exercises' to see available exercises
+2. Log sets with 'log_workout_set' - workouts are created automatically
+3. Use 'list_workouts' to review recent training sessions
 
 ## Best Practices:
 
+**Food Tracking:**
 - Start sessions by calling 'get_top_products' to see frequently logged foods
 - Use 'log_food_by_id' for fastest and most accurate logging
-- Search first with 'resolve_food_id_by_name' for ambiguous food names
 - Add foods to database with 'add_food' for frequently consumed items
-- Use 'log_custom_food' for restaurant meals or temporary entries
-- After successful logging, ALWAYS ask user if they want to see nutrition statistics
-- If user agrees, call 'get_nutrition_stats' to show current nutrition summary
+- After logging, ALWAYS ask user if they want to see nutrition statistics
 
-All consumption logs include calculated nutrition values, timestamps, and optional meal categorization for comprehensive dietary tracking.`
+**Workout Tracking:**
+- Create exercises once, reuse them across workouts
+- Log sets as you complete them - workouts auto-close after 2 hours
+- Review 'list_workouts' to track progress over time
+
+All logs include timestamps and comprehensive details for accurate tracking.`
 
 func Server(db gateways.DB) *mcp.Server {
 	server := mcp.NewServer(
