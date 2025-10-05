@@ -9,7 +9,6 @@ import (
 	"personal/action/create_exercise"
 	"personal/action/log_workout_set"
 	"personal/domain"
-	"personal/util"
 )
 
 func (s *IntegrationTestSuite) TestLogWorkoutSet_WithRepsCreatesActiveWorkout() {
@@ -26,8 +25,8 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithRepsCreatesActiveWorkout() 
 	// Call MCP tool log_workout_set with exercise_id, reps, weight_kg
 	input := log_workout_set.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
-		Reps:       util.Ptr(int64(10)),
-		WeightKg:   util.Ptr(80.5),
+		Reps:       10,
+		WeightKg:   80.5,
 	}
 
 	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
@@ -41,9 +40,9 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithRepsCreatesActiveWorkout() 
 	assert.Equal(s.T(), output.SetID, workoutSet.Set.ID)
 	assert.Equal(s.T(), output.WorkoutID, workoutSet.Workout.ID)
 	assert.Equal(s.T(), exerciseOutput.ID, workoutSet.Set.ExerciseID)
-	assert.Equal(s.T(), int64(10), *workoutSet.Set.Reps)
-	assert.Equal(s.T(), 80.5, *workoutSet.Set.WeightKg)
-	assert.Nil(s.T(), workoutSet.Set.DurationSeconds)
+	assert.Equal(s.T(), int64(10), workoutSet.Set.Reps)
+	assert.Equal(s.T(), 80.5, workoutSet.Set.WeightKg)
+	assert.Equal(s.T(), int64(0), workoutSet.Set.DurationSeconds)
 	assert.Nil(s.T(), workoutSet.Workout.CompletedAt)
 }
 
@@ -61,7 +60,7 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDuration() {
 	// Call MCP tool log_workout_set with exercise_id, duration_seconds
 	input := log_workout_set.LogWorkoutSetInput{
 		ExerciseID:      exerciseOutput.ID,
-		DurationSeconds: util.Ptr(int64(60)),
+		DurationSeconds: 60,
 	}
 
 	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
@@ -70,8 +69,8 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDuration() {
 
 	workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
 	require.NoError(s.T(), err)
-	assert.Equal(s.T(), int64(60), *workoutSet.Set.DurationSeconds)
-	assert.Nil(s.T(), workoutSet.Set.Reps)
+	assert.Equal(s.T(), int64(60), workoutSet.Set.DurationSeconds)
+	assert.Equal(s.T(), int64(0), workoutSet.Set.Reps)
 }
 
 func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
@@ -99,8 +98,8 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
 		UserID:     s.UserID(),
 		WorkoutID:  workoutID,
 		ExerciseID: exerciseOutput.ID,
-		Reps:       util.Ptr(int64(5)),
-		WeightKg:   util.Ptr(100.0),
+		Reps:       5,
+		WeightKg:   100.0,
 		CreatedAt:  time.Now().Add(-30 * time.Minute),
 	}
 	_, err = s.Repo().CreateSet(ctx, &set)
@@ -109,8 +108,8 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
 	// Call MCP tool log_workout_set
 	input := log_workout_set.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
-		Reps:       util.Ptr(int64(8)),
-		WeightKg:   util.Ptr(100.0),
+		Reps:       8,
+		WeightKg:   100.0,
 	}
 
 	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
@@ -121,7 +120,7 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
 	workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), workoutID, workoutSet.Workout.ID)
-	assert.Equal(s.T(), int64(8), *workoutSet.Set.Reps)
+	assert.Equal(s.T(), int64(8), workoutSet.Set.Reps)
 }
 
 func (s *IntegrationTestSuite) TestLogWorkoutSet_ClosesOldWorkoutAndCreatesNew() {
@@ -150,8 +149,8 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ClosesOldWorkoutAndCreatesNew()
 		UserID:     s.UserID(),
 		WorkoutID:  oldWorkoutID,
 		ExerciseID: exerciseOutput.ID,
-		Reps:       util.Ptr(int64(5)),
-		WeightKg:   util.Ptr(120.0),
+		Reps:       5,
+		WeightKg:   120.0,
 		CreatedAt:  threeHoursAgo,
 	}
 	_, err = s.Repo().CreateSet(ctx, &set)
@@ -160,8 +159,8 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ClosesOldWorkoutAndCreatesNew()
 	// Call MCP tool log_workout_set with exercise_id, reps
 	input := log_workout_set.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
-		Reps:       util.Ptr(int64(5)),
-		WeightKg:   util.Ptr(120.0),
+		Reps:       5,
+		WeightKg:   120.0,
 	}
 
 	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)

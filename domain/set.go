@@ -7,9 +7,9 @@ type Set struct {
 	UserID          int64     `json:"user_id"`
 	WorkoutID       int64     `json:"workout_id"`
 	ExerciseID      int64     `json:"exercise_id"`
-	Reps            *int64    `json:"reps"`             // NULL for static exercises
-	DurationSeconds *int64    `json:"duration_seconds"` // NULL for rep-based exercises
-	WeightKg        *float64  `json:"weight_kg"`        // NULL for bodyweight
+	Reps            int64     `json:"reps,omitempty"`             // 0 for static exercises
+	DurationSeconds int64     `json:"duration_seconds,omitempty"` // 0 for rep-based exercises
+	WeightKg        float64   `json:"weight_kg,omitempty"`        // 0 for bodyweight
 	CreatedAt       time.Time `json:"created_at"`
 }
 

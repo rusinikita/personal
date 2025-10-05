@@ -46,3 +46,12 @@ func Value[T any](ptr *T) T {
 	}
 	return zero
 }
+
+// NullIfZero returns nil if the value is zero, otherwise returns the value as any
+func NullIfZero[T comparable](v T) any {
+	var zero T
+	if v == zero {
+		return nil
+	}
+	return v
+}

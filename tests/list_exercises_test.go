@@ -9,7 +9,6 @@ import (
 	"personal/action/create_exercise"
 	"personal/action/list_exercises"
 	"personal/action/log_workout_set"
-	"personal/util"
 )
 
 func (s *IntegrationTestSuite) TestListExercises_SortedByLastUsed() {
@@ -41,8 +40,8 @@ func (s *IntegrationTestSuite) TestListExercises_SortedByLastUsed() {
 	time.Sleep(10 * time.Millisecond) // Ensure different timestamps
 	setInput2 := log_workout_set.LogWorkoutSetInput{
 		ExerciseID: exercise2Output.ID,
-		Reps:       util.Ptr(int64(10)),
-		WeightKg:   util.Ptr(100.0),
+		Reps:       10,
+		WeightKg:   100.0,
 	}
 	_, _, err = log_workout_set.LogWorkoutSet(ctx, nil, setInput2)
 	require.NoError(s.T(), err)
@@ -51,8 +50,8 @@ func (s *IntegrationTestSuite) TestListExercises_SortedByLastUsed() {
 	time.Sleep(10 * time.Millisecond) // Ensure different timestamps
 	setInput1 := log_workout_set.LogWorkoutSetInput{
 		ExerciseID: exercise1Output.ID,
-		Reps:       util.Ptr(int64(8)),
-		WeightKg:   util.Ptr(80.0),
+		Reps:       8,
+		WeightKg:   80.0,
 	}
 	_, _, err = log_workout_set.LogWorkoutSet(ctx, nil, setInput1)
 	require.NoError(s.T(), err)

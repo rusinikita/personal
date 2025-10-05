@@ -40,10 +40,10 @@ Returns:
 }
 
 type LogWorkoutSetInput struct {
-	ExerciseID      int64    `json:"exercise_id" jsonschema:"Exercise ID"`
-	Reps            *int64   `json:"reps,omitempty" jsonschema:"Number of repetitions (optional)"`
-	DurationSeconds *int64   `json:"duration_seconds,omitempty" jsonschema:"Duration in seconds (optional)"`
-	WeightKg        *float64 `json:"weight_kg,omitempty" jsonschema:"Weight in kilograms (optional)"`
+	ExerciseID      int64   `json:"exercise_id" jsonschema:"Exercise ID"`
+	Reps            int64   `json:"reps,omitempty" jsonschema:"Number of repetitions (optional, 0 if not provided)"`
+	DurationSeconds int64   `json:"duration_seconds,omitempty" jsonschema:"Duration in seconds (optional, 0 if not provided)"`
+	WeightKg        float64 `json:"weight_kg,omitempty" jsonschema:"Weight in kilograms (optional, 0 if not provided)"`
 }
 
 type LogWorkoutSetOutput struct {
@@ -150,7 +150,7 @@ func validateInput(input LogWorkoutSetInput) error {
 		return fmt.Errorf("exercise_id is required")
 	}
 
-	if input.Reps == nil && input.DurationSeconds == nil {
+	if input.Reps == 0 && input.DurationSeconds == 0 {
 		return fmt.Errorf("at least one of reps or duration_seconds must be provided")
 	}
 

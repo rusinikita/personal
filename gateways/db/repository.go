@@ -15,6 +15,7 @@ import (
 
 	"personal/domain"
 	"personal/gateways"
+	"personal/util"
 )
 
 //go:embed migrations/*.sql
@@ -641,9 +642,9 @@ func (r *repository) CreateSet(ctx context.Context, set *domain.Set) (int64, err
 		set.UserID,
 		set.WorkoutID,
 		set.ExerciseID,
-		set.Reps,
-		set.DurationSeconds,
-		set.WeightKg,
+		util.NullIfZero(set.Reps),
+		util.NullIfZero(set.DurationSeconds),
+		util.NullIfZero(set.WeightKg),
 		set.CreatedAt,
 	).Scan(&id)
 
@@ -654,7 +655,9 @@ func (r *repository) GetLastSet(ctx context.Context, userID int64) (*domain.Work
 	query := `
 		SELECT
 			w.id, w.user_id, w.started_at, w.completed_at,
-			s.id, s.user_id, s.workout_id, s.exercise_id, s.reps, s.duration_seconds, s.weight_kg, s.created_at
+			s.id, s.user_id, s.workout_id, s.exercise_id,
+			COALESCE(s.reps, 0), COALESCE(s.duration_seconds, 0), COALESCE(s.weight_kg, 0),
+			s.created_at
 		FROM sets s
 		JOIN workouts w ON s.workout_id = w.id
 		WHERE s.user_id = $1
