@@ -9,6 +9,7 @@ import (
 	"personal/action/add_food"
 	"personal/action/create_exercise"
 	"personal/action/find_food"
+	"personal/action/list_exercises"
 	"personal/action/log_food"
 	"personal/action/nutrition_stats"
 	"personal/action/top_products"
@@ -115,6 +116,7 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &nutrition_stats.GetNutritionStatsMCPDefinition, nutrition_stats.GetNutritionStats)
 	mcp.AddTool(server, &top_products.GetTopProductsMCPDefinition, top_products.GetTopProducts)
 	mcp.AddTool(server, &create_exercise.MCPDefinition, create_exercise.CreateExercise)
+	mcp.AddTool(server, &list_exercises.MCPDefinition, list_exercises.ListExercises)
 
 	return server
 }

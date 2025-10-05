@@ -24,10 +24,10 @@
 
 ### Test: List exercises sorted by last_used
 ```go
-// Create 3 exercises via WorkoutRepository.CreateExercise
-// Create active workout via WorkoutRepository.GetOrCreateActiveWorkout
-// Create set for exercise 2 via WorkoutRepository.CreateSet (will have older timestamp)
-// Create set for exercise 1 via WorkoutRepository.CreateSet (will have newer timestamp)
+// Create 3 exercises via Repository.CreateExercise
+// Create active workout via Repository.GetOrCreateActiveWorkout
+// Create set for exercise 2 via Repository.CreateSet (will have older timestamp)
+// Create set for exercise 1 via Repository.CreateSet (will have newer timestamp)
 // Call MCP tool list_exercises
 // Verify order: exercise 1 (most recent), exercise 2, exercise 3 (unused, by name)
 ```
@@ -67,7 +67,7 @@ const (
 
 ```go
 // gateways/workout_repository.go
-type WorkoutRepository interface {
+type Repository interface {
     ListExercises(ctx context.Context, params ExerciseSearch) ([]Exercise, error)
 }
 ```
@@ -123,6 +123,6 @@ erDiagram
 **Logic:**
 - Use default user_id (single-user mode)
 - Create ExerciseSearch params with user_id and limit=20
-- Call WorkoutRepository.ListExercises(params)
+- Call Repository.ListExercises(params)
 - Repository query: SELECT e.*, MAX(s.created_at) as last_used_at FROM exercises e LEFT JOIN sets s ON e.id = s.exercise_id AND s.user_id = ? WHERE e.user_id = ? GROUP BY e.id ORDER BY last_used_at DESC NULLS LAST, e.name LIMIT 20
 - Return exercises array as JSON

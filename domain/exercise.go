@@ -11,6 +11,12 @@ type Exercise struct {
 	LastUsedAt    *time.Time    `json:"last_used_at,omitempty"` // Computed from sets
 }
 
+type ExerciseSearch struct {
+	UserID int64
+	IDS    []int64
+	Limit  int64
+}
+
 type EquipmentType string
 
 const (

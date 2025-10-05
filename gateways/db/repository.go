@@ -528,6 +528,47 @@ func (r *repository) ListWithLastUsed(ctx context.Context, userID int64) ([]doma
 	return exercises, nil
 }
 
+func (r *repository) ListExercises(ctx context.Context, userID int64, limit int64) ([]domain.Exercise, error) {
+	query := `
+		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
+		       MAX(s.created_at) as last_used_at
+		FROM exercises e
+		LEFT JOIN sets s ON e.id = s.exercise_id AND s.user_id = $1
+		WHERE e.user_id = $1
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at
+		ORDER BY last_used_at DESC NULLS LAST, e.name ASC
+		LIMIT $2`
+
+	rows, err := r.db.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query exercises: %w", err)
+	}
+	defer rows.Close()
+
+	var exercises []domain.Exercise
+	for rows.Next() {
+		var ex domain.Exercise
+		err := rows.Scan(
+			&ex.ID,
+			&ex.UserID,
+			&ex.Name,
+			&ex.EquipmentType,
+			&ex.CreatedAt,
+			&ex.LastUsedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan exercise: %w", err)
+		}
+		exercises = append(exercises, ex)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return exercises, nil
+}
+
 func (r *repository) CreateWorkout(ctx context.Context, workout *domain.Workout) (int64, error) {
 	query := `
 		INSERT INTO workouts (user_id, started_at, completed_at)
