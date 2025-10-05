@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,7 +11,7 @@ import (
 )
 
 func (s *IntegrationTestSuite) TestAddFood_Success() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Prepare test input with valid food data
 	input := add_food.AddFoodInput{
@@ -28,7 +27,7 @@ func (s *IntegrationTestSuite) TestAddFood_Success() {
 	}
 
 	// Call MCP add_food handler
-	_, output, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input)
+	_, output, err := add_food.AddFood(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotZero(s.T(), output.ID)
 	assert.Contains(s.T(), output.Message, "Test Apple")
@@ -58,7 +57,7 @@ func (s *IntegrationTestSuite) TestAddFood_Success() {
 }
 
 func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	s.T().Run("duplicate by name", func(t *testing.T) {
 		// First, create a food item
@@ -66,7 +65,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 			Name:     "Duplicate Test Food",
 			FoodType: "product",
 		}
-		_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input1)
+		_, _, err := add_food.AddFood(ctx, nil, input1)
 		require.NoError(t, err)
 
 		// Try to add the same food with same name
@@ -74,7 +73,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 			Name:     "Duplicate Test Food", // Same name
 			FoodType: "product",
 		}
-		_, _, err = add_food.AddFood(s.ContextWithDB(ctx), nil, input2)
+		_, _, err = add_food.AddFood(ctx, nil, input2)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "duplicate food found")
 		assert.Contains(t, err.Error(), "food with name 'Duplicate Test Food' already exists")
@@ -87,7 +86,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 			Barcode:  "1234567890123",
 			FoodType: "product",
 		}
-		_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input1)
+		_, _, err := add_food.AddFood(ctx, nil, input1)
 		require.NoError(t, err)
 
 		// Try to add different food with same barcode
@@ -96,7 +95,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 			Barcode:  "1234567890123",       // Same barcode
 			FoodType: "product",
 		}
-		_, _, err = add_food.AddFood(s.ContextWithDB(ctx), nil, input2)
+		_, _, err = add_food.AddFood(ctx, nil, input2)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "duplicate food found")
 		assert.Contains(t, err.Error(), "food with barcode '1234567890123' already exists")
@@ -109,7 +108,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 			Barcode:  "9876543210987",
 			FoodType: "product",
 		}
-		_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input1)
+		_, _, err := add_food.AddFood(ctx, nil, input1)
 		require.NoError(t, err)
 
 		// Try to add the exact same food
@@ -118,7 +117,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 			Barcode:  "9876543210987",              // Same barcode
 			FoodType: "product",
 		}
-		_, _, err = add_food.AddFood(s.ContextWithDB(ctx), nil, input2)
+		_, _, err = add_food.AddFood(ctx, nil, input2)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "duplicate food found")
 		// With simplified logic, name check comes first, so should mention name
@@ -133,7 +132,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 			Barcode:  "1111111111111",
 			FoodType: "product",
 		}
-		_, output, err := add_food.AddFood(s.ContextWithDB(ctx), nil, input)
+		_, output, err := add_food.AddFood(ctx, nil, input)
 		require.NoError(t, err)
 		assert.NotZero(t, output.ID)
 		assert.Contains(t, output.Message, "added successfully")
@@ -141,7 +140,7 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 }
 
 func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	testCases := []struct {
 		name          string
@@ -178,7 +177,7 @@ func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
 	for _, tc := range testCases {
 		s.T().Run(tc.name, func(t *testing.T) {
 			// Call MCP add_food handler with invalid data
-			_, _, err := add_food.AddFood(s.ContextWithDB(ctx), nil, tc.input)
+			_, _, err := add_food.AddFood(ctx, nil, tc.input)
 
 			// Verify validation error occurred
 			require.Error(t, err)

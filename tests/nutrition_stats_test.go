@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"context"
 	"math/rand"
 	"time"
 
@@ -14,14 +13,8 @@ import (
 )
 
 func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
-	ctx := context.Background()
+	ctx := s.Context()
 	userID := int64(1)
-
-	// Clean up any existing data for this user
-	existingLogs, _ := s.Repo().GetConsumptionLogsByUser(ctx, userID)
-	for _, log := range existingLogs {
-		_ = s.Repo().DeleteConsumptionLog(ctx, userID, log.ConsumedAt)
-	}
 
 	// Use UTC timezone
 	location := time.UTC
@@ -234,7 +227,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 	}
 
 	// Call MCP get_nutrition_stats tool handler
-	_, output, err := nutrition_stats.GetNutritionStats(s.ContextWithDB(ctx), nil, struct{}{})
+	_, output, err := nutrition_stats.GetNutritionStats(ctx, nil, struct{}{})
 	require.NoError(s.T(), err)
 
 	// Verify last_meal
@@ -257,17 +250,13 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 		assert.InDelta(s.T(), expected.TotalWeight, actual.TotalWeight, 0.01)
 	}
 
-	// Cleanup
-	for _, record := range allRecords {
-		defer s.Repo().DeleteConsumptionLog(ctx, userID, record.ConsumedAt)
-	}
 }
 
 func (s *IntegrationTestSuite) TestGetNutritionStats_EmptyDatabase() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Call MCP get_nutrition_stats tool handler
-	_, output, err := nutrition_stats.GetNutritionStats(s.ContextWithDB(ctx), nil, struct{}{})
+	_, output, err := nutrition_stats.GetNutritionStats(ctx, nil, struct{}{})
 	require.NoError(s.T(), err)
 
 	// Verify empty results
@@ -280,14 +269,8 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_EmptyDatabase() {
 }
 
 func (s *IntegrationTestSuite) TestGetNutritionStats_TimezoneBoundaries() {
-	ctx := context.Background()
+	ctx := s.Context()
 	userID := int64(1)
-
-	// Clean up any existing data for this user
-	existingLogs, _ := s.Repo().GetConsumptionLogsByUser(ctx, userID)
-	for _, log := range existingLogs {
-		_ = s.Repo().DeleteConsumptionLog(ctx, userID, log.ConsumedAt)
-	}
 
 	// Use UTC timezone
 	location := time.UTC
@@ -337,7 +320,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_TimezoneBoundaries() {
 	}
 
 	// Call MCP get_nutrition_stats tool handler
-	_, output, err := nutrition_stats.GetNutritionStats(s.ContextWithDB(ctx), nil, struct{}{})
+	_, output, err := nutrition_stats.GetNutritionStats(ctx, nil, struct{}{})
 	require.NoError(s.T(), err)
 
 	// Verify that records are in correct day buckets
@@ -351,8 +334,4 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_TimezoneBoundaries() {
 	todayStats := output.Last4Days[1]
 	assert.Equal(s.T(), 300.0, todayStats.TotalCalories)
 
-	// Cleanup
-	for _, record := range records {
-		defer s.Repo().DeleteConsumptionLog(ctx, userID, record.ConsumedAt)
-	}
 }

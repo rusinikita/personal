@@ -12,7 +12,6 @@ type DB interface {
 	AddFood(ctx context.Context, food *domain.Food) (int64, error)
 	CreateFood(ctx context.Context, food *domain.Food) error
 	GetFood(ctx context.Context, id int64) (*domain.Food, error)
-	DeleteFood(ctx context.Context, id int64) error
 
 	// New methods for consumption logging
 	AddConsumptionLog(ctx context.Context, log *domain.ConsumptionLog) error
@@ -21,7 +20,6 @@ type DB interface {
 	// Methods for testing verification
 	GetConsumptionLog(ctx context.Context, userID int64, consumedAt time.Time) (*domain.ConsumptionLog, error)
 	GetConsumptionLogsByUser(ctx context.Context, userID int64) ([]*domain.ConsumptionLog, error)
-	DeleteConsumptionLog(ctx context.Context, userID int64, consumedAt time.Time) error
 
 	// Nutrition stats methods
 	GetLastConsumptionTime(ctx context.Context, userID int64) (*time.Time, error)
@@ -37,4 +35,5 @@ type DB interface {
 
 type DBMaintainer interface {
 	ApplyMigrations(ctx context.Context) error
+	TruncateUserData(ctx context.Context, userID int64) error
 }

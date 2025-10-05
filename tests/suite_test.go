@@ -3,7 +3,10 @@ package tests
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"os"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -24,6 +27,29 @@ type IntegrationTestSuite struct {
 	dbMaintainer gateways.DBMaintainer
 }
 
+func (s *IntegrationTestSuite) UserID(skip ...int) int64 {
+	skipI := 2
+	if len(skip) > 0 {
+		skipI = skip[0]
+	}
+
+	name := testName(skipI)
+
+	return hashTestName(name)
+}
+
+func (s *IntegrationTestSuite) Context() context.Context {
+	ctx := gateways.WithDB(gateways.WithUserID(context.Background(), s.UserID(3)), s.repo)
+
+	return ctx
+}
+
+func (s *IntegrationTestSuite) AfterTest(_, testName string) {
+	id := hashTestName(testName)
+
+	s.Require().NoError(s.dbMaintainer.TruncateUserData(context.Background(), id))
+}
+
 func (s *IntegrationTestSuite) SetupSuite() {
 	homeDir, err := os.UserHomeDir()
 	s.Require().NoError(err)
@@ -31,7 +57,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	os.Setenv("DOCKER_HOST", fmt.Sprintf("unix://%s/.colima/default/docker.sock", homeDir))
 	os.Setenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/var/run/docker.sock")
 
-	ctx := context.Background()
+	ctx := s.Context()
 
 	s.pgContainer, err = postgres.Run(
 		ctx,
@@ -59,7 +85,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 }
 
 func (s *IntegrationTestSuite) TearDownSuite() {
-	ctx := context.Background()
+	ctx := s.Context()
 	err := s.pgContainer.Terminate(ctx)
 	s.Require().NoError(err)
 
@@ -79,7 +105,17 @@ func (s *IntegrationTestSuite) Repo() gateways.DB {
 	return s.repo
 }
 
-// ContextWithDB returns a context with the database repository
-func (s *IntegrationTestSuite) ContextWithDB(ctx context.Context) context.Context {
-	return gateways.WithDB(ctx, s.repo)
+func testName(skip int) string {
+	pc, _, _, _ := runtime.Caller(skip)
+	funcStr := runtime.FuncForPC(pc).Name()
+
+	name := strings.TrimPrefix(funcStr, "personal/tests.(*IntegrationTestSuite).")
+
+	return name
+}
+
+func hashTestName(name string) int64 {
+	h := fnv.New64a()
+	h.Write([]byte(name))
+	return int64(h.Sum64())
 }

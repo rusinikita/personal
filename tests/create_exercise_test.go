@@ -1,8 +1,6 @@
 package tests
 
 import (
-	"context"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -10,7 +8,7 @@ import (
 )
 
 func (s *IntegrationTestSuite) TestCreateExercise_Success() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Prepare test input with valid exercise data
 	input := create_exercise.CreateExerciseInput{
@@ -19,7 +17,7 @@ func (s *IntegrationTestSuite) TestCreateExercise_Success() {
 	}
 
 	// Call MCP create_exercise handler
-	_, output, err := create_exercise.CreateExercise(s.ContextWithDB(ctx), nil, input)
+	_, output, err := create_exercise.CreateExercise(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotZero(s.T(), output.ID)
 	assert.Equal(s.T(), "Bench Press", output.Name)
@@ -47,7 +45,7 @@ func (s *IntegrationTestSuite) TestCreateExercise_Success() {
 }
 
 func (s *IntegrationTestSuite) TestCreateExercise_InvalidEquipmentType() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Prepare test input with invalid equipment type
 	input := create_exercise.CreateExerciseInput{
@@ -56,7 +54,7 @@ func (s *IntegrationTestSuite) TestCreateExercise_InvalidEquipmentType() {
 	}
 
 	// Call MCP create_exercise handler
-	_, _, err := create_exercise.CreateExercise(s.ContextWithDB(ctx), nil, input)
+	_, _, err := create_exercise.CreateExercise(ctx, nil, input)
 
 	// Verify validation error occurred
 	require.Error(s.T(), err)

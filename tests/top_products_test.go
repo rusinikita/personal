@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"context"
 	"math/rand"
 	"sort"
 	"time"
@@ -15,14 +14,8 @@ import (
 )
 
 func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
-	ctx := context.Background()
+	ctx := s.Context()
 	userID := int64(1)
-
-	// Clean up any existing data for this user
-	existingLogs, _ := s.Repo().GetConsumptionLogsByUser(ctx, userID)
-	for _, log := range existingLogs {
-		_ = s.Repo().DeleteConsumptionLog(ctx, userID, log.ConsumedAt)
-	}
 
 	// Get current time in UTC
 	now := time.Now().UTC()
@@ -162,7 +155,7 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 	}
 
 	// Call MCP get_top_products tool handler
-	_, output, err := top_products.GetTopProducts(s.ContextWithDB(ctx), nil, struct{}{})
+	_, output, err := top_products.GetTopProducts(ctx, nil, struct{}{})
 	require.NoError(s.T(), err)
 
 	// Verify results
@@ -174,14 +167,5 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 		assert.Equal(s.T(), expected.foodName, actual.FoodName)
 		assert.Equal(s.T(), expected.servingName, actual.ServingName)
 		assert.Equal(s.T(), expected.logCount, actual.LogCount)
-	}
-
-	// Cleanup
-	for _, record := range allRecords {
-		defer s.Repo().DeleteConsumptionLog(ctx, userID, record.ConsumedAt)
-	}
-
-	for foodID := int64(1); foodID <= 40; foodID++ {
-		defer s.Repo().DeleteFood(ctx, foodID)
 	}
 }

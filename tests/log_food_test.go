@@ -13,7 +13,7 @@ import (
 )
 
 func (s *IntegrationTestSuite) TestLogFoodById_Success() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Setup: Create test food with nutrients and serving_size_g
 	apple := s.createTestFood(ctx, "Apple", "123456", 100.0, &domain.Nutrients{
@@ -33,7 +33,7 @@ func (s *IntegrationTestSuite) TestLogFoodById_Success() {
 		ConsumedAt: now,
 	}
 
-	_, response, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodById(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 150.0g of Apple")
@@ -45,13 +45,10 @@ func (s *IntegrationTestSuite) TestLogFoodById_Success() {
 	assert.Equal(s.T(), apple.Name, savedLog.FoodName)
 	assert.Equal(s.T(), 150.0, savedLog.AmountG)
 	assert.InDelta(s.T(), 78.0, *savedLog.Nutrients.Calories, 0.01) // 52.0 * 1.5
-
-	// Cleanup
-	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
 func (s *IntegrationTestSuite) TestLogFoodById_WithServingCount() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Setup: Create test food with serving size
 	bread := s.createTestFood(ctx, "Bread", "789012", 30.0, &domain.Nutrients{
@@ -71,7 +68,7 @@ func (s *IntegrationTestSuite) TestLogFoodById_WithServingCount() {
 		ConsumedAt:   now,
 	}
 
-	_, response, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodById(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 60.0g of Bread")
@@ -82,12 +79,10 @@ func (s *IntegrationTestSuite) TestLogFoodById_WithServingCount() {
 	assert.Equal(s.T(), 60.0, savedLog.AmountG)                      // 2 servings * 30g
 	assert.InDelta(s.T(), 159.0, *savedLog.Nutrients.Calories, 0.01) // 265.0 * 0.6
 
-	// Cleanup
-	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
 func (s *IntegrationTestSuite) TestLogFoodById_NotFound() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Call log_food_by_id MCP tool with non-existent ID
 	input := log_food.LogFoodByIdInput{
@@ -95,14 +90,14 @@ func (s *IntegrationTestSuite) TestLogFoodById_NotFound() {
 		AmountG: 100.0,
 	}
 
-	_, response, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodById(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "food not found", response.Error)
 	assert.Empty(s.T(), response.Message)
 }
 
 func (s *IntegrationTestSuite) TestLogFoodByName_Success() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Setup: Create food with known name
 	orange := s.createTestFood(ctx, "Orange", "111111", 0, &domain.Nutrients{
@@ -122,7 +117,7 @@ func (s *IntegrationTestSuite) TestLogFoodByName_Success() {
 		ConsumedAt: now,
 	}
 
-	_, response, err := log_food.LogFoodByName(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodByName(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 200.0g of Orange")
@@ -135,12 +130,10 @@ func (s *IntegrationTestSuite) TestLogFoodByName_Success() {
 	assert.Equal(s.T(), 200.0, savedLog.AmountG)
 	assert.Equal(s.T(), 94.0, *savedLog.Nutrients.Calories) // 47.0 * 2.0
 
-	// Cleanup
-	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
 func (s *IntegrationTestSuite) TestLogFoodByName_MultipleMatches() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Setup: Create foods with similar names (use unique names to avoid conflicts with other tests)
 	_ = s.createTestFood(ctx, "Test Apple Multiple", "", 0, nil)
@@ -153,7 +146,7 @@ func (s *IntegrationTestSuite) TestLogFoodByName_MultipleMatches() {
 		AmountG: 150.0,
 	}
 
-	_, response, err := log_food.LogFoodByName(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodByName(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "multiple matches found", response.Error)
 	assert.Empty(s.T(), response.Message)
@@ -174,7 +167,7 @@ func (s *IntegrationTestSuite) TestLogFoodByName_MultipleMatches() {
 }
 
 func (s *IntegrationTestSuite) TestLogFoodByName_NotFound() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Call log_food_by_name MCP tool with non-existent name
 	input := log_food.LogFoodByNameInput{
@@ -182,7 +175,7 @@ func (s *IntegrationTestSuite) TestLogFoodByName_NotFound() {
 		AmountG: 100.0,
 	}
 
-	_, response, err := log_food.LogFoodByName(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodByName(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "food not found", response.Error)
 	assert.Empty(s.T(), response.Message)
@@ -190,7 +183,7 @@ func (s *IntegrationTestSuite) TestLogFoodByName_NotFound() {
 }
 
 func (s *IntegrationTestSuite) TestLogFoodByBarcode_Success() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Setup: Create food with unique barcode
 	banana := s.createTestFood(ctx, "Banana", "999888", 0, &domain.Nutrients{
@@ -210,7 +203,7 @@ func (s *IntegrationTestSuite) TestLogFoodByBarcode_Success() {
 		ConsumedAt: now,
 	}
 
-	_, response, err := log_food.LogFoodByBarcode(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodByBarcode(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 120.0g of Banana")
@@ -223,12 +216,10 @@ func (s *IntegrationTestSuite) TestLogFoodByBarcode_Success() {
 	assert.Equal(s.T(), 120.0, savedLog.AmountG)
 	assert.Equal(s.T(), 106.8, *savedLog.Nutrients.Calories) // 89.0 * 1.2
 
-	// Cleanup
-	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
 func (s *IntegrationTestSuite) TestLogFoodByBarcode_NotFound() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Call log_food_by_barcode MCP tool with non-existent barcode
 	input := log_food.LogFoodByBarcodeInput{
@@ -236,14 +227,14 @@ func (s *IntegrationTestSuite) TestLogFoodByBarcode_NotFound() {
 		AmountG: 100.0,
 	}
 
-	_, response, err := log_food.LogFoodByBarcode(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogFoodByBarcode(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "barcode not found", response.Error)
 	assert.Empty(s.T(), response.Message)
 }
 
 func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -261,7 +252,7 @@ func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
 		ConsumedAt:     now,
 	}
 
-	_, response, err := log_food.LogCustomFood(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogCustomFood(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 180.0g of Homemade Sandwich")
@@ -277,12 +268,10 @@ func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
 	assert.Equal(s.T(), util.Ptr(8.0), savedLog.Nutrients.TotalFatG)
 	assert.Equal(s.T(), util.Ptr(35.0), savedLog.Nutrients.CarbohydratesG)
 
-	// Cleanup
-	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
 func (s *IntegrationTestSuite) TestLogCustomFood_WithOptionalNutrients() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -300,7 +289,7 @@ func (s *IntegrationTestSuite) TestLogCustomFood_WithOptionalNutrients() {
 		ConsumedAt:     now,
 	}
 
-	_, response, err := log_food.LogCustomFood(s.ContextWithDB(ctx), nil, input)
+	_, response, err := log_food.LogCustomFood(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 250.0g of Energy Drink")
@@ -310,19 +299,17 @@ func (s *IntegrationTestSuite) TestLogCustomFood_WithOptionalNutrients() {
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), util.Ptr(80.0), savedLog.Nutrients.CaffeineMg)
 
-	// Cleanup
-	defer s.Repo().DeleteConsumptionLog(ctx, userID, now)
 }
 
 func (s *IntegrationTestSuite) TestValidationErrors() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Test log_food_by_id with invalid food_id
 	input1 := log_food.LogFoodByIdInput{
 		FoodID:  0, // Invalid
 		AmountG: 100.0,
 	}
-	_, response1, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input1)
+	_, response1, err := log_food.LogFoodById(ctx, nil, input1)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "food_id must be greater than 0", response1.Error)
 
@@ -331,7 +318,7 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 		Name:    "", // Invalid
 		AmountG: 100.0,
 	}
-	_, response2, err := log_food.LogFoodByName(s.ContextWithDB(ctx), nil, input2)
+	_, response2, err := log_food.LogFoodByName(ctx, nil, input2)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "name cannot be empty", response2.Error)
 
@@ -340,7 +327,7 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 		Barcode: "", // Invalid
 		AmountG: 100.0,
 	}
-	_, response3, err := log_food.LogFoodByBarcode(s.ContextWithDB(ctx), nil, input3)
+	_, response3, err := log_food.LogFoodByBarcode(ctx, nil, input3)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "barcode cannot be empty", response3.Error)
 
@@ -353,7 +340,7 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 		TotalFatG:      3.0,
 		CarbohydratesG: 15.0,
 	}
-	_, response4, err := log_food.LogCustomFood(s.ContextWithDB(ctx), nil, input4)
+	_, response4, err := log_food.LogCustomFood(ctx, nil, input4)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "product_name cannot be empty", response4.Error)
 
@@ -363,7 +350,7 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 		AmountG:      0,
 		ServingCount: 0, // Both zero - invalid
 	}
-	_, response5, err := log_food.LogFoodById(s.ContextWithDB(ctx), nil, input5)
+	_, response5, err := log_food.LogFoodById(ctx, nil, input5)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "either amount_g or serving_count must be greater than 0", response5.Error)
 }

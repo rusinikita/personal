@@ -33,6 +33,7 @@ type repository struct {
 }
 
 var _ gateways.DB = (*repository)(nil)
+
 var _ gateways.DBMaintainer = (*repository)(nil)
 
 func NewRepository(db postgres) (gateways.DB, gateways.DBMaintainer) {
@@ -156,6 +157,27 @@ func (r *repository) ApplyMigrations(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to apply migration %s: %w", filename, err)
 		}
+	}
+
+	return nil
+}
+
+func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM consumption_log WHERE true`)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM food WHERE true`)
+	if err != nil {
+		return err
+	}
+
+	// NOTE: clean sets, and workouts here
+
+	_, err = r.db.Exec(ctx, `DELETE FROM exercises WHERE true`)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -313,20 +335,6 @@ func (r *repository) GetConsumptionLogsByUser(ctx context.Context, userID int64)
 	}
 
 	return logs, nil
-}
-
-func (r *repository) DeleteConsumptionLog(ctx context.Context, userID int64, consumedAt time.Time) error {
-	query := `DELETE FROM consumption_log WHERE user_id = $1 AND consumed_at = $2`
-
-	_, err := r.db.Exec(ctx, query, userID, consumedAt)
-	return err
-}
-
-func (r *repository) DeleteFood(ctx context.Context, id int64) error {
-	query := `DELETE FROM food WHERE id = $1`
-
-	_, err := r.db.Exec(ctx, query, id)
-	return err
 }
 
 func (r *repository) GetLastConsumptionTime(ctx context.Context, userID int64) (*time.Time, error) {

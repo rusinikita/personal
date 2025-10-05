@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"context"
 	"log"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 )
 
 func (s *IntegrationTestSuite) TestClient() {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	// Connect to a server over stdin/stdout
 	t1, t2 := mcp.NewInMemoryTransports()
