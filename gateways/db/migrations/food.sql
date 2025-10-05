@@ -8,6 +8,7 @@
 CREATE TABLE IF NOT EXISTS food (
                     id BIGSERIAL PRIMARY KEY,
                     name VARCHAR(255) NOT NULL,
+                    user_id BIGINT NOT NULL,
                     description TEXT,
                     barcode VARCHAR(50) UNIQUE,
                     food_type VARCHAR(20) NOT NULL, --('component', 'product', 'dish'))

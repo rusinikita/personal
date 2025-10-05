@@ -12,6 +12,7 @@ import (
 type Food struct {
 	ID              int64             `json:"id" db:"id"`
 	Name            string            `json:"name" db:"name"`
+	UserID          int64             `json:"user_id" db:"user_id"`
 	Description     *string           `json:"description,omitempty" db:"description"`
 	Barcode         *string           `json:"barcode,omitempty" db:"barcode"`
 	FoodType        string            `json:"food_type" db:"food_type"`

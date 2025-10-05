@@ -43,10 +43,10 @@ func NewRepository(db postgres) (gateways.DB, gateways.DBMaintainer) {
 
 func (r *repository) AddFood(ctx context.Context, food *domain.Food) (int64, error) {
 	query := `
-		INSERT INTO food (name, description, barcode, food_type, is_archived,
+		INSERT INTO food (name, user_id, description, barcode, food_type, is_archived,
 		                 serving_size_g, serving_name, nutrients, food_composition,
 		                 created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id`
 
 	now := time.Now()
@@ -56,6 +56,7 @@ func (r *repository) AddFood(ctx context.Context, food *domain.Food) (int64, err
 	var id int64
 	err := r.db.QueryRow(ctx, query,
 		food.Name,
+		food.UserID,
 		food.Description,
 		food.Barcode,
 		food.FoodType,
@@ -73,16 +74,17 @@ func (r *repository) AddFood(ctx context.Context, food *domain.Food) (int64, err
 
 func (r *repository) CreateFood(ctx context.Context, food *domain.Food) error {
 	query := `
-		INSERT INTO food (id, name, description, barcode, food_type, is_archived,
+		INSERT INTO food (id, name, user_id, description, barcode, food_type, is_archived,
 		                 serving_size_g, serving_name, nutrients, food_composition,
 		                 created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 
 	now := time.Now()
 
 	_, err := r.db.Exec(ctx, query,
 		food.ID,
 		food.Name,
+		food.UserID,
 		food.Description,
 		food.Barcode,
 		food.FoodType,
@@ -100,7 +102,7 @@ func (r *repository) CreateFood(ctx context.Context, food *domain.Food) error {
 
 func (r *repository) GetFood(ctx context.Context, id int64) (*domain.Food, error) {
 	query := `
-		SELECT id, name, description, barcode, food_type, is_archived,
+		SELECT id, name, user_id, description, barcode, food_type, is_archived,
 		       serving_size_g, serving_name, nutrients, food_composition,
 		       created_at, updated_at
 		FROM food
@@ -110,6 +112,7 @@ func (r *repository) GetFood(ctx context.Context, id int64) (*domain.Food, error
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&food.ID,
 		&food.Name,
+		&food.UserID,
 		&food.Description,
 		&food.Barcode,
 		&food.FoodType,
@@ -208,7 +211,7 @@ func (r *repository) SearchFood(ctx context.Context, filter domain.FoodFilter) (
 
 	// Build the base SELECT query
 	query := psql.Select(
-		"id", "name", "description", "barcode", "food_type", "is_archived",
+		"id", "name", "user_id", "description", "barcode", "food_type", "is_archived",
 		"serving_size_g", "serving_name", "nutrients", "food_composition",
 		"created_at", "updated_at",
 	).From("food")
@@ -249,6 +252,7 @@ func (r *repository) SearchFood(ctx context.Context, filter domain.FoodFilter) (
 		err := rows.Scan(
 			&food.ID,
 			&food.Name,
+			&food.UserID,
 			&food.Description,
 			&food.Barcode,
 			&food.FoodType,

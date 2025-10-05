@@ -23,6 +23,7 @@
 type Food struct {
     ID              int64            `json:"id" db:"id"`
     Name            string           `json:"name" db:"name"`
+    UserID          int64            `json:"user_id" db:"user_id"`
     Description     *string          `json:"description,omitempty" db:"description"`
     Barcode         *string          `json:"barcode,omitempty" db:"barcode"`
     FoodType        string           `json:"food_type" db:"food_type"`
@@ -194,16 +195,17 @@ type AddFoodOutput struct {
 ```
 
 **Internal logic:**
-1. Валидация входных данных (name required, food_type enum, positive serving_size_g if provided)
-2. Проверка дубликатов по name и barcode (пустые строки игнорируются)
-3. Обработка нутриентов:
+1. Получение user_id из контекста через gateways.UserIDFromContext(ctx)
+2. Валидация входных данных (name required, food_type enum, positive serving_size_g if provided)
+3. Проверка дубликатов по name и barcode (пустые строки игнорируются)
+4. Обработка нутриентов:
    - Если Nutrients указаны - использовать их
    - Если только FoodComposition - рассчитать нутриенты из компонентов
    - Получить нутриенты каждого компонента через repository.GetFood()
    - Суммировать нутриенты пропорционально amount_g
-4. Создание domain.Food объекта (zero values конвертируются в nil для опциональных полей)
-5. Сохранение через repository.AddFood()
-6. Возврат ID и сообщения об успехе
+5. Создание domain.Food объекта с UserID из контекста (zero values конвертируются в nil для опциональных полей)
+6. Сохранение через repository.AddFood()
+7. Возврат ID и сообщения об успехе
 
 **Обработка Zero Values:**
 - Пустые строки (Description, Barcode, ServingName) → nil в domain.Food

@@ -55,6 +55,13 @@ func AddFood(ctx context.Context, _ *mcp.CallToolRequest, input AddFoodInput) (*
 	if db == nil {
 		return nil, AddFoodOutput{}, fmt.Errorf("database not available in context")
 	}
+
+	// Get user ID from context
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		return nil, AddFoodOutput{}, fmt.Errorf("user_id not available in context")
+	}
+
 	// 1. Validate input
 	if err := validateInput(input); err != nil {
 		return nil, AddFoodOutput{}, fmt.Errorf("validation error: %w", err)
@@ -78,6 +85,7 @@ func AddFood(ctx context.Context, _ *mcp.CallToolRequest, input AddFoodInput) (*
 	// 4. Create domain Food object
 	food := &domain.Food{
 		Name:            input.Name,
+		UserID:          userID,
 		Description:     util.PtrIfNotEmpty(input.Description),
 		Barcode:         util.PtrIfNotEmpty(input.Barcode),
 		FoodType:        input.FoodType,

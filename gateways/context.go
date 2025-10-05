@@ -17,9 +17,9 @@ func WithDB(ctx context.Context, db DB) context.Context {
 	return context.WithValue(ctx, dbContextKey, db)
 }
 
-// WithUserID adds a database interface to the context
+// WithUserID adds a user ID to the context
 func WithUserID(ctx context.Context, id int64) context.Context {
-	return context.WithValue(ctx, dbContextKey, userIDContextKey)
+	return context.WithValue(ctx, userIDContextKey, id)
 }
 
 // DBFromContext extracts the database interface from the context
@@ -35,7 +35,7 @@ func DBFromContext(ctx context.Context) DB {
 // UserIDFromContext extracts the user_id interface from the context
 // Returns 0 if no user_id is found in the context
 func UserIDFromContext(ctx context.Context) int64 {
-	userID, ok := ctx.Value(dbContextKey).(int64)
+	userID, ok := ctx.Value(userIDContextKey).(int64)
 	if !ok {
 		return 0
 	}
