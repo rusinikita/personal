@@ -475,3 +475,62 @@ func (r *repository) GetTopProducts(ctx context.Context, userID int64, from time
 
 	return results, nil
 }
+
+func (r *repository) CreateExercise(ctx context.Context, exercise *domain.Exercise) (int64, error) {
+	query := `
+		INSERT INTO exercises (user_id, name, equipment_type, created_at)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id`
+
+	now := time.Now()
+	exercise.CreatedAt = now
+
+	var id int64
+	err := r.db.QueryRow(ctx, query,
+		exercise.UserID,
+		exercise.Name,
+		exercise.EquipmentType,
+		exercise.CreatedAt,
+	).Scan(&id)
+
+	return id, err
+}
+
+func (r *repository) ListWithLastUsed(ctx context.Context, userID int64) ([]domain.Exercise, error) {
+	// Note: last_used_at will be computed from workout_sets table when it's implemented
+	// For now, it returns NULL since sets table doesn't exist yet
+	query := `
+		SELECT id, user_id, name, equipment_type, created_at, NULL as last_used_at
+		FROM exercises
+		WHERE user_id = $1
+		ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query exercises: %w", err)
+	}
+	defer rows.Close()
+
+	var exercises []domain.Exercise
+	for rows.Next() {
+		var ex domain.Exercise
+		err := rows.Scan(
+			&ex.ID,
+			&ex.UserID,
+			&ex.Name,
+			&ex.EquipmentType,
+			&ex.CreatedAt,
+			&ex.LastUsedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan exercise: %w", err)
+		}
+		exercises = append(exercises, ex)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return exercises, nil
+}

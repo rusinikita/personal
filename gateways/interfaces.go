@@ -29,6 +29,10 @@ type DB interface {
 
 	// Top products methods
 	GetTopProducts(ctx context.Context, userID int64, from time.Time, to time.Time, limit int) ([]domain.FoodStats, error)
+
+	// Exercise methods
+	CreateExercise(ctx context.Context, exercise *domain.Exercise) (int64, error)
+	ListWithLastUsed(ctx context.Context, userID int64) ([]domain.Exercise, error)
 }
 
 type DBMaintainer interface {

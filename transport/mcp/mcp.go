@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"personal/action/add_food"
+	"personal/action/create_exercise"
 	"personal/action/find_food"
 	"personal/action/log_food"
 	"personal/action/nutrition_stats"
@@ -113,6 +114,7 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &log_food.LogCustomFoodMCPDefinition, log_food.LogCustomFood)
 	mcp.AddTool(server, &nutrition_stats.GetNutritionStatsMCPDefinition, nutrition_stats.GetNutritionStats)
 	mcp.AddTool(server, &top_products.GetTopProductsMCPDefinition, top_products.GetTopProducts)
+	mcp.AddTool(server, &create_exercise.MCPDefinition, create_exercise.CreateExercise)
 
 	return server
 }
