@@ -67,6 +67,3 @@ type ToolResponse struct {
 	Error   string `json:"error,omitempty"`
 	Message string `json:"message,omitempty"`
 }
-
-// Constants
-const DEFAULT_USER_ID = int64(1)

@@ -55,6 +55,12 @@ func LogFoodByName(ctx context.Context, _ *mcp.CallToolRequest, input LogFoodByN
 		return nil, LogFoodByNameOutput{}, fmt.Errorf("database not available in context")
 	}
 
+	// Get user ID from context
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		return nil, LogFoodByNameOutput{}, fmt.Errorf("user_id not available in context")
+	}
+
 	// 1. Validate input
 	if input.Name == "" {
 		return nil, LogFoodByNameOutput{Error: "name cannot be empty"}, nil
@@ -77,7 +83,7 @@ func LogFoodByName(ctx context.Context, _ *mcp.CallToolRequest, input LogFoodByN
 	case 1:
 		// Exact match - proceed with logging
 		food := foods[0]
-		return logFoodConsumption(ctx, db, food, input.AmountG, input.ServingCount, input.MealType, input.ConsumedAt, input.Note)
+		return logFoodConsumption(ctx, db, userID, food, input.AmountG, input.ServingCount, input.MealType, input.ConsumedAt, input.Note)
 
 	default:
 		// Multiple matches - return suggestions
@@ -99,7 +105,7 @@ func LogFoodByName(ctx context.Context, _ *mcp.CallToolRequest, input LogFoodByN
 }
 
 // logFoodConsumption is a helper function to log food consumption (shared logic)
-func logFoodConsumption(ctx context.Context, db gateways.DB, food *domain.Food, amountG, servingCount float64, mealType string, consumedAt time.Time, note string) (*mcp.CallToolResult, LogFoodByNameOutput, error) {
+func logFoodConsumption(ctx context.Context, db gateways.DB, userID int64, food *domain.Food, amountG, servingCount float64, mealType string, consumedAt time.Time, note string) (*mcp.CallToolResult, LogFoodByNameOutput, error) {
 	// Calculate final amount_g
 	finalAmountG := amountG
 	if finalAmountG == 0 {
@@ -133,7 +139,7 @@ func logFoodConsumption(ctx context.Context, db gateways.DB, food *domain.Food, 
 	}
 
 	log := &domain.ConsumptionLog{
-		UserID:     DEFAULT_USER_ID,
+		UserID:     userID,
 		ConsumedAt: finalConsumedAt,
 		FoodID:     &food.ID,
 		FoodName:   food.Name,

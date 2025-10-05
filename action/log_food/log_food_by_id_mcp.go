@@ -53,6 +53,12 @@ func LogFoodById(ctx context.Context, _ *mcp.CallToolRequest, input LogFoodByIdI
 		return nil, ToolResponse{}, fmt.Errorf("database not available in context")
 	}
 
+	// Get user ID from context
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		return nil, ToolResponse{}, fmt.Errorf("user_id not available in context")
+	}
+
 	// 1. Validate input
 	if input.FoodID <= 0 {
 		return nil, ToolResponse{Error: "food_id must be greater than 0"}, nil
@@ -100,7 +106,7 @@ func LogFoodById(ctx context.Context, _ *mcp.CallToolRequest, input LogFoodByIdI
 	}
 
 	log := &domain.ConsumptionLog{
-		UserID:     DEFAULT_USER_ID,
+		UserID:     userID,
 		ConsumedAt: consumedAt,
 		FoodID:     &food.ID,
 		FoodName:   food.Name,

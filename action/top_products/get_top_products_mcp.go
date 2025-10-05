@@ -49,6 +49,12 @@ func GetTopProducts(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*m
 		return nil, GetTopProductsOutput{}, fmt.Errorf("database not available in context")
 	}
 
+	// Get user ID from context
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		return nil, GetTopProductsOutput{}, fmt.Errorf("user_id not available in context")
+	}
+
 	// Get current time
 	now := time.Now()
 
@@ -56,7 +62,7 @@ func GetTopProducts(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*m
 	threeMonthsAgo := now.AddDate(0, -3, 0)
 
 	// Call repository to get top 30 products
-	topProducts, err := db.GetTopProducts(ctx, DEFAULT_USER_ID, threeMonthsAgo, now, 30)
+	topProducts, err := db.GetTopProducts(ctx, userID, threeMonthsAgo, now, 30)
 	if err != nil {
 		return nil, GetTopProductsOutput{}, fmt.Errorf("failed to get top products: %v", err)
 	}

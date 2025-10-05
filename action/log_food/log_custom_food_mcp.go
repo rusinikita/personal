@@ -55,6 +55,12 @@ func LogCustomFood(ctx context.Context, _ *mcp.CallToolRequest, input LogCustomF
 		return nil, ToolResponse{}, fmt.Errorf("database not available in context")
 	}
 
+	// Get user ID from context
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		return nil, ToolResponse{}, fmt.Errorf("user_id not available in context")
+	}
+
 	// 1. Validate input
 	if input.ProductName == "" {
 		return nil, ToolResponse{Error: "product_name cannot be empty"}, nil
@@ -99,7 +105,7 @@ func LogCustomFood(ctx context.Context, _ *mcp.CallToolRequest, input LogCustomF
 	}
 
 	log := &domain.ConsumptionLog{
-		UserID:     DEFAULT_USER_ID,
+		UserID:     userID,
 		ConsumedAt: consumedAt,
 		FoodID:     nil, // No food ID for custom food
 		FoodName:   input.ProductName,

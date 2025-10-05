@@ -52,6 +52,12 @@ func GetNutritionStats(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) 
 		return nil, GetNutritionStatsOutput{}, fmt.Errorf("database not available in context")
 	}
 
+	// Get user ID from context
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		return nil, GetNutritionStatsOutput{}, fmt.Errorf("user_id not available in context")
+	}
+
 	// 1. Load timezone for Asia/Nicosia
 	location, err := time.LoadLocation("Asia/Nicosia")
 	if err != nil {
@@ -64,7 +70,7 @@ func GetNutritionStats(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) 
 	// 3. Last meal calculation
 	var lastMeal domain.NutritionStats
 
-	lastTime, err := db.GetLastConsumptionTime(ctx, DEFAULT_USER_ID)
+	lastTime, err := db.GetLastConsumptionTime(ctx, userID)
 	if err != nil {
 		return nil, GetNutritionStatsOutput{}, fmt.Errorf("failed to get last consumption time: %v", err)
 	}
@@ -72,7 +78,7 @@ func GetNutritionStats(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) 
 	if lastTime != nil {
 		// Create filter for last meal (1 hour before and including last record)
 		filter := domain.NutritionStatsFilter{
-			UserID:      DEFAULT_USER_ID,
+			UserID:      userID,
 			From:        lastTime.Add(-1 * time.Hour),
 			To:          *lastTime,
 			Aggregation: domain.AggregationTypeTotal,
@@ -93,7 +99,7 @@ func GetNutritionStats(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) 
 	startDate := today.AddDate(0, 0, -3) // 3 days ago
 
 	filter := domain.NutritionStatsFilter{
-		UserID:      DEFAULT_USER_ID,
+		UserID:      userID,
 		From:        startDate,
 		To:          time.Date(today.Year(), today.Month(), today.Day(), 23, 59, 59, 0, location),
 		Aggregation: domain.AggregationTypeByDay,

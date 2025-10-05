@@ -53,6 +53,12 @@ func CreateExercise(ctx context.Context, _ *mcp.CallToolRequest, input CreateExe
 		return nil, CreateExerciseOutput{}, fmt.Errorf("database not available in context")
 	}
 
+	// Get user ID from context
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		return nil, CreateExerciseOutput{}, fmt.Errorf("user_id not available in context")
+	}
+
 	// 1. Validate input
 	if err := validateInput(input); err != nil {
 		return nil, CreateExerciseOutput{}, fmt.Errorf("validation error: %w", err)
@@ -60,7 +66,7 @@ func CreateExercise(ctx context.Context, _ *mcp.CallToolRequest, input CreateExe
 
 	// 2. Create domain Exercise object
 	exercise := &domain.Exercise{
-		UserID:        1, // Single-user mode
+		UserID:        userID,
 		Name:          input.Name,
 		EquipmentType: domain.EquipmentType(input.EquipmentType),
 	}

@@ -54,6 +54,12 @@ func LogFoodByBarcode(ctx context.Context, _ *mcp.CallToolRequest, input LogFood
 		return nil, ToolResponse{}, fmt.Errorf("database not available in context")
 	}
 
+	// Get user ID from context
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		return nil, ToolResponse{}, fmt.Errorf("user_id not available in context")
+	}
+
 	// 1. Validate input
 	if input.Barcode == "" {
 		return nil, ToolResponse{Error: "barcode cannot be empty"}, nil
@@ -110,7 +116,7 @@ func LogFoodByBarcode(ctx context.Context, _ *mcp.CallToolRequest, input LogFood
 	}
 
 	log := &domain.ConsumptionLog{
-		UserID:     DEFAULT_USER_ID,
+		UserID:     userID,
 		ConsumedAt: consumedAt,
 		FoodID:     &food.ID,
 		FoodName:   food.Name,

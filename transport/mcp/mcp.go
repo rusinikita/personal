@@ -83,6 +83,8 @@ func Server(db gateways.DB) *mcp.Server {
 		return func(ctx context.Context, method string, req mcp.Request) (result mcp.Result, err error) {
 			// Add database to context
 			ctx = gateways.WithDB(ctx, db)
+			ctx = gateways.WithUserID(ctx, 1)
+
 			return handler(ctx, method, req)
 		}
 	})
