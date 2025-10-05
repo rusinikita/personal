@@ -94,91 +94,6 @@ func (s *IntegrationTestSuite) TestLogFoodById_NotFound() {
 	assert.Empty(s.T(), response.Message)
 }
 
-func (s *IntegrationTestSuite) TestLogFoodByName_Success() {
-	ctx := s.Context()
-
-	// Setup: Create food with known name
-	orange := s.createTestFood(ctx, "Orange", "111111", 0, &domain.Nutrients{
-		Calories:       util.Ptr(47.0),
-		ProteinG:       util.Ptr(0.9),
-		TotalFatG:      util.Ptr(0.1),
-		CarbohydratesG: util.Ptr(12.0),
-	})
-
-	now := time.Now().UTC().Truncate(time.Microsecond)
-
-	// Call log_food_by_name MCP tool
-	input := log_food.LogFoodByNameInput{
-		Name:       "Orange",
-		AmountG:    200.0,
-		ConsumedAt: now,
-	}
-
-	_, response, err := log_food.LogFoodByName(ctx, nil, input)
-	require.NoError(s.T(), err)
-	assert.Empty(s.T(), response.Error)
-	assert.Contains(s.T(), response.Message, "Successfully logged 200.0g of Orange")
-
-	// Verify log was saved to database
-	savedLog, err := s.Repo().GetConsumptionLog(ctx, s.UserID(), now)
-	require.NoError(s.T(), err)
-	assert.Equal(s.T(), &orange.ID, savedLog.FoodID)
-	assert.Equal(s.T(), orange.Name, savedLog.FoodName)
-	assert.Equal(s.T(), 200.0, savedLog.AmountG)
-	assert.Equal(s.T(), 94.0, *savedLog.Nutrients.Calories) // 47.0 * 2.0
-
-}
-
-func (s *IntegrationTestSuite) TestLogFoodByName_MultipleMatches() {
-	ctx := s.Context()
-
-	// Setup: Create foods with similar names (use unique names to avoid conflicts with other tests)
-	_ = s.createTestFood(ctx, "Test Apple Multiple", "", 0, nil)
-	_ = s.createTestFood(ctx, "Test Apple Multiple Juice", "", 0, nil)
-	_ = s.createTestFood(ctx, "Test Apple Multiple Pie", "", 0, nil)
-
-	// Call log_food_by_name MCP tool with ambiguous name
-	input := log_food.LogFoodByNameInput{
-		Name:    "Test Apple Multiple", // Should match multiple foods
-		AmountG: 150.0,
-	}
-
-	_, response, err := log_food.LogFoodByName(ctx, nil, input)
-	require.NoError(s.T(), err)
-	assert.Equal(s.T(), "multiple matches found", response.Error)
-	assert.Empty(s.T(), response.Message)
-
-	// Verify suggestions are provided (first 2 alphabetically)
-	require.Len(s.T(), response.Suggestions, 2)
-
-	// Check that we get the expected suggestions (should be alphabetically sorted)
-	suggestionNames := []string{response.Suggestions[0].Name, response.Suggestions[1].Name}
-
-	// Should contain the two foods we created that match the search term
-	assert.Contains(s.T(), suggestionNames, "Test Apple Multiple")
-	assert.Contains(s.T(), suggestionNames, "Test Apple Multiple Juice")
-
-	// Verify alphabetical order: "Test Apple Multiple" should come before "Test Apple Multiple Juice"
-	assert.Equal(s.T(), "Test Apple Multiple", response.Suggestions[0].Name)
-	assert.Equal(s.T(), "Test Apple Multiple Juice", response.Suggestions[1].Name)
-}
-
-func (s *IntegrationTestSuite) TestLogFoodByName_NotFound() {
-	ctx := s.Context()
-
-	// Call log_food_by_name MCP tool with non-existent name
-	input := log_food.LogFoodByNameInput{
-		Name:    "NonExistentFood",
-		AmountG: 100.0,
-	}
-
-	_, response, err := log_food.LogFoodByName(ctx, nil, input)
-	require.NoError(s.T(), err)
-	assert.Equal(s.T(), "food not found", response.Error)
-	assert.Empty(s.T(), response.Message)
-	assert.Empty(s.T(), response.Suggestions)
-}
-
 func (s *IntegrationTestSuite) TestLogFoodByBarcode_Success() {
 	ctx := s.Context()
 
@@ -306,15 +221,6 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 	_, response1, err := log_food.LogFoodById(ctx, nil, input1)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "food_id must be greater than 0", response1.Error)
-
-	// Test log_food_by_name with empty name
-	input2 := log_food.LogFoodByNameInput{
-		Name:    "", // Invalid
-		AmountG: 100.0,
-	}
-	_, response2, err := log_food.LogFoodByName(ctx, nil, input2)
-	require.NoError(s.T(), err)
-	assert.Equal(s.T(), "name cannot be empty", response2.Error)
 
 	// Test log_food_by_barcode with empty barcode
 	input3 := log_food.LogFoodByBarcodeInput{

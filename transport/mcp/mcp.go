@@ -33,7 +33,6 @@ This MCP server provides tools for managing a personal food database and logging
 3. **Consumption Logging:**
    - Use 'log_food_by_id' for precise logging when you have the exact food ID
    - Use 'log_food_by_barcode' for packaged products with barcodes
-   - Use 'log_food_by_name' for quick logging by name (searches and logs in one step)
    - Use 'log_custom_food' for one-time entries without saving to database
 
 4. **Analytics & Insights:**
@@ -111,7 +110,6 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &add_food.MCPDefinition, add_food.AddFood)
 	mcp.AddTool(server, &find_food.ResolveFoodIdByNameMCPDefinition, find_food.ResolveFoodIdByName)
 	mcp.AddTool(server, &log_food.LogFoodByIdMCPDefinition, log_food.LogFoodById)
-	mcp.AddTool(server, &log_food.LogFoodByNameMCPDefinition, log_food.LogFoodByName)
 	mcp.AddTool(server, &log_food.LogFoodByBarcodeMCPDefinition, log_food.LogFoodByBarcode)
 	mcp.AddTool(server, &log_food.LogCustomFoodMCPDefinition, log_food.LogCustomFood)
 	mcp.AddTool(server, &nutrition_stats.GetNutritionStatsMCPDefinition, nutrition_stats.GetNutritionStats)
