@@ -58,8 +58,10 @@
 
 ### Domain structure
 
+All domain structures already exist in the codebase:
+
 ```go
-// domain/workout.go
+// domain/workout.go - ALREADY EXISTS
 type Workout struct {
     ID          int64      `json:"id"`
     UserID      int64      `json:"user_id"`
@@ -67,52 +69,36 @@ type Workout struct {
     CompletedAt *time.Time `json:"completed_at"` // NULL means active
 }
 
-// domain/set.go
+// domain/set.go - ALREADY EXISTS
 type Set struct {
-    ID              int64      `json:"id"`
-    UserID          int64      `json:"user_id"`
-    WorkoutID       int64      `json:"workout_id"`
-    ExerciseID      int64      `json:"exercise_id"`
-    Reps            *int64     `json:"reps"`             // NULL for static exercises
-    DurationSeconds *int64     `json:"duration_seconds"` // NULL for rep-based exercises
-    WeightKg        *float64   `json:"weight_kg"`        // NULL for bodyweight
-    CreatedAt       time.Time  `json:"created_at"`
+    ID              int64     `json:"id"`
+    UserID          int64     `json:"user_id"`
+    WorkoutID       int64     `json:"workout_id"`
+    ExerciseID      int64     `json:"exercise_id"`
+    Reps            int64     `json:"reps,omitempty"`             // 0 for static exercises
+    DurationSeconds int64     `json:"duration_seconds,omitempty"` // 0 for rep-based exercises
+    WeightKg        float64   `json:"weight_kg,omitempty"`        // 0 for bodyweight
+    CreatedAt       time.Time `json:"created_at"`
 }
 
-// domain/exercise.go (partial)
+// domain/exercise.go - ALREADY EXISTS
 type Exercise struct {
     ID            int64         `json:"id"`
+    UserID        int64         `json:"user_id"`
     Name          string        `json:"name"`
     EquipmentType EquipmentType `json:"equipment_type"`
-}
-
-type ExerciseSearch struct {
-    UserID int64
-    IDS    []int64
-    Limit  int64
-}
-
-type WorkoutSearch struct {
-    UserID int64
-    IDS    []int64
-}
-
-type SetSearch struct {
-    UserID int64
-    From   time.Time
-    To     time.Time
+    CreatedAt     time.Time     `json:"created_at"`
+    LastUsedAt    *time.Time    `json:"last_used_at,omitempty"`
 }
 ```
 
 ### Database
 
 ```go
-// gateways/workout_repository.go
-type WorkoutRepository interface {
-    ListWorkouts(ctx context.Context, params WorkoutSearch) ([]Workout, error)
-    ListExercises(ctx context.Context, params ExerciseSearch) ([]Exercise, error)
-    ListSets(ctx context.Context, params SetSearch) ([]Set, error)
-}
+// gateways/interfaces.go - ADD new methods to DB interface
+ListSets(ctx context.Context, userID int64, from time.Time, to time.Time) ([]domain.Set, error)
+GetExercisesByIDs(ctx context.Context, userID int64, exerciseIDs []int64) ([]domain.Exercise, error)
+GetWorkoutsByIDs(ctx context.Context, userID int64, workoutIDs []int64) ([]domain.Workout, error)
 ```
 
 ```mermaid
@@ -189,12 +175,11 @@ erDiagram
 ```
 
 **Logic:**
-- Use default user_id (single-user mode)
-- Create SetSearch params with user_id, from=NOW()-30days, to=NOW()
-- Call WorkoutRepository.ListSets(params) - returns all sets sorted by created_at DESC
+- Use default user_id from context
+- Call DB.ListSets(user_id, from=NOW()-30days, to=NOW()) - returns all sets sorted by created_at DESC
 - Extract unique workout_ids and exercise_ids from sets
-- Call WorkoutRepository.ListWorkouts(WorkoutSearch{user_id, workout_ids}) to get workout details
-- Call WorkoutRepository.ListExercises(ExerciseSearch{user_id, exercise_ids}) to get exercise details
+- Call DB.GetWorkoutsByIDs(user_id, workout_ids) to get workout details
+- Call DB.GetExercisesByIDs(user_id, exercise_ids) to get exercise details
 - Group sets by workout_id, then by exercise_id
 - Merge workout, exercise, and set data
 - Sort workouts by started_at DESC, limit to first N workouts (default 10)
