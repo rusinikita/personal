@@ -30,6 +30,15 @@ type DB interface {
 	// Exercise methods
 	CreateExercise(ctx context.Context, exercise *domain.Exercise) (int64, error)
 	ListWithLastUsed(ctx context.Context, userID int64) ([]domain.Exercise, error)
+
+	// Workout methods
+	CreateWorkout(ctx context.Context, workout *domain.Workout) (int64, error)
+	CloseWorkout(ctx context.Context, workoutID int64, completedAt time.Time) error
+	ListWorkouts(ctx context.Context, userID int64) ([]domain.Workout, error)
+
+	// Set methods
+	CreateSet(ctx context.Context, set *domain.Set) (int64, error)
+	GetLastSet(ctx context.Context, userID int64) (*domain.WorkoutSet, error)
 }
 
 type DBMaintainer interface {

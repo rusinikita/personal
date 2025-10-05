@@ -148,7 +148,15 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 		return err
 	}
 
-	// NOTE: clean sets, and workouts here
+	_, err = r.db.Exec(ctx, `DELETE FROM sets WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM workouts WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
 
 	_, err = r.db.Exec(ctx, `DELETE FROM exercises WHERE user_id = $1`, userID)
 	if err != nil {
@@ -481,13 +489,14 @@ func (r *repository) CreateExercise(ctx context.Context, exercise *domain.Exerci
 }
 
 func (r *repository) ListWithLastUsed(ctx context.Context, userID int64) ([]domain.Exercise, error) {
-	// Note: last_used_at will be computed from workout_sets table when it's implemented
-	// For now, it returns NULL since sets table doesn't exist yet
 	query := `
-		SELECT id, user_id, name, equipment_type, created_at, NULL as last_used_at
-		FROM exercises
-		WHERE user_id = $1
-		ORDER BY created_at DESC`
+		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
+		       MAX(s.created_at) as last_used_at
+		FROM exercises e
+		LEFT JOIN sets s ON e.id = s.exercise_id
+		WHERE e.user_id = $1
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at
+		ORDER BY e.created_at DESC`
 
 	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {
@@ -517,4 +526,122 @@ func (r *repository) ListWithLastUsed(ctx context.Context, userID int64) ([]doma
 	}
 
 	return exercises, nil
+}
+
+func (r *repository) CreateWorkout(ctx context.Context, workout *domain.Workout) (int64, error) {
+	query := `
+		INSERT INTO workouts (user_id, started_at, completed_at)
+		VALUES ($1, $2, $3)
+		RETURNING id`
+
+	var id int64
+	err := r.db.QueryRow(ctx, query,
+		workout.UserID,
+		workout.StartedAt,
+		workout.CompletedAt,
+	).Scan(&id)
+
+	return id, err
+}
+
+func (r *repository) CloseWorkout(ctx context.Context, workoutID int64, completedAt time.Time) error {
+	query := `
+		UPDATE workouts
+		SET completed_at = $1
+		WHERE id = $2`
+
+	_, err := r.db.Exec(ctx, query, completedAt, workoutID)
+	return err
+}
+
+func (r *repository) ListWorkouts(ctx context.Context, userID int64) ([]domain.Workout, error) {
+	query := `
+		SELECT id, user_id, started_at, completed_at
+		FROM workouts
+		WHERE user_id = $1
+		ORDER BY started_at DESC`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query workouts: %w", err)
+	}
+	defer rows.Close()
+
+	var workouts []domain.Workout
+	for rows.Next() {
+		var w domain.Workout
+		err := rows.Scan(
+			&w.ID,
+			&w.UserID,
+			&w.StartedAt,
+			&w.CompletedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan workout: %w", err)
+		}
+		workouts = append(workouts, w)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return workouts, nil
+}
+
+func (r *repository) CreateSet(ctx context.Context, set *domain.Set) (int64, error) {
+	query := `
+		INSERT INTO sets (user_id, workout_id, exercise_id, reps, duration_seconds, weight_kg, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id`
+
+	var id int64
+	err := r.db.QueryRow(ctx, query,
+		set.UserID,
+		set.WorkoutID,
+		set.ExerciseID,
+		set.Reps,
+		set.DurationSeconds,
+		set.WeightKg,
+		set.CreatedAt,
+	).Scan(&id)
+
+	return id, err
+}
+
+func (r *repository) GetLastSet(ctx context.Context, userID int64) (*domain.WorkoutSet, error) {
+	query := `
+		SELECT
+			w.id, w.user_id, w.started_at, w.completed_at,
+			s.id, s.user_id, s.workout_id, s.exercise_id, s.reps, s.duration_seconds, s.weight_kg, s.created_at
+		FROM sets s
+		JOIN workouts w ON s.workout_id = w.id
+		WHERE s.user_id = $1
+		ORDER BY s.created_at DESC
+		LIMIT 1`
+
+	var ws domain.WorkoutSet
+	err := r.db.QueryRow(ctx, query, userID).Scan(
+		&ws.Workout.ID,
+		&ws.Workout.UserID,
+		&ws.Workout.StartedAt,
+		&ws.Workout.CompletedAt,
+		&ws.Set.ID,
+		&ws.Set.UserID,
+		&ws.Set.WorkoutID,
+		&ws.Set.ExerciseID,
+		&ws.Set.Reps,
+		&ws.Set.DurationSeconds,
+		&ws.Set.WeightKg,
+		&ws.Set.CreatedAt,
+	)
+
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &ws, nil
 }

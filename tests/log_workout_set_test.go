@@ -30,25 +30,21 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithRepsCreatesActiveWorkout() 
 		WeightKg:   util.Ptr(80.5),
 	}
 
-	// TODO: implement log_workout_set.LogWorkoutSet action
-	// _, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
-	// require.NoError(s.T(), err)
-	// require.NotZero(s.T(), output.SetID)
-	// require.NotZero(s.T(), output.WorkoutID)
-	// assert.True(s.T(), output.IsNewWorkout)
+	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	require.NoError(s.T(), err)
+	require.NotZero(s.T(), output.SetID)
+	require.NotZero(s.T(), output.WorkoutID)
+	assert.True(s.T(), output.IsNewWorkout)
 
-	// TODO: implement DB.GetLastSet method
-	// workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
-	// require.NoError(s.T(), err)
-	// assert.Equal(s.T(), output.SetID, workoutSet.Set.ID)
-	// assert.Equal(s.T(), output.WorkoutID, workoutSet.Workout.ID)
-	// assert.Equal(s.T(), exerciseOutput.ID, workoutSet.Set.ExerciseID)
-	// assert.Equal(s.T(), int64(10), *workoutSet.Set.Reps)
-	// assert.Equal(s.T(), 80.5, *workoutSet.Set.WeightKg)
-	// assert.Nil(s.T(), workoutSet.Set.DurationSeconds)
-	// assert.Nil(s.T(), workoutSet.Workout.CompletedAt)
-
-	_ = input // avoid unused variable error
+	workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), output.SetID, workoutSet.Set.ID)
+	assert.Equal(s.T(), output.WorkoutID, workoutSet.Workout.ID)
+	assert.Equal(s.T(), exerciseOutput.ID, workoutSet.Set.ExerciseID)
+	assert.Equal(s.T(), int64(10), *workoutSet.Set.Reps)
+	assert.Equal(s.T(), 80.5, *workoutSet.Set.WeightKg)
+	assert.Nil(s.T(), workoutSet.Set.DurationSeconds)
+	assert.Nil(s.T(), workoutSet.Workout.CompletedAt)
 }
 
 func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDuration() {
@@ -68,18 +64,14 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDuration() {
 		DurationSeconds: util.Ptr(int64(60)),
 	}
 
-	// TODO: implement log_workout_set.LogWorkoutSet action
-	// _, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
-	// require.NoError(s.T(), err)
-	// require.NotZero(s.T(), output.SetID)
+	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	require.NoError(s.T(), err)
+	require.NotZero(s.T(), output.SetID)
 
-	// TODO: implement DB.GetLastSet method
-	// workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
-	// require.NoError(s.T(), err)
-	// assert.Equal(s.T(), int64(60), *workoutSet.Set.DurationSeconds)
-	// assert.Nil(s.T(), workoutSet.Set.Reps)
-
-	_ = input // avoid unused variable error
+	workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), int64(60), *workoutSet.Set.DurationSeconds)
+	assert.Nil(s.T(), workoutSet.Set.Reps)
 }
 
 func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
@@ -93,28 +85,26 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
 	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, exerciseInput)
 	require.NoError(s.T(), err)
 
-	// TODO: implement DB.CreateWorkout method
 	// Create active workout
-	// workout := domain.Workout{
-	// 	UserID:      s.UserID(),
-	// 	StartedAt:   time.Now(),
-	// 	CompletedAt: nil,
-	// }
-	// workoutID, err := s.Repo().CreateWorkout(ctx, &workout)
-	// require.NoError(s.T(), err)
+	workout := domain.Workout{
+		UserID:      s.UserID(),
+		StartedAt:   time.Now(),
+		CompletedAt: nil,
+	}
+	workoutID, err := s.Repo().CreateWorkout(ctx, &workout)
+	require.NoError(s.T(), err)
 
-	// TODO: implement DB.CreateSet method
 	// Create a set in the active workout (less than 2 hours ago)
-	// set := domain.Set{
-	// 	UserID:     s.UserID(),
-	// 	WorkoutID:  workoutID,
-	// 	ExerciseID: exerciseOutput.ID,
-	// 	Reps:       util.Ptr(int64(5)),
-	// 	WeightKg:   util.Ptr(100.0),
-	// 	CreatedAt:  time.Now().Add(-30 * time.Minute),
-	// }
-	// err = s.Repo().CreateSet(ctx, &set)
-	// require.NoError(s.T(), err)
+	set := domain.Set{
+		UserID:     s.UserID(),
+		WorkoutID:  workoutID,
+		ExerciseID: exerciseOutput.ID,
+		Reps:       util.Ptr(int64(5)),
+		WeightKg:   util.Ptr(100.0),
+		CreatedAt:  time.Now().Add(-30 * time.Minute),
+	}
+	_, err = s.Repo().CreateSet(ctx, &set)
+	require.NoError(s.T(), err)
 
 	// Call MCP tool log_workout_set
 	input := log_workout_set.LogWorkoutSetInput{
@@ -123,19 +113,15 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
 		WeightKg:   util.Ptr(100.0),
 	}
 
-	// TODO: implement log_workout_set.LogWorkoutSet action
-	// _, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
-	// require.NoError(s.T(), err)
-	// assert.False(s.T(), output.IsNewWorkout)
-	// assert.Equal(s.T(), workoutID, output.WorkoutID)
+	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	require.NoError(s.T(), err)
+	assert.False(s.T(), output.IsNewWorkout)
+	assert.Equal(s.T(), workoutID, output.WorkoutID)
 
-	// TODO: implement DB.GetLastSet method
-	// workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
-	// require.NoError(s.T(), err)
-	// assert.Equal(s.T(), workoutID, workoutSet.Workout.ID)
-	// assert.Equal(s.T(), int64(8), *workoutSet.Set.Reps)
-
-	_ = input // avoid unused variable error
+	workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), workoutID, workoutSet.Workout.ID)
+	assert.Equal(s.T(), int64(8), *workoutSet.Set.Reps)
 }
 
 func (s *IntegrationTestSuite) TestLogWorkoutSet_ClosesOldWorkoutAndCreatesNew() {
@@ -149,29 +135,27 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ClosesOldWorkoutAndCreatesNew()
 	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, exerciseInput)
 	require.NoError(s.T(), err)
 
-	// TODO: implement DB.CreateWorkout method
 	// Create active workout started 3 hours ago
-	// threeHoursAgo := time.Now().Add(-3 * time.Hour)
-	// workout := domain.Workout{
-	// 	UserID:      s.UserID(),
-	// 	StartedAt:   threeHoursAgo,
-	// 	CompletedAt: nil,
-	// }
-	// oldWorkoutID, err := s.Repo().CreateWorkout(ctx, &workout)
-	// require.NoError(s.T(), err)
+	threeHoursAgo := time.Now().Add(-3 * time.Hour)
+	workout := domain.Workout{
+		UserID:      s.UserID(),
+		StartedAt:   threeHoursAgo,
+		CompletedAt: nil,
+	}
+	oldWorkoutID, err := s.Repo().CreateWorkout(ctx, &workout)
+	require.NoError(s.T(), err)
 
-	// TODO: implement DB.CreateSet method
 	// Create set in old workout (more than 2 hours ago)
-	// set := domain.Set{
-	// 	UserID:     s.UserID(),
-	// 	WorkoutID:  oldWorkoutID,
-	// 	ExerciseID: exerciseOutput.ID,
-	// 	Reps:       util.Ptr(int64(5)),
-	// 	WeightKg:   util.Ptr(120.0),
-	// 	CreatedAt:  threeHoursAgo,
-	// }
-	// err = s.Repo().CreateSet(ctx, &set)
-	// require.NoError(s.T(), err)
+	set := domain.Set{
+		UserID:     s.UserID(),
+		WorkoutID:  oldWorkoutID,
+		ExerciseID: exerciseOutput.ID,
+		Reps:       util.Ptr(int64(5)),
+		WeightKg:   util.Ptr(120.0),
+		CreatedAt:  threeHoursAgo,
+	}
+	_, err = s.Repo().CreateSet(ctx, &set)
+	require.NoError(s.T(), err)
 
 	// Call MCP tool log_workout_set with exercise_id, reps
 	input := log_workout_set.LogWorkoutSetInput{
@@ -180,35 +164,30 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ClosesOldWorkoutAndCreatesNew()
 		WeightKg:   util.Ptr(120.0),
 	}
 
-	// TODO: implement log_workout_set.LogWorkoutSet action
-	// _, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
-	// require.NoError(s.T(), err)
-	// assert.True(s.T(), output.IsNewWorkout)
-	// assert.NotEqual(s.T(), oldWorkoutID, output.WorkoutID)
+	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	require.NoError(s.T(), err)
+	assert.True(s.T(), output.IsNewWorkout)
+	assert.NotEqual(s.T(), oldWorkoutID, output.WorkoutID)
 
-	// TODO: implement DB.GetLastSet method
 	// Verify new set in new workout
-	// workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
-	// require.NoError(s.T(), err)
-	// assert.Equal(s.T(), output.WorkoutID, workoutSet.Workout.ID)
-	// assert.NotEqual(s.T(), oldWorkoutID, workoutSet.Workout.ID)
+	workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), output.WorkoutID, workoutSet.Workout.ID)
+	assert.NotEqual(s.T(), oldWorkoutID, workoutSet.Workout.ID)
 
-	// TODO: implement DB.ListWorkouts method
 	// Verify old workout has completed_at set
-	// workouts, err := s.Repo().ListWorkouts(ctx, s.UserID())
-	// require.NoError(s.T(), err)
-	// var oldWorkout *domain.Workout
-	// for _, w := range workouts {
-	// 	if w.ID == oldWorkoutID {
-	// 		oldWorkout = &w
-	// 		break
-	// 	}
-	// }
-	// require.NotNil(s.T(), oldWorkout)
-	// assert.NotNil(s.T(), oldWorkout.CompletedAt)
-	// assert.Equal(s.T(), threeHoursAgo.Unix(), oldWorkout.CompletedAt.Unix())
-
-	_ = input // avoid unused variable error
+	workouts, err := s.Repo().ListWorkouts(ctx, s.UserID())
+	require.NoError(s.T(), err)
+	var oldWorkout *domain.Workout
+	for _, w := range workouts {
+		if w.ID == oldWorkoutID {
+			oldWorkout = &w
+			break
+		}
+	}
+	require.NotNil(s.T(), oldWorkout)
+	assert.NotNil(s.T(), oldWorkout.CompletedAt)
+	assert.Equal(s.T(), threeHoursAgo.Unix(), oldWorkout.CompletedAt.Unix())
 }
 
 func (s *IntegrationTestSuite) TestLogWorkoutSet_Validation() {
@@ -228,18 +207,8 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_Validation() {
 		// No reps or duration_seconds
 	}
 
-	// TODO: implement log_workout_set.LogWorkoutSet action
-	// _, _, err = log_workout_set.LogWorkoutSet(ctx, nil, input)
-	// require.Error(s.T(), err)
-	// assert.Contains(s.T(), err.Error(), "reps")
-	// assert.Contains(s.T(), err.Error(), "duration_seconds")
-
-	_ = input // avoid unused variable error
+	_, _, err = log_workout_set.LogWorkoutSet(ctx, nil, input)
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "reps")
+	assert.Contains(s.T(), err.Error(), "duration_seconds")
 }
-
-// Prevent unused import warnings
-var (
-	_ = time.Now
-	_ = assert.Equal
-	_ = domain.Exercise{}
-)
