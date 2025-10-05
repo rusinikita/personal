@@ -97,7 +97,7 @@ func AddFood(ctx context.Context, _ *mcp.CallToolRequest, input AddFoodInput) (*
 	}
 
 	// 5. Save to database
-	id, err := db.AddFood(ctx, food)
+	id, err := db.CreateFood(ctx, food)
 	if err != nil {
 		return nil, AddFoodOutput{}, fmt.Errorf("database error: %w", err)
 	}

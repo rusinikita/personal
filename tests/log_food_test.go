@@ -23,7 +23,6 @@ func (s *IntegrationTestSuite) TestLogFoodById_Success() {
 		CarbohydratesG: util.Ptr(14.0),
 	})
 
-	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_food_by_id MCP tool
@@ -39,7 +38,7 @@ func (s *IntegrationTestSuite) TestLogFoodById_Success() {
 	assert.Contains(s.T(), response.Message, "Successfully logged 150.0g of Apple")
 
 	// Verify log was saved to database
-	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, s.UserID(), now)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), &apple.ID, savedLog.FoodID)
 	assert.Equal(s.T(), apple.Name, savedLog.FoodName)
@@ -58,7 +57,6 @@ func (s *IntegrationTestSuite) TestLogFoodById_WithServingCount() {
 		CarbohydratesG: util.Ptr(49.0),
 	})
 
-	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_food_by_id MCP tool with serving count
@@ -74,7 +72,7 @@ func (s *IntegrationTestSuite) TestLogFoodById_WithServingCount() {
 	assert.Contains(s.T(), response.Message, "Successfully logged 60.0g of Bread")
 
 	// Verify log was saved with correct calculated amounts
-	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, s.UserID(), now)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 60.0, savedLog.AmountG)                      // 2 servings * 30g
 	assert.InDelta(s.T(), 159.0, *savedLog.Nutrients.Calories, 0.01) // 265.0 * 0.6
@@ -107,7 +105,6 @@ func (s *IntegrationTestSuite) TestLogFoodByName_Success() {
 		CarbohydratesG: util.Ptr(12.0),
 	})
 
-	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_food_by_name MCP tool
@@ -123,7 +120,7 @@ func (s *IntegrationTestSuite) TestLogFoodByName_Success() {
 	assert.Contains(s.T(), response.Message, "Successfully logged 200.0g of Orange")
 
 	// Verify log was saved to database
-	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, s.UserID(), now)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), &orange.ID, savedLog.FoodID)
 	assert.Equal(s.T(), orange.Name, savedLog.FoodName)
@@ -193,7 +190,6 @@ func (s *IntegrationTestSuite) TestLogFoodByBarcode_Success() {
 		CarbohydratesG: util.Ptr(23.0),
 	})
 
-	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_food_by_barcode MCP tool
@@ -209,7 +205,7 @@ func (s *IntegrationTestSuite) TestLogFoodByBarcode_Success() {
 	assert.Contains(s.T(), response.Message, "Successfully logged 120.0g of Banana")
 
 	// Verify log was saved to database
-	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, s.UserID(), now)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), &banana.ID, savedLog.FoodID)
 	assert.Equal(s.T(), banana.Name, savedLog.FoodName)
@@ -236,7 +232,6 @@ func (s *IntegrationTestSuite) TestLogFoodByBarcode_NotFound() {
 func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
 	ctx := s.Context()
 
-	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_custom_food MCP tool
@@ -258,7 +253,7 @@ func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
 	assert.Contains(s.T(), response.Message, "Successfully logged 180.0g of Homemade Sandwich")
 
 	// Verify log was saved to database
-	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, s.UserID(), now)
 	require.NoError(s.T(), err)
 	assert.Nil(s.T(), savedLog.FoodID) // Should be null for custom food
 	assert.Equal(s.T(), "Homemade Sandwich", savedLog.FoodName)
@@ -273,7 +268,6 @@ func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
 func (s *IntegrationTestSuite) TestLogCustomFood_WithOptionalNutrients() {
 	ctx := s.Context()
 
-	userID := int64(1)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_custom_food MCP tool with optional nutrients
@@ -295,7 +289,7 @@ func (s *IntegrationTestSuite) TestLogCustomFood_WithOptionalNutrients() {
 	assert.Contains(s.T(), response.Message, "Successfully logged 250.0g of Energy Drink")
 
 	// Verify log was saved with optional nutrients
-	savedLog, err := s.Repo().GetConsumptionLog(ctx, userID, now)
+	savedLog, err := s.Repo().GetConsumptionLog(ctx, s.UserID(), now)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), util.Ptr(80.0), savedLog.Nutrients.CaffeineMg)
 
@@ -356,9 +350,15 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 }
 
 // Test helper to create food items for testing (reused from old test)
-func (s *IntegrationTestSuite) createTestFood(ctx context.Context, name, barcode string, servingSizeG float64, nutrients *domain.Nutrients) *domain.Food {
+func (s *IntegrationTestSuite) createTestFood(
+	ctx context.Context,
+	name, barcode string,
+	servingSizeG float64,
+	nutrients *domain.Nutrients,
+) *domain.Food {
 	food := &domain.Food{
 		Name:      name,
+		UserID:    s.UserID(3),
 		FoodType:  "product",
 		Nutrients: nutrients,
 	}
@@ -371,7 +371,7 @@ func (s *IntegrationTestSuite) createTestFood(ctx context.Context, name, barcode
 		food.ServingSizeG = &servingSizeG
 	}
 
-	id, err := s.Repo().AddFood(ctx, food)
+	id, err := s.Repo().CreateFood(ctx, food)
 	require.NoError(s.T(), err)
 	food.ID = id
 

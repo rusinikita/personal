@@ -14,7 +14,6 @@ import (
 
 func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 	ctx := s.Context()
-	userID := int64(1)
 
 	// Use UTC timezone
 	location := time.UTC
@@ -76,7 +75,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 		usedTimestamps[consumedAt] = true
 
 		record := &domain.ConsumptionLog{
-			UserID:     userID,
+			UserID:     s.UserID(),
 			ConsumedAt: consumedAt,
 			FoodID:     nil,
 			FoodName:   "Test Food",
@@ -150,7 +149,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 		usedTimestamps[consumedAt] = true
 
 		record := &domain.ConsumptionLog{
-			UserID:     userID,
+			UserID:     s.UserID(),
 			ConsumedAt: consumedAt,
 			FoodID:     nil,
 			FoodName:   "Test Food",
@@ -270,7 +269,6 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_EmptyDatabase() {
 
 func (s *IntegrationTestSuite) TestGetNutritionStats_TimezoneBoundaries() {
 	ctx := s.Context()
-	userID := int64(1)
 
 	// Use UTC timezone
 	location := time.UTC
@@ -288,7 +286,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_TimezoneBoundaries() {
 
 	records := []*domain.ConsumptionLog{
 		{
-			UserID:     userID,
+			UserID:     s.UserID(),
 			ConsumedAt: yesterdayEnd,
 			FoodName:   "Yesterday Record",
 			AmountG:    100.0,
@@ -300,7 +298,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_TimezoneBoundaries() {
 			},
 		},
 		{
-			UserID:     userID,
+			UserID:     s.UserID(),
 			ConsumedAt: todayRecord,
 			FoodName:   "Today Record",
 			AmountG:    150.0,

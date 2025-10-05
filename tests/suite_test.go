@@ -39,7 +39,9 @@ func (s *IntegrationTestSuite) UserID(skip ...int) int64 {
 }
 
 func (s *IntegrationTestSuite) Context() context.Context {
-	ctx := gateways.WithDB(gateways.WithUserID(context.Background(), s.UserID(3)), s.repo)
+	ctx := context.Background()
+	ctx = gateways.WithUserID(ctx, s.UserID(3))
+	ctx = gateways.WithDB(ctx, s.repo)
 
 	return ctx
 }

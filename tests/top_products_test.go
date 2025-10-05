@@ -15,7 +15,6 @@ import (
 
 func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 	ctx := s.Context()
-	userID := int64(1)
 
 	// Get current time in UTC
 	now := time.Now().UTC()
@@ -55,10 +54,12 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 
 	// Create food records in food table first
 	foodRecords := make(map[int64]*domain.Food)
-	for foodID := int64(1); foodID <= 40; foodID++ {
+	foodIDMapping := make(map[int64]int64) // Maps old foodID (1-40) to real database ID
+
+	for i := int64(1); i <= 40; i++ {
 		food := &domain.Food{
-			ID:          foodID,
 			Name:        GenerateRandomFoodName(rng),
+			UserID:      s.UserID(),
 			Description: nil,
 			Barcode:     nil,
 			FoodType:    "product",
@@ -71,17 +72,22 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 			food.ServingName = util.Ptr(GenerateRandomServingName(rng))
 		}
 
-		err := s.Repo().CreateFood(ctx, food)
+		realFoodID, err := s.Repo().CreateFood(ctx, food)
 		require.NoError(s.T(), err)
 
-		foodRecords[foodID] = food
+		foodIDMapping[i] = realFoodID // Map index to real ID
+		foodRecords[realFoodID] = food
 	}
 
 	// Generate consumption log records
 	usedTimestamps := make(map[time.Time]bool)
 	var allRecords []*domain.ConsumptionLog
+	realFoodIDFrequencies := make(map[int64]int) // Frequencies by real database ID
 
-	for foodID, frequency := range foodIDFrequencies {
+	for oldFoodID, frequency := range foodIDFrequencies {
+		realFoodID := foodIDMapping[oldFoodID]
+		realFoodIDFrequencies[realFoodID] = frequency
+
 		for i := 0; i < frequency; i++ {
 			// Generate random time within the time window (last 2 months)
 			timeRange := now.Sub(twoMonthsAgo)
@@ -98,10 +104,10 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 			weight := rng.Float64()*200 + 50 // 50-250g weight
 
 			record := &domain.ConsumptionLog{
-				UserID:     userID,
+				UserID:     s.UserID(),
 				ConsumedAt: consumedAt,
-				FoodID:     util.Ptr(foodID),
-				FoodName:   foodRecords[foodID].Name,
+				FoodID:     util.Ptr(realFoodID),
+				FoodName:   foodRecords[realFoodID].Name,
 				AmountG:    weight,
 				Nutrients:  GenerateRandomNutrients(rng),
 			}
@@ -125,15 +131,15 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 	}
 
 	foodStats := make([]foodStat, 0)
-	for foodID, frequency := range foodIDFrequencies {
-		food := foodRecords[foodID]
+	for realFoodID, frequency := range realFoodIDFrequencies {
+		food := foodRecords[realFoodID]
 		servingName := ""
 		if food.ServingName != nil {
 			servingName = *food.ServingName
 		}
 
 		foodStats = append(foodStats, foodStat{
-			foodID:      foodID,
+			foodID:      realFoodID,
 			foodName:    food.Name,
 			servingName: servingName,
 			logCount:    frequency,

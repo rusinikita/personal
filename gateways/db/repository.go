@@ -41,7 +41,7 @@ func NewRepository(db postgres) (gateways.DB, gateways.DBMaintainer) {
 	return r, r
 }
 
-func (r *repository) AddFood(ctx context.Context, food *domain.Food) (int64, error) {
+func (r *repository) CreateFood(ctx context.Context, food *domain.Food) (int64, error) {
 	query := `
 		INSERT INTO food (name, user_id, description, barcode, food_type, is_archived,
 		                 serving_size_g, serving_name, nutrients, food_composition,
@@ -70,34 +70,6 @@ func (r *repository) AddFood(ctx context.Context, food *domain.Food) (int64, err
 	).Scan(&id)
 
 	return id, err
-}
-
-func (r *repository) CreateFood(ctx context.Context, food *domain.Food) error {
-	query := `
-		INSERT INTO food (id, name, user_id, description, barcode, food_type, is_archived,
-		                 serving_size_g, serving_name, nutrients, food_composition,
-		                 created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
-
-	now := time.Now()
-
-	_, err := r.db.Exec(ctx, query,
-		food.ID,
-		food.Name,
-		food.UserID,
-		food.Description,
-		food.Barcode,
-		food.FoodType,
-		food.IsArchived,
-		food.ServingSizeG,
-		food.ServingName,
-		food.Nutrients,
-		food.FoodComposition,
-		now,
-		now,
-	)
-
-	return err
 }
 
 func (r *repository) GetFood(ctx context.Context, id int64) (*domain.Food, error) {
@@ -166,19 +138,19 @@ func (r *repository) ApplyMigrations(ctx context.Context) error {
 }
 
 func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM consumption_log WHERE true`)
+	_, err := r.db.Exec(ctx, `DELETE FROM consumption_log WHERE user_id = $1`, userID)
 	if err != nil {
 		return err
 	}
 
-	_, err = r.db.Exec(ctx, `DELETE FROM food WHERE true`)
+	_, err = r.db.Exec(ctx, `DELETE FROM food WHERE user_id = $1`, userID)
 	if err != nil {
 		return err
 	}
 
 	// NOTE: clean sets, and workouts here
 
-	_, err = r.db.Exec(ctx, `DELETE FROM exercises WHERE true`)
+	_, err = r.db.Exec(ctx, `DELETE FROM exercises WHERE user_id = $1`, userID)
 	if err != nil {
 		return err
 	}

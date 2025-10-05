@@ -9,8 +9,7 @@ import (
 
 type DB interface {
 	// Existing methods
-	AddFood(ctx context.Context, food *domain.Food) (int64, error)
-	CreateFood(ctx context.Context, food *domain.Food) error
+	CreateFood(ctx context.Context, food *domain.Food) (int64, error)
 	GetFood(ctx context.Context, id int64) (*domain.Food, error)
 
 	// New methods for consumption logging
