@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"personal/action/create_exercise"
+	"personal/action/list_workouts"
 	"personal/domain"
 )
 
@@ -79,14 +80,35 @@ func (s *IntegrationTestSuite) TestListWorkouts_WithSets() {
 	}
 
 	// Act: Call MCP tool list_workouts
-	// TODO: implement list_workouts MCP tool
+	input := list_workouts.ListWorkoutsInput{
+		Limit: 10,
+	}
+	_, output, err := list_workouts.ListWorkouts(ctx, nil, input)
+	require.NoError(s.T(), err)
 
 	// Assert: Verify 2 workouts returned, sorted by started_at DESC (workout 2 first, workout 1 second)
-	// TODO: verify workouts order
-	// TODO: verify workout 1 has 3 sets with exercise 1 details
-	// TODO: verify workout 2 has 2 sets with exercise 2 details and completed_at=null
+	require.Len(s.T(), output.Workouts, 2)
 
-	_ = workout1ID
-	_ = workout2ID
-	assert.True(s.T(), true, "Test implementation pending")
+	// Workout 2 should be first (most recent)
+	assert.Equal(s.T(), workout2ID, output.Workouts[0].ID)
+	assert.Equal(s.T(), s.UserID(), output.Workouts[0].UserID)
+	assert.Nil(s.T(), output.Workouts[0].CompletedAt, "Workout 2 should be active")
+
+	// Workout 2 should have 1 exercise with 2 sets
+	require.Len(s.T(), output.Workouts[0].Exercises, 1)
+	assert.Equal(s.T(), exercise2Output.ID, output.Workouts[0].Exercises[0].ExerciseID)
+	assert.Equal(s.T(), exercise2Output.Name, output.Workouts[0].Exercises[0].ExerciseName)
+	assert.Equal(s.T(), "barbell", output.Workouts[0].Exercises[0].EquipmentType)
+	require.Len(s.T(), output.Workouts[0].Exercises[0].Sets, 2)
+
+	// Workout 1 should be second
+	assert.Equal(s.T(), workout1ID, output.Workouts[1].ID)
+	assert.NotNil(s.T(), output.Workouts[1].CompletedAt, "Workout 1 should be completed")
+
+	// Workout 1 should have 1 exercise with 3 sets
+	require.Len(s.T(), output.Workouts[1].Exercises, 1)
+	assert.Equal(s.T(), exercise1Output.ID, output.Workouts[1].Exercises[0].ExerciseID)
+	assert.Equal(s.T(), exercise1Output.Name, output.Workouts[1].Exercises[0].ExerciseName)
+	assert.Equal(s.T(), "barbell", output.Workouts[1].Exercises[0].EquipmentType)
+	require.Len(s.T(), output.Workouts[1].Exercises[0].Sets, 3)
 }

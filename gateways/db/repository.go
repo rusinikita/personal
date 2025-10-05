@@ -689,3 +689,139 @@ func (r *repository) GetLastSet(ctx context.Context, userID int64) (*domain.Work
 
 	return &ws, nil
 }
+
+func (r *repository) ListSets(ctx context.Context, userID int64, from time.Time, to time.Time) ([]domain.Set, error) {
+	query := `
+		SELECT id, user_id, workout_id, exercise_id,
+		       COALESCE(reps, 0), COALESCE(duration_seconds, 0), COALESCE(weight_kg, 0),
+		       created_at
+		FROM sets
+		WHERE user_id = $1
+		  AND created_at >= $2
+		  AND created_at <= $3
+		ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(ctx, query, userID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sets: %w", err)
+	}
+	defer rows.Close()
+
+	var sets []domain.Set
+	for rows.Next() {
+		var s domain.Set
+		err := rows.Scan(
+			&s.ID,
+			&s.UserID,
+			&s.WorkoutID,
+			&s.ExerciseID,
+			&s.Reps,
+			&s.DurationSeconds,
+			&s.WeightKg,
+			&s.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan set: %w", err)
+		}
+		sets = append(sets, s)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return sets, nil
+}
+
+func (r *repository) GetExercisesByIDs(ctx context.Context, userID int64, exerciseIDs []int64) ([]domain.Exercise, error) {
+	if len(exerciseIDs) == 0 {
+		return []domain.Exercise{}, nil
+	}
+
+	// Build query using squirrel for proper IN clause
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+	selectBuilder := psql.Select(
+		"id", "user_id", "name", "equipment_type", "created_at",
+	).From("exercises").
+		Where(squirrel.Eq{"user_id": userID}).
+		Where(squirrel.Eq{"id": exerciseIDs})
+
+	query, args, err := selectBuilder.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query exercises: %w", err)
+	}
+	defer rows.Close()
+
+	var exercises []domain.Exercise
+	for rows.Next() {
+		var ex domain.Exercise
+		err := rows.Scan(
+			&ex.ID,
+			&ex.UserID,
+			&ex.Name,
+			&ex.EquipmentType,
+			&ex.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan exercise: %w", err)
+		}
+		exercises = append(exercises, ex)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return exercises, nil
+}
+
+func (r *repository) GetWorkoutsByIDs(ctx context.Context, userID int64, workoutIDs []int64) ([]domain.Workout, error) {
+	if len(workoutIDs) == 0 {
+		return []domain.Workout{}, nil
+	}
+
+	// Build query using squirrel for proper IN clause
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+	selectBuilder := psql.Select(
+		"id", "user_id", "started_at", "completed_at",
+	).From("workouts").
+		Where(squirrel.Eq{"user_id": userID}).
+		Where(squirrel.Eq{"id": workoutIDs})
+
+	query, args, err := selectBuilder.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query workouts: %w", err)
+	}
+	defer rows.Close()
+
+	var workouts []domain.Workout
+	for rows.Next() {
+		var w domain.Workout
+		err := rows.Scan(
+			&w.ID,
+			&w.UserID,
+			&w.StartedAt,
+			&w.CompletedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan workout: %w", err)
+		}
+		workouts = append(workouts, w)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return workouts, nil
+}

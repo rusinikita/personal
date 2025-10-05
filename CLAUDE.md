@@ -174,14 +174,14 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 - Edit or create ANY .go files as needed to complete the feature
 - Uncomment test code from Stage 2
 - Implement missing methods referenced in tests
-- Run `make build` to check compilation (NEVER use `go build` directly)
+- Run `make build-app` to check compilation (NEVER use `go build` directly)
 - Run `make tests` to verify tests pass (NEVER use `go test` directly)
 - Fix any build or test failures
 - Follow project architecture from docs/architecture.md
 - Use existing patterns from codebase
 
 **What agent MUST NOT do:**
-- NEVER run `go build` commands directly - always use `make build`
+- NEVER run `go build` commands directly - always use `make build-app`
 - NEVER run `go test` commands directly - always use `make tests`
 
 **What agent CAN do:**

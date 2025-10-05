@@ -27,7 +27,7 @@ format:
 	@go fmt ./...
 	@gci write -s standard -s default -s localmodule --skip-generated --skip-vendor .
 
-build:
+build-app:
 	GOOS=linux GOARCH=amd64 go build -a -o ./build/app main.go
 
 test:
