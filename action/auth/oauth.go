@@ -288,26 +288,29 @@ func LoginPageHandler(c *gin.Context) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
-    <link
+	<link
 	  rel="stylesheet"
-	  href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+	  href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.violet.min.css"
 	>
-	<title>UserName</title>
+	<title>Authorization</title>
   </head>
   <body>
-    <main class="container">
-      <h1>UserName</h1>
-			<form action="/oauth/authorize" method="post">
+    <main>
+      	<h1>Authorization</h1>
+		<form action="/oauth/authorize" method="post">
+			<fieldset>
 				<input type="hidden" name="client_id" value="%s"/>
 				<input type="hidden" name="redirect_uri" value="%s"/>
 				<input type="hidden" name="response_type" value="%s"/>
 				<input type="hidden" name="state" value="%s"/>
-				<label for="username">UserName:</label><br>
-				<input type="text" id="username" name="username"><br><br>
-				<label for="password">Password:</label><br>
-				<input type="password" id="password" name="password"><br><br>
-				<input type="submit" value="Submit">
-			</form>
+
+				<label for="username">Username</label>
+				<input type="text" id="username" name="username">
+				<label for="password">Password</label>
+				<input type="password" id="password" name="password">
+			<fieldset>
+			<input type="submit" value="Submit">
+		</form>
     </main>
   </body>
 </html>
