@@ -4,11 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+
+	"personal/gateways"
 )
 
 var BaseAuthURL = "http://localhost:8081"
@@ -17,8 +20,7 @@ var BaseAuthURL = "http://localhost:8081"
 
 // Claims represents the JWT claims.
 type Claims struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
+	UserID int64 `json:"user_id"`
 	jwt.RegisteredClaims
 }
 
@@ -49,8 +51,8 @@ type Client struct {
 
 // User represents a user.
 type User struct {
-	ID       string `json:"id"`
-	Email    string `json:"email"`
+	ID       int64  `json:"id"`
+	UserName string `json:"username"`
 	Password string `json:"password"`
 }
 
@@ -74,11 +76,16 @@ var (
 			Secret: "qWuZ-JuSv-CtLqgxk88xMQMTMgSitb9k_J-lKRE9ck0=",
 		},
 	}
-	users = map[string]*User{
-		"my-user": {
-			ID:       "my-user",
-			Email:    "user@example.com",
-			Password: "password",
+	users = []User{
+		{
+			ID:       1,
+			UserName: "nikita",
+			Password: "biba-boba",
+		},
+		{
+			ID:       2,
+			UserName: "mikhivin",
+			Password: "ra-ta-ta-ta",
 		},
 	}
 
@@ -174,11 +181,17 @@ func AuthorizeHandler(c *gin.Context) {
 		return
 	}
 
+	username := c.PostForm("username")
 	password := c.PostForm("password")
 
-	// support only one user for now
-	user, ok := users["my-user"]
-	if !ok || user.Password != password {
+	var userID int64
+	for _, user := range users {
+		if user.UserName == username && user.Password == password {
+			userID = user.ID
+		}
+	}
+
+	if userID == 0 {
 		c.String(http.StatusUnauthorized, "Invalid username or password")
 		return
 	}
@@ -187,7 +200,7 @@ func AuthorizeHandler(c *gin.Context) {
 	AuthCodes[code] = &AuthorizationCode{
 		Code:        code,
 		ClientID:    clientID,
-		UserID:      user.ID,
+		UserID:      strconv.Itoa(int(userID)),
 		RedirectURI: redirectURI,
 		State:       state,
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
@@ -233,17 +246,16 @@ func TokenHandler(c *gin.Context) {
 		return
 	}
 
-	user, ok := users[authCode.UserID]
-	if !ok {
-		c.String(http.StatusInternalServerError, "User not found")
+	userID, err := strconv.Atoi(authCode.UserID)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "User not found: %s", err.Error())
 		return
 	}
 
 	expiresIn := 14 * 24 * time.Hour
 
 	claims := &Claims{
-		Email: user.Email,
-		Name:  user.ID,
+		UserID: int64(userID),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: &jwt.NumericDate{
 				Time: time.Now().Add(expiresIn),
@@ -270,25 +282,36 @@ func TokenHandler(c *gin.Context) {
 func LoginPageHandler(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, `
-		<!DOCTYPE html>
-		<html>
-		<head>
-			<title>Login</title>
-		</head>
-		<body>
-			<h1>Login</h1>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <link
+	  rel="stylesheet"
+	  href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+	>
+	<title>UserName</title>
+  </head>
+  <body>
+    <main class="container">
+      <h1>UserName</h1>
 			<form action="/oauth/authorize" method="post">
 				<input type="hidden" name="client_id" value="%s"/>
 				<input type="hidden" name="redirect_uri" value="%s"/>
 				<input type="hidden" name="response_type" value="%s"/>
 				<input type="hidden" name="state" value="%s"/>
+				<label for="username">UserName:</label><br>
+				<input type="text" id="username" name="username"><br><br>
 				<label for="password">Password:</label><br>
 				<input type="password" id="password" name="password"><br><br>
 				<input type="submit" value="Submit">
 			</form>
-		</body>
-		</html>
-	`, c.Query("client_id"), c.Query("redirect_uri"), c.Query("response_type"), c.Query("state"))
+    </main>
+  </body>
+</html>
+`, c.Query("client_id"), c.Query("redirect_uri"), c.Query("response_type"), c.Query("state"))
 }
 
 // Middleware creates a new OAuth middleware.
@@ -314,7 +337,8 @@ func Middleware() gin.HandlerFunc {
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		claims := &Claims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			return jwtSecret, nil
 		})
 
@@ -326,6 +350,8 @@ func Middleware() gin.HandlerFunc {
 			})
 			return
 		}
+
+		c.Request = c.Request.WithContext(gateways.WithUserID(c.Request.Context(), claims.UserID))
 
 		c.Next()
 	}
