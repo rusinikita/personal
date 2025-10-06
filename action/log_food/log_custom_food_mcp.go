@@ -25,14 +25,14 @@ This tool is perfect for one-time food entries or unknown foods where you know t
 Required input:
 - product_name: Name/description of the food being consumed
 - amount_g: Amount consumed in grams (must be positive)
-- calories: Total calories per 100g (must be non-negative)
-- protein_g: Protein content per 100g in grams (must be non-negative)
-- total_fat_g: Total fat content per 100g in grams (must be non-negative)
-- carbohydrates_g: Total carbohydrates per 100g in grams (must be non-negative)
+- calories: Total calories for the consumed amount (must be non-negative)
+- protein_g: Total protein content for the consumed amount in grams (must be non-negative)
+- total_fat_g: Total fat content for the consumed amount in grams (must be non-negative)
+- carbohydrates_g: Total carbohydrates for the consumed amount in grams (must be non-negative)
 
 Optional input:
-- caffeine_mg: Caffeine content per 100g in milligrams (for coffee, tea, energy drinks)
-- ethyl_alcohol_g: Alcohol content per 100g in grams (for alcoholic beverages)
+- caffeine_mg: Total caffeine content for the consumed amount in milligrams (for coffee, tea, energy drinks)
+- ethyl_alcohol_g: Total alcohol content for the consumed amount in grams (for alcoholic beverages)
 - meal_type: breakfast/lunch/dinner/snack categorization
 - consumed_at: specific timestamp (defaults to current time)
 - note: any additional notes about this consumption
@@ -44,7 +44,7 @@ Perfect for:
 - Quick logging when you have nutrition label information
 - Travel situations with unfamiliar local foods
 
-The tool calculates proportional nutrition based on the actual amount consumed and creates a consumption log entry without storing the food permanently.`,
+The tool creates a consumption log entry with the provided nutritional values without storing the food permanently.`,
 }
 
 // LogCustomFood is the MCP handler for logging custom food with direct nutrients
@@ -72,7 +72,7 @@ func LogCustomFood(ctx context.Context, _ *mcp.CallToolRequest, input LogCustomF
 		return nil, ToolResponse{Error: "all required nutrients must be >= 0"}, nil
 	}
 
-	// 2. Create nutrients from provided values (already for specified amount)
+	// 2. Create nutrients from provided values (total amounts for consumed portion)
 	nutrients := &domain.Nutrients{
 		Calories:       &input.Calories,
 		ProteinG:       &input.ProteinG,

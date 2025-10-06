@@ -75,15 +75,15 @@ type LogFoodByBarcodeInput struct {
 type LogCustomFoodInput struct {
     ProductName      string    `json:"product_name" jsonschema:"required"`
     AmountG          float64   `json:"amount_g" jsonschema:"required"`
-    Calories         float64   `json:"calories" jsonschema:"required"`
-    ProteinG         float64   `json:"protein_g" jsonschema:"required"`
-    TotalFatG        float64   `json:"total_fat_g" jsonschema:"required"`
-    CarbohydratesG   float64   `json:"carbohydrates_g" jsonschema:"required"`
-    CaffeineMg       float64   `json:"caffeine_mg"`                     // 0 for no caffeine
-    EthylAlcoholG    float64   `json:"ethyl_alcohol_g"`                 // 0 for no alcohol
-    MealType         string    `json:"meal_type"`                       // empty string for no meal type
-    ConsumedAt       time.Time `json:"consumed_at"`                     // zero time means current time
-    Note             string    `json:"note"`                            // empty string for no note
+    Calories         float64   `json:"calories" jsonschema:"required"`         // total for consumed amount
+    ProteinG         float64   `json:"protein_g" jsonschema:"required"`        // total for consumed amount
+    TotalFatG        float64   `json:"total_fat_g" jsonschema:"required"`      // total for consumed amount
+    CarbohydratesG   float64   `json:"carbohydrates_g" jsonschema:"required"`  // total for consumed amount
+    CaffeineMg       float64   `json:"caffeine_mg"`                            // total for consumed amount, 0 for no caffeine
+    EthylAlcoholG    float64   `json:"ethyl_alcohol_g"`                        // total for consumed amount, 0 for no alcohol
+    MealType         string    `json:"meal_type"`                              // empty string for no meal type
+    ConsumedAt       time.Time `json:"consumed_at"`                            // zero time means current time
+    Note             string    `json:"note"`                                   // empty string for no note
 }
 
 // Shared response structures
@@ -204,7 +204,7 @@ erDiagram
    - product_name is not empty
    - amount_g > 0
    - all required nutrients >= 0
-2. Use provided nutrients as-is (already for specified amount)
+2. Use provided nutrients as-is (total amounts for consumed portion, not per 100g)
 3. Save consumption log with food_id = 0, food_name = product_name
 4. Return success with logged item
 

@@ -28,12 +28,12 @@ type LogFoodByBarcodeInput struct {
 type LogCustomFoodInput struct {
 	ProductName    string    `json:"product_name" jsonschema:"Name of the custom food product"`
 	AmountG        float64   `json:"amount_g" jsonschema:"Amount consumed in grams (must be positive)"`
-	Calories       float64   `json:"calories" jsonschema:"Total calories per 100g (must be non-negative)"`
-	ProteinG       float64   `json:"protein_g" jsonschema:"Protein content per 100g in grams (must be non-negative)"`
-	TotalFatG      float64   `json:"total_fat_g" jsonschema:"Total fat content per 100g in grams (must be non-negative)"`
-	CarbohydratesG float64   `json:"carbohydrates_g" jsonschema:"Total carbohydrates per 100g in grams (must be non-negative)"`
-	CaffeineMg     float64   `json:"caffeine_mg,omitempty" jsonschema:"Caffeine content per 100g in milligrams. Do not send if no caffeine"`
-	EthylAlcoholG  float64   `json:"ethyl_alcohol_g,omitempty" jsonschema:"Alcohol content per 100g in grams. Do not send if no alcohol"`
+	Calories       float64   `json:"calories" jsonschema:"Total calories for the consumed amount (must be non-negative)"`
+	ProteinG       float64   `json:"protein_g" jsonschema:"Total protein content for the consumed amount in grams (must be non-negative)"`
+	TotalFatG      float64   `json:"total_fat_g" jsonschema:"Total fat content for the consumed amount in grams (must be non-negative)"`
+	CarbohydratesG float64   `json:"carbohydrates_g" jsonschema:"Total carbohydrates for the consumed amount in grams (must be non-negative)"`
+	CaffeineMg     float64   `json:"caffeine_mg,omitempty" jsonschema:"Total caffeine content for the consumed amount in milligrams. Do not send if no caffeine"`
+	EthylAlcoholG  float64   `json:"ethyl_alcohol_g,omitempty" jsonschema:"Total alcohol content for the consumed amount in grams. Do not send if no alcohol"`
 	MealType       string    `json:"meal_type,omitempty" jsonschema:"Meal category (breakfast/lunch/dinner/snack). Do not send if no meal type specified"`
 	ConsumedAt     time.Time `json:"consumed_at,omitempty" jsonschema:"Optional time when the food was consumed in RFC3339 format (e.g. 2024-01-15T14:30:00Z). Do not send if not specified by user, server time will be used"`
 	Note           string    `json:"note,omitempty" jsonschema:"Optional note about this food log entry. Do not send if not specified by user"`
