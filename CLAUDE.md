@@ -120,8 +120,8 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 ### Stage 1: Planning and Working on Feature Document
 
 **What agent MUST do:**
-- Find existing or create NEW feature document in `docs/` folder
-- Document name format: `docs/{name}_action.md` (MUST include .md extension)
+- Find existing or create NEW feature document in `docs/actions/` folder
+- Document name format: `docs/actions/{name}_action.md` (MUST include .md extension)
 - One document per action (each action can contain different handlers: HTTP, bot, MCP tool, worker)
 - Write requirements section by asking user for complete information
 - Write E2E tests section with test scenarios
@@ -132,7 +132,7 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 **What agent MUST NOT do:**
 - NEVER write or edit ANY .go files (including test files)
 - NEVER write or edit ANY code files in ANY programming language
-- NEVER create any files outside docs/ folder
+- NEVER create any files outside docs/actions/ folder
 - NEVER proceed to Stage 2 without explicit user approval
 
 **Communication rules:**
