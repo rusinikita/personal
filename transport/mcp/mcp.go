@@ -19,9 +19,9 @@ import (
 	"personal/gateways"
 )
 
-const instructions = `Personal tracking system for nutrition and workout logging.
+const instructions = `Personal tracking system for nutrition, workout, and life progress tracking.
 
-This MCP server provides tools for managing food database, nutrition tracking, and workout logging. The system helps track what you eat, when you eat it, and your workout sessions with exercises and sets.
+This MCP server provides tools for managing food database, nutrition tracking, workout logging, and life progress reflection. Track what you eat, your workout sessions, and your progress across different life areas with daily/weekly reflection check-ins.
 
 ## Food Tracking Workflow:
 
@@ -82,6 +82,69 @@ This MCP server provides tools for managing food database, nutrition tracking, a
 - Create exercises once, reuse them across workouts
 - Log sets as you complete them - workouts auto-close after 2 hours
 - Review 'list_workouts' to track progress over time
+
+## Progress Tracking Workflow:
+
+**IMPORTANT**: Progress tracking is for daily/weekly reflection on life areas (mood, habits, projects, promises). Activities are pre-created by the user (NOT via MCP tools).
+
+1. **Starting a Reflection Session:**
+   - ALWAYS call 'get_progress_type_examples' FIRST to load natural language mappings
+   - Then call 'get_activity_list' to see what needs check-in today
+   - Activities are ordered by frequency (daily first, weekly next)
+
+2. **For Each Activity - Gather Context:**
+   - Call 'get_activity_stats' with activity_id to see historical trends
+   - Present context: "Last time you logged +1 (bright). This week averaging +1.8"
+   - This helps user reflect on their current state
+
+3. **Ask Progress Question Based on Type:**
+   - **Mood activities**: "How are you feeling today?" or suggest metaphors: "Like weather - sunny to stormy?"
+   - **Habit activities**: "How's your [habit name] going?" or "Is it blooming or wilting?"
+   - **Project activities**: "Any progress on [project name]?" or "Sprinting or stuck?"
+   - **Promise activities**: "Did you remember to [promise]?" or "Is the flame still burning?"
+
+4. **Interpret User Response:**
+   - Map natural language to numeric values using get_progress_type_examples data
+   - Examples: "sunny" → +2, "trying" → 0, "stuck" → 0, "forgot" → -1
+   - If ambiguous, offer metaphor choices or ask clarifying questions
+
+5. **Log Progress:**
+   - Call 'create_progress_point' with activity_id, mapped value, and optional note
+   - Include user's explanation in the note field
+   - For projects, ask about hours_left if relevant
+   - Confirm with emoji: "Logged your mood as sunny ☀️ (+2)!"
+
+6. **Handle Completion:**
+   - If user says "I finished it", "It's done", "Completed" → use 'finish_activity'
+   - This is PERMANENT - activity won't appear in future lists
+   - Celebrate completion: "Congratulations! 🎉"
+
+## Progress Tracking Best Practices:
+
+**Before Every Reflection Session:**
+1. Call 'get_progress_type_examples' to load mappings (CRITICAL - do this first!)
+2. Call 'get_activity_list' to see active activities
+3. For each activity, call 'get_activity_stats' before asking question
+
+**During Conversation:**
+- Use emojis from the mappings to make it engaging
+- Show trends: "You're averaging +1.5 this week - trending up!"
+- Reference last values: "Last time you were at 0 (neutral)"
+- Offer metaphor choices when user is uncertain
+- Save detailed notes in the progress point
+
+**When to Finish Activities:**
+- Projects completed: "Deployed to production", "Launch finished"
+- Goals achieved: "30-day challenge done"
+- User wants to stop tracking a habit
+- DO NOT finish for regular check-ins - use create_progress_point instead
+
+**Key Concepts:**
+- Progress values: -2 (worst) to +2 (best), with 0 as neutral
+- Four types: mood, habit_progress, project_progress, promise_state
+- Each type has multiple natural language metaphors with emojis
+- Activities have frequency_days (1=daily, 7=weekly, etc.)
+- Historical stats show overall, last month, and last week trends
 
 All logs include timestamps and comprehensive details for accurate tracking.`
 

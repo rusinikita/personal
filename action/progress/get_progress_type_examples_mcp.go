@@ -12,10 +12,28 @@ var GetProgressTypeExamplesMCPDefinition = mcp.Tool{
 		ReadOnlyHint: true,
 		Title:        "Get progress type natural language examples",
 	},
-	Description: `Returns natural language mapping examples for all progress types.
+	Description: `Get natural language mappings to help convert user descriptions into numeric progress values (-2 to +2).
 
-Provides structured mapping sets showing how to express progress values using natural language with emojis.
-No input parameters required. Returns hardcoded examples for mood, habit_progress, project_progress, and promise_state.`,
+IMPORTANT: Call this tool at the START of every reflection session before asking progress questions.
+
+Use this tool to:
+- Learn how to interpret user's natural language responses ("sunny", "stuck", "forgot", etc.)
+- Get emoji mappings to make conversations more engaging
+- Understand different metaphors available for each progress type
+
+Returns mappings for all 4 progress types:
+1. MOOD: weather metaphors (sunny ☀️ to stormy ⛈️), light metaphors (bright ✨ to dark 🌑), color metaphors (green 💚 to red ❤️‍🔥)
+2. HABIT_PROGRESS: consistency levels (crushing it 💪 to not doing ❌), garden metaphors (blooming 🌸 to withered 🍂)
+3. PROJECT_PROGRESS: momentum (breakthrough 🚀 to changed plans 🔄), journey metaphors (sprinting 🏃 to lost 🗺️)
+4. PROMISE_STATE: awareness levels (did something ✅ to forgot 🤷), flame metaphors (burning 🔥 to extinguished 💨)
+
+How to use mappings:
+- When user says "I'm feeling sunny today" → mood type, "sunny" = +2
+- When user says "barely trying" → habit_progress type, "trying" = 0
+- When user says "we're stuck" → project_progress type, "stuck" = 0
+- When user says "I forgot" → promise_state type, "forgot" = -1
+
+Offer metaphor choices when user is uncertain: "Would you describe your mood like weather (sunny to stormy) or colors (green to red)?"`,
 }
 
 type ProgressTypeExamplesInput struct {

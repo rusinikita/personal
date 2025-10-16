@@ -17,14 +17,35 @@ var GetActivityStatsMCPDefinition = mcp.Tool{
 		ReadOnlyHint: true,
 		Title:        "Get activity statistics",
 	},
-	Description: `Returns comprehensive statistics for a specific activity.
+	Description: `Get historical statistics and trends for a specific activity to provide context during reflection.
 
-Fetches last 3 points, calculates trend averages and 80th percentiles for three time windows:
-- Overall (from started_at)
-- Last 30 days
-- Last 7 days
+Use this tool when:
+- Before asking progress question for an activity ("Last time you were at +1. How are you feeling today?")
+- User asks "how am I doing on X?" or "show me my progress"
+- Need to show trends and patterns
 
-Returns NULL for periods with no data.`,
+Input: activity_id (get from get_activity_list)
+
+Returns:
+1. LAST 3 POINTS - Most recent progress entries with values, notes, timestamps, hours_left
+   - Use to show: "Last 3 times: +2 (yesterday), +1 (3 days ago), 0 (5 days ago)"
+
+2. TREND OVERALL - All-time statistics since activity started
+   - Count: total number of check-ins
+   - Average: mean progress value (-2 to +2)
+   - Percentile 80: you're in top 20% when above this value
+   - Use to show: "Overall: 45 check-ins, averaging +1.2"
+
+3. TREND LAST MONTH - Statistics for last 30 days
+   - Shows recent patterns
+   - Use to show: "This month: 12 check-ins, averaging +1.5 - trending up!"
+
+4. TREND LAST WEEK - Statistics for last 7 days
+   - Shows very recent changes
+   - Use to show: "This week: 3 check-ins, averaging +1.8"
+
+Example conversation:
+"Let's check in on your Daily Mood. Last time you logged +1 (bright). This week you're averaging +1.8. How are you feeling today?"`,
 }
 
 type GetActivityStatsInput struct {

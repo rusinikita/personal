@@ -16,9 +16,22 @@ var GetActivityListMCPDefinition = mcp.Tool{
 		ReadOnlyHint: true,
 		Title:        "Get activity list",
 	},
-	Description: `Lists all active activities (ended_at IS NULL) for authenticated user, ordered by frequency_days ASC (most frequent first), then by name.
+	Description: `Get list of all active activities for daily/weekly reflection sessions.
 
-Returns array of activities with basic info including ID, name, progress type, frequency days, and description.`,
+Use this tool when:
+- Starting a reflection session to see what needs to be checked in
+- User asks "what activities do I have?" or "what should I track today?"
+- Need to display activities for progress logging
+
+Returns activities ordered by check-in frequency (daily first, then weekly, etc.) and alphabetically by name.
+Each activity includes ID (needed for logging progress), name, progress type (mood/habit_progress/project_progress/promise_state), frequency in days, and optional description.
+
+Only returns ACTIVE activities - finished/completed activities are excluded.
+
+Example workflow:
+1. Call this tool to get activity list
+2. Present activities to user: "Let's check in on: Daily Mood (daily), Morning Workout (daily), Weekly Review (weekly)"
+3. For each activity, ask for current progress and use create_progress_point to log it`,
 }
 
 type GetActivityListInput struct {

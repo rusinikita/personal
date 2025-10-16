@@ -15,10 +15,44 @@ var FinishActivityMCPDefinition = mcp.Tool{
 	Annotations: &mcp.ToolAnnotations{
 		Title: "Finish activity",
 	},
-	Description: `Marks an activity as finished by setting ended_at timestamp.
+	Description: `Mark an activity as completed/finished when user says it's done.
 
-Verifies ownership, validates activity is currently active (ended_at IS NULL).
-Used for completing projects or ending habits/maintenance goals.`,
+Use this tool when user indicates completion:
+- "I finished the project!"
+- "I'm done with this goal"
+- "That habit is complete"
+- "I want to stop tracking this"
+
+This is DIFFERENT from create_progress_point:
+- create_progress_point: Regular check-in ("How's it going?")
+- finish_activity: Permanent completion ("It's done!")
+
+When to use:
+✅ Projects: "Deployed to production", "Launch completed", "Project finished"
+✅ Time-bound goals: "30-day challenge completed", "Goal achieved"
+✅ Habits/maintenance: User wants to stop tracking
+
+When NOT to use:
+❌ Regular progress updates - use create_progress_point instead
+❌ Temporary pauses - activity can still be tracked
+❌ Bad outcomes - still finish the activity, just acknowledge it didn't go as planned
+
+Required input:
+- activity_id: Get from get_activity_list
+
+Optional input:
+- ended_at: When it finished (ISO8601 format, defaults to now)
+
+Effects:
+- Activity won't appear in get_activity_list anymore (only shows active)
+- All historical progress points remain saved
+- Cannot be undone - activity stays finished
+
+Example conversation:
+User: "We launched the website yesterday!"
+You: "Congratulations! 🎉 Let me mark that project as completed."
+[Call finish_activity(activity_id=456, ended_at=yesterday)]
+You: "Done! Your website project is now marked as completed. Great work!"`,
 }
 
 type FinishActivityInput struct {

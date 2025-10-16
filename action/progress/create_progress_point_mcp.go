@@ -16,10 +16,37 @@ var CreateProgressPointMCPDefinition = mcp.Tool{
 	Annotations: &mcp.ToolAnnotations{
 		Title: "Create progress point",
 	},
-	Description: `Creates a progress point for an activity.
+	Description: `Log a progress check-in for an activity after user provides their current state.
 
-Validates activity ownership, validates value is between -2 and +2, sets progress_at to current time if not provided.
-Optional fields: note, hours_left (for projects tracking remaining work), progress_at (defaults to now).`,
+Use this tool to:
+- Record user's progress after asking "How's your [activity] going?"
+- Save progress value after interpreting natural language response
+- Log notes and context about the progress
+
+Required inputs:
+- activity_id: Get from get_activity_list
+- value: Integer from -2 to +2 (convert from natural language using get_progress_type_examples)
+  -2 = worst state (hell, missing, changed plans, forgot)
+  -1 = bad state (dark, rarely, setback, forgot)
+   0 = neutral (gray, trying, stuck, remember)
+  +1 = good state (bright, mostly doing, moving forward, did something)
+  +2 = best state (happy, crushing it, breakthrough, did something)
+
+Optional inputs:
+- note: Save user's explanation (e.g., "Feeling great after morning run")
+- hours_left: For projects only - estimated hours remaining (e.g., 5.5)
+- progress_at: Timestamp for backdating (ISO8601 format, defaults to now)
+
+Validation:
+- Automatically verifies activity exists and user owns it
+- Rejects values outside -2 to +2 range
+- Returns error if activity not found
+
+Example flow:
+1. User says: "I'm feeling sunny today!"
+2. You map "sunny" → mood type → value +2 (from get_progress_type_examples)
+3. Call create_progress_point(activity_id=123, value=2, note="Feeling sunny!")
+4. Confirm: "Great! Logged your mood as sunny ☀️ (+2)"`,
 }
 
 type CreateProgressPointInput struct {
