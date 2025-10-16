@@ -67,7 +67,7 @@ func TestAuth_Authorize_GET(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "<h1>UserName</h1>")
+	assert.Contains(t, w.Body.String(), "id=\"username\"")
 }
 
 func TestAuth_Authorize_POST_and_Token(t *testing.T) {

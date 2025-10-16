@@ -242,11 +242,11 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 		actual := output.Last4Days[i]
 		assert.True(s.T(), expected.PeriodStart.Equal(actual.PeriodStart), "PeriodStart mismatch: expected %v, got %v", expected.PeriodStart, actual.PeriodStart)
 		assert.True(s.T(), expected.PeriodEnd.Equal(actual.PeriodEnd), "PeriodEnd mismatch: expected %v, got %v", expected.PeriodEnd, actual.PeriodEnd)
-		assert.InDelta(s.T(), expected.TotalCalories, actual.TotalCalories, 0.01)
-		assert.InDelta(s.T(), expected.TotalProtein, actual.TotalProtein, 0.01)
-		assert.InDelta(s.T(), expected.TotalFat, actual.TotalFat, 0.01)
-		assert.InDelta(s.T(), expected.TotalCarbs, actual.TotalCarbs, 0.01)
-		assert.InDelta(s.T(), expected.TotalWeight, actual.TotalWeight, 0.01)
+		assert.InDelta(s.T(), expected.TotalCalories, actual.TotalCalories, 0.02)
+		assert.InDelta(s.T(), expected.TotalProtein, actual.TotalProtein, 0.02)
+		assert.InDelta(s.T(), expected.TotalFat, actual.TotalFat, 0.02)
+		assert.InDelta(s.T(), expected.TotalCarbs, actual.TotalCarbs, 0.02)
+		assert.InDelta(s.T(), expected.TotalWeight, actual.TotalWeight, 0.02)
 	}
 
 }

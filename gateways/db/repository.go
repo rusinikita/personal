@@ -164,6 +164,21 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 		return err
 	}
 
+	_, err = r.db.Exec(ctx, `DELETE FROM activity_progress WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM activities WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM life_parts WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -824,4 +839,241 @@ func (r *repository) GetWorkoutsByIDs(ctx context.Context, userID int64, workout
 	}
 
 	return workouts, nil
+}
+
+func (r *repository) CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error) {
+	query := `
+		INSERT INTO activities (user_id, life_part_ids, name, description, progress_type, frequency_days, started_at, ended_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id`
+
+	now := time.Now()
+	activity.CreatedAt = now
+
+	var id int64
+	err := r.db.QueryRow(ctx, query,
+		activity.UserID,
+		activity.LifePartIDs,
+		activity.Name,
+		activity.Description,
+		activity.ProgressType,
+		activity.FrequencyDays,
+		activity.StartedAt,
+		activity.EndedAt,
+		activity.CreatedAt,
+	).Scan(&id)
+
+	return id, err
+}
+
+func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := psql.Select(
+		"id", "user_id", "life_part_ids", "name", "description",
+		"progress_type", "frequency_days", "started_at", "ended_at", "created_at",
+	).From("activities").
+		Where(squirrel.Eq{"user_id": filter.UserID})
+
+	if filter.ActiveOnly {
+		query = query.Where(squirrel.Eq{"ended_at": nil})
+	}
+
+	if len(filter.LifePartIDs) > 0 {
+		query = query.Where("life_part_ids && ?", filter.LifePartIDs)
+	}
+
+	query = query.OrderBy("frequency_days ASC", "name ASC")
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query activities: %w", err)
+	}
+	defer rows.Close()
+
+	var activities []domain.Activity
+	for rows.Next() {
+		var a domain.Activity
+		err := rows.Scan(
+			&a.ID,
+			&a.UserID,
+			&a.LifePartIDs,
+			&a.Name,
+			&a.Description,
+			&a.ProgressType,
+			&a.FrequencyDays,
+			&a.StartedAt,
+			&a.EndedAt,
+			&a.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan activity: %w", err)
+		}
+		activities = append(activities, a)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return activities, nil
+}
+
+func (r *repository) GetActivity(ctx context.Context, activityID int64, userID int64) (*domain.Activity, error) {
+	query := `
+		SELECT id, user_id, life_part_ids, name, description,
+		       progress_type, frequency_days, started_at, ended_at, created_at
+		FROM activities
+		WHERE id = $1 AND user_id = $2`
+
+	var a domain.Activity
+	err := r.db.QueryRow(ctx, query, activityID, userID).Scan(
+		&a.ID,
+		&a.UserID,
+		&a.LifePartIDs,
+		&a.Name,
+		&a.Description,
+		&a.ProgressType,
+		&a.FrequencyDays,
+		&a.StartedAt,
+		&a.EndedAt,
+		&a.CreatedAt,
+	)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &a, nil
+}
+
+func (r *repository) FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error {
+	query := `
+		UPDATE activities
+		SET ended_at = $1
+		WHERE id = $2 AND user_id = $3 AND ended_at IS NULL`
+
+	result, err := r.db.Exec(ctx, query, endedAt, activityID, userID)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("activity not found or already finished")
+	}
+
+	return nil
+}
+
+func (r *repository) CreateProgress(ctx context.Context, progress *domain.ActivityPoint) (int64, error) {
+	query := `
+		INSERT INTO activity_progress (activity_id, user_id, value, hours_left, note, progress_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id`
+
+	now := time.Now()
+	progress.CreatedAt = now
+
+	var id int64
+	err := r.db.QueryRow(ctx, query,
+		progress.ActivityID,
+		progress.UserID,
+		progress.Value,
+		progress.HoursLeft,
+		progress.Note,
+		progress.ProgressAt,
+		progress.CreatedAt,
+	).Scan(&id)
+
+	return id, err
+}
+
+func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := psql.Select(
+		"id", "activity_id", "user_id", "value", "hours_left", "note", "progress_at", "created_at",
+	).From("activity_progress").
+		Where(squirrel.Eq{"user_id": filter.UserID}).
+		OrderBy("progress_at DESC")
+
+	if filter.ActivityID != 0 {
+		query = query.Where(squirrel.Eq{"activity_id": filter.ActivityID})
+	}
+
+	if !filter.From.IsZero() {
+		query = query.Where(squirrel.GtOrEq{"progress_at": filter.From})
+	}
+
+	if !filter.To.IsZero() {
+		query = query.Where(squirrel.LtOrEq{"progress_at": filter.To})
+	}
+
+	if filter.Limit > 0 {
+		query = query.Limit(uint64(filter.Limit))
+	}
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query progress: %w", err)
+	}
+	defer rows.Close()
+
+	var points []domain.ActivityPoint
+	for rows.Next() {
+		var p domain.ActivityPoint
+		err := rows.Scan(
+			&p.ID,
+			&p.ActivityID,
+			&p.UserID,
+			&p.Value,
+			&p.HoursLeft,
+			&p.Note,
+			&p.ProgressAt,
+			&p.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan progress point: %w", err)
+		}
+		points = append(points, p)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return points, nil
+}
+
+func (r *repository) GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error) {
+	query := `
+		SELECT COUNT(*) as count,
+		       COALESCE(AVG(value), 0) as average,
+		       COALESCE(PERCENTILE_CONT(0.8) WITHIN GROUP (ORDER BY value), 0) as percentile_80
+		FROM activity_progress
+		WHERE activity_id = $1 AND user_id = $2 AND progress_at >= $3 AND progress_at <= $4`
+
+	var stats domain.TrendStats
+	err := r.db.QueryRow(ctx, query, activityID, userID, from, to).Scan(
+		&stats.Count,
+		&stats.Average,
+		&stats.Percentile80,
+	)
+	if err != nil {
+		return domain.TrendStats{}, err
+	}
+
+	return stats, nil
 }

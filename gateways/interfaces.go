@@ -43,6 +43,15 @@ type DB interface {
 	ListSets(ctx context.Context, userID int64, from time.Time, to time.Time) ([]domain.Set, error)
 	GetExercisesByIDs(ctx context.Context, userID int64, exerciseIDs []int64) ([]domain.Exercise, error)
 	GetWorkoutsByIDs(ctx context.Context, userID int64, workoutIDs []int64) ([]domain.Workout, error)
+
+	// Progress tracking methods
+	CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error)
+	ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error)
+	GetActivity(ctx context.Context, activityID int64, userID int64) (*domain.Activity, error)
+	FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
+	CreateProgress(ctx context.Context, progress *domain.ActivityPoint) (int64, error)
+	ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error)
+	GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error)
 }
 
 type DBMaintainer interface {
