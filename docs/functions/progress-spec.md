@@ -40,7 +40,7 @@ reflection cadence.
 ```mermaid
 erDiagram
     LIFE_PARTS ||--o{ ACTIVITIES : categorizes
-    ACTIVITIES ||--o{ ACTIVITY_PROGRESS : records
+    ACTIVITIES ||--o{ ACTIVITY_PROGRESS_POINT : records
 
     LIFE_PARTS {
         bigint id PK
@@ -63,14 +63,14 @@ erDiagram
         timestamp created_at
     }
 
-    ACTIVITY_PROGRESS {
+    ACTIVITY_PROGRESS_POINT {
         bigint id PK
         bigint activity_id FK
         bigint user_id "from JWT token context"
         int value "-2 to +2 scale"
         decimal hours_left "NULL or estimated hours remaining"
         text note
-        timestamp point_time "when progress was made"
+        timestamp progress_at "when progress was made"
         timestamp created_at
     }
 ```
@@ -121,22 +121,22 @@ type Activity struct {
     CreatedAt     time.Time    `json:"created_at" db:"created_at"`
 }
 
-// ActivityProgress represents a single progress point
-type ActivityProgress struct {
+// ActivityPoint represents a single progress point
+type ActivityPoint struct {
     ID         int64     `json:"id" db:"id"`
     ActivityID int64     `json:"activity_id" db:"activity_id" jsonschema:"Activity ID this progress point belongs to"`
     UserID     int64     `json:"user_id" db:"user_id"`
     Value      int       `json:"value" db:"value" jsonschema:"Progress value from -2 to +2"`
     HoursLeft  float64   `json:"hours_left,omitempty" db:"hours_left" jsonschema:"Estimated hours remaining for projects (0 if not tracking)"`
     Note       string    `json:"note,omitempty" db:"note" jsonschema:"Optional note about this progress point"`
-    PointTime  time.Time `json:"point_time" db:"point_time" jsonschema:"When progress was made (defaults to now if empty)"`
+    ProgressAt  time.Time `json:"progress_at" db:"progress_at" jsonschema:"When progress was made (defaults to now if empty)"`
     CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
 
 // ActivityStats represents calculated statistics for an activity
 type ActivityStats struct {
     ActivityID        int64              `json:"activity_id" jsonschema:"Activity ID"`
-    Last3Points       []ActivityProgress `json:"last_3_points" jsonschema:"Last 3 progress points"`
+    Last3Points       []ActivityPoint `json:"last_3_points" jsonschema:"Last 3 progress points"`
     TrendOverall      TrendStats         `json:"trend_overall" jsonschema:"Statistics for all time"`
     TrendLastMonth    TrendStats         `json:"trend_last_month" jsonschema:"Statistics for last 30 days"`
     TrendLastWeek     TrendStats         `json:"trend_last_week" jsonschema:"Statistics for last 7 days"`
@@ -186,6 +186,7 @@ type ProgressFilter struct {
     ActivityID int64     `json:"activity_id,omitempty" jsonschema:"Filter by activity ID (0 = all activities)"`
     From       time.Time `json:"from,omitempty" jsonschema:"Start date filter (empty = no start filter)"`
     To         time.Time `json:"to,omitempty" jsonschema:"End date filter (empty = no end filter)"`
+	Limit      int64     `json:"limit,omitempty" jsonschema:"Limit of returned progresses sorted by progress_at DESC"`
 }
 ```
 
@@ -195,24 +196,21 @@ type ProgressFilter struct {
 // gateways/progress_repository.go
 type ProgressRepository interface {
     // Life Part CRUD
-    CreateLifePart(ctx context.Context, lifePart *LifePart) (int64, error)
-    GetLifePart(ctx context.Context, id int64) (*LifePart, error)
-    ListLifeParts(ctx context.Context, userID int64) ([]*LifePart, error)
+    CreateLifePart(ctx context.Context, lifePart LifePart) (int64, error)
+    ListLifeParts(ctx context.Context, userID int64) ([]LifePart, error)
 
     // Activity CRUD
     CreateActivity(ctx context.Context, activity *Activity) (int64, error)
-    GetActivity(ctx context.Context, id int64) (*Activity, error)
-    ListActivities(ctx context.Context, filter ActivityFilter) ([]*Activity, error)
+    ListActivities(ctx context.Context, filter ActivityFilter) ([]Activity, error)
     UpdateActivity(ctx context.Context, activity *Activity) error
     FinishActivity(ctx context.Context, activityID int64, endedAt time.Time) error
 
     // Progress CRUD
-    CreateProgress(ctx context.Context, progress *ActivityProgress) (int64, error)
-    ListProgress(ctx context.Context, filter ProgressFilter) ([]*ActivityProgress, error)
-    GetLastNPoints(ctx context.Context, activityID int64, limit int) ([]*ActivityProgress, error)
+    CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error)
+    ListProgress(ctx context.Context, filter ProgressFilter) ([]ActivityPoint, error)
 
     // Statistics helpers
-    GetTrendStats(ctx context.Context, activityID int64, from time.Time, to time.Time) (*TrendStats, error)
+    GetTrendStats(ctx context.Context, activityID int64, from time.Time, to time.Time) (TrendStats, error)
 }
 ```
 
@@ -428,7 +426,7 @@ windows: overall (from started_at), last 30 days, last 7 days. Returns NULL for 
 **Errors**: Activity not found, unauthorized access
 
 ### create_progress_point
-Creates a progress point for an activity. Validates activity ownership, validates value is between -2 and +2, sets point_time to current time (or
+Creates a progress point for an activity. Validates activity ownership, validates value is between -2 and +2, sets progress_at to current time (or
 provided time). Optional fields: note, hours_left (for projects tracking remaining work).
 
 **Input**:
@@ -438,13 +436,13 @@ provided time). Optional fields: note, hours_left (for projects tracking remaini
   "value": 1,
   "note": "",
   "hours_left": 0,
-  "point_time": ""
+  "progress_at": ""
 }
 ```
 
 **Output**:
 ```json
-{"progress": {"id": 789, "activity_id": 456, "value": 1, "point_time": "..."}}
+{"progress": {"id": 789, "activity_id": 456, "value": 1, "progress_at": "..."}}
 ```
 
 **Errors**: Activity not found, unauthorized, invalid value range
@@ -540,7 +538,7 @@ CREATE TABLE IF NOT EXISTS activity_progress (
     value INT NOT NULL CHECK (value BETWEEN -2 AND 2),
     hours_left DECIMAL(8,2),
     note TEXT,
-    point_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    progress_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_progress_activity FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE
@@ -548,7 +546,7 @@ CREATE TABLE IF NOT EXISTS activity_progress (
 
 CREATE INDEX idx_progress_activity_id ON activity_progress(activity_id);
 CREATE INDEX idx_progress_user_id ON activity_progress(user_id);
-CREATE INDEX idx_progress_point_time ON activity_progress(point_time DESC);
+CREATE INDEX idx_progress_progress_at ON activity_progress(progress_at DESC);
 CREATE INDEX idx_progress_created_at ON activity_progress(created_at DESC);
 ```
 
@@ -793,7 +791,7 @@ AI: "Great reflection session! Here's what we captured:
 - Parse each separately and create individual progress points
 
 **User wants to backdate a point:**
-- Accept date/time and pass in `point_time` field
+- Accept date/time and pass in `progress_at` field
 - User: "Actually yesterday was terrible"
 - AI: "Got it, logging yesterday as a difficult day. What date should I record?"
 
