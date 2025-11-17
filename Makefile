@@ -1,7 +1,13 @@
+# Load environment variables from .env file
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
+
 ssh:
 	echo 'password in mail or reset'
-	ssh-copy-id root@45.80.69.213
-	ssh root@45.80.69.213
+	ssh-copy-id $(SSH_ACCESS)
+	ssh $(SSH_ACCESS)
 
 up:
 	docker compose -f ./docs/postgres/docker-compose.yml up -d
@@ -11,10 +17,10 @@ set-context:
 
 deploy:
 	GOOS=linux GOARCH=amd64 go build -a -o ./build/app main.go
-	DOCKER_HOST="ssh://root@45.80.69.213" docker compose up --build -d
+	DOCKER_HOST="ssh://$(SSH_ACCESS)" docker compose up --build -d
 
 deploy-down:
-	DOCKER_HOST="ssh://root@45.80.69.213" docker compose down
+	DOCKER_HOST="ssh://$(SSH_ACCESS)" docker compose down
 
 down:
 	docker compose -f ./docs/postgres/docker-compose.yml down
