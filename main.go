@@ -82,10 +82,8 @@ func main() {
 
 	gin.SetMode(gin.DebugMode)
 
-	auth.BaseAuthURL = os.Getenv("BASE_URL")
-	if auth.BaseAuthURL == "" {
-		log.Fatal("BASE_URL environment variable not set")
-	}
+	// Initialize OAuth users and JWT secret from environment variables
+	auth.InitializeAuth()
 
 	authRequired := router.Group("/app")
 

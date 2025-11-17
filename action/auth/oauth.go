@@ -3,7 +3,10 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +19,64 @@ import (
 
 var BaseAuthURL = "http://localhost:8081"
 
-// var BaseAuthURL = "splendid-chicken-42.telebit.io"
+// InitializeAuth initializes users and JWT secret from environment variables.
+// This function must be called before using any OAuth functionality.
+func InitializeAuth() {
+	BaseAuthURL = os.Getenv("BASE_URL")
+	if BaseAuthURL == "" {
+		log.Fatal("BASE_URL environment variable not set")
+	}
+
+	// Load users from environment variable
+	usersEnv := os.Getenv("USERS")
+	if usersEnv == "" {
+		log.Fatal("USERS environment variable not set")
+	}
+
+	var err error
+	users, err = parseUsers(usersEnv)
+	if err != nil {
+		log.Fatalf("Failed to parse USERS: %v", err)
+	}
+
+	// Load JWT secret from environment variable
+	jwtSecretEnv := os.Getenv("JWT_SECRET")
+	if jwtSecretEnv == "" {
+		log.Fatal("JWT_SECRET environment variable not set")
+	}
+	jwtSecret = []byte(jwtSecretEnv)
+}
+
+// parseUsers parses the USERS environment variable into a slice of User structs.
+// Expected format: "ID:USERNAME:PASSWORD;ID:USERNAME:PASSWORD"
+func parseUsers(usersEnv string) ([]User, error) {
+	if usersEnv == "" {
+		return nil, fmt.Errorf("USERS environment variable is empty")
+	}
+
+	userStrings := strings.Split(usersEnv, ";")
+	users := make([]User, 0, len(userStrings))
+
+	for _, userString := range userStrings {
+		parts := strings.Split(userString, ":")
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid user format: %s (expected ID:USERNAME:PASSWORD)", userString)
+		}
+
+		id, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid user ID in %s: %w", userString, err)
+		}
+
+		users = append(users, User{
+			ID:       id,
+			UserName: parts[1],
+			Password: parts[2],
+		})
+	}
+
+	return users, nil
+}
 
 // Claims represents the JWT claims.
 type Claims struct {
@@ -76,24 +136,11 @@ var (
 			Secret: "qWuZ-JuSv-CtLqgxk88xMQMTMgSitb9k_J-lKRE9ck0=",
 		},
 	}
-	users = []User{
-		{
-			ID:       1,
-			UserName: "nikita",
-			Password: "biba-boba",
-		},
-		{
-			ID:       2,
-			UserName: "mikhivin",
-			Password: "ra-ta-ta-ta",
-		},
-	}
+	users     []User
+	jwtSecret []byte
 
 	// In-memory storage for authorization codes.
 	AuthCodes = make(map[string]*AuthorizationCode)
-
-	// JWT secret key.
-	jwtSecret = []byte("my-secret-key")
 )
 
 // WellKnownHandler handles the `/.well-known/oauth-authorization-server` endpoint.
