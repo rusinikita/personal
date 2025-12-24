@@ -85,10 +85,17 @@ const htmlTemplate = `<!DOCTYPE html>
             border: 1px solid #808080;
             background: #fff;
         }
-        
+
         .streak-cell.active {
             background: #000;
             border-color: #000;
+        }
+
+        .week-separator {
+            width: 2px;
+            background: #808080;
+            margin: 0 6px;
+            position: relative;
         }
         
         /* Activities Section */
@@ -188,8 +195,11 @@ const htmlTemplate = `<!DOCTYPE html>
                 </div>
             </div>
             <div class="streak-grid">
-                {{- range .StreakDays -}}
-                <div class="streak-cell{{if .Active}} active{{end}}"></div>
+                {{- range $i, $day := .StreakDays -}}
+                <div class="streak-cell{{if $day.Active}} active{{end}}"></div>
+                {{- if and (eq (mod (add $i 1) 7) 0) (ne (add $i 1) (len $.StreakDays)) -}}
+                <div class="week-separator"></div>
+                {{- end -}}
                 {{- end -}}
             </div>
         </div>
@@ -418,7 +428,12 @@ func getDemoData() DashboardData {
 
 // DashboardWebHandler renders the progress dashboard HTML page.
 func DashboardWebHandler(c *gin.Context) {
-	tmpl, err := template.New("dashboard").Parse(htmlTemplate)
+	funcMap := template.FuncMap{
+		"mod": func(a, b int) int { return a % b },
+		"add": func(a, b int) int { return a + b },
+	}
+
+	tmpl, err := template.New("dashboard").Funcs(funcMap).Parse(htmlTemplate)
 	if err != nil {
 		c.String(500, "Template error: %v", err)
 		return
