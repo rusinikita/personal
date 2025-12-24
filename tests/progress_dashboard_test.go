@@ -60,7 +60,6 @@ func TestProgressDashboard_ContentValidation(t *testing.T) {
 	assert.Contains(t, body, "Trainer V2")
 	assert.Contains(t, body, "Статья для inDrive")
 	assert.Contains(t, body, "Разговаривать с мамой")
-	assert.Contains(t, body, "Снимаем мерки")
 
 	// Check for emojis (progress indicators)
 	assert.Contains(t, body, "💪")  // habit_progress
@@ -70,8 +69,10 @@ func TestProgressDashboard_ContentValidation(t *testing.T) {
 
 	// Check for CSS styles
 	assert.Contains(t, body, ".dashboard")
-	assert.Contains(t, body, "800px")
-	assert.Contains(t, body, "480px")
+	assert.Contains(t, body, "100vw")                     // Full viewport width
+	assert.Contains(t, body, "100vh")                     // Full viewport height
+	assert.Contains(t, body, "filter: contrast(2)")       // High contrast for e-ink
+	assert.Contains(t, body, "font-family: 'Noto Emoji'") // Noto Emoji font
 
 	// Check for new template features
 	assert.Contains(t, body, "emoji-cell today") // IsToday class

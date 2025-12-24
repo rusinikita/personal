@@ -15,6 +15,9 @@ const htmlTemplate = `<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Progress Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Emoji&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -24,18 +27,15 @@ const htmlTemplate = `<!DOCTYPE html>
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
-            background: #f5f5f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
+            background: #fff;
+            margin: 0;
+            padding: 0;
         }
         
         .dashboard {
-            width: 800px;
-            height: 480px;
-            background: #ffffff;
+            width: 100vw;
+            height: 100vh;
+            background: #fff;
             border: 2px solid #000;
             display: flex;
             flex-direction: column;
@@ -67,7 +67,7 @@ const htmlTemplate = `<!DOCTYPE html>
             display: flex;
             gap: 16px;
             font-size: 11px;
-            color: #333;
+            color: #808080;
         }
         
         .streak-stats strong {
@@ -82,7 +82,7 @@ const htmlTemplate = `<!DOCTYPE html>
         .streak-cell {
             width: 18px;
             height: 18px;
-            border: 1px solid #ccc;
+            border: 1px solid #808080;
             background: #fff;
         }
         
@@ -100,7 +100,7 @@ const htmlTemplate = `<!DOCTYPE html>
         
         .activity-row {
             padding: 10px 16px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid #808080;
             display: flex;
             flex-direction: column;
             gap: 5px;
@@ -130,16 +130,16 @@ const htmlTemplate = `<!DOCTYPE html>
         
         .activity-freq {
             font-size: 11px;
-            color: #888;
+            color: #808080;
         }
-        
+
         .activity-ago {
             font-size: 11px;
-            color: #888;
+            color: #808080;
         }
-        
+
         .activity-ago.stale {
-            color: #666;
+            color: #808080;
         }
         
         .activity-ago.warning {
@@ -155,12 +155,16 @@ const htmlTemplate = `<!DOCTYPE html>
         .emoji-cell {
             width: 26px;
             height: 26px;
-            border: 1px solid #e0e0e0;
+            border: 1px solid #808080;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 15px;
-            background: #fafafa;
+            background: #fff;
+            font-family: 'Noto Emoji', sans-serif;
+            color: #000;
+            font-weight: 900;
+            filter: contrast(2);
         }
         
         .emoji-cell.empty {
@@ -377,14 +381,6 @@ func getDemoData() DashboardData {
 			ProgressType:  "habit_progress",
 			LastCheckIn:   now.Add(-1 * 24 * time.Hour),
 			Progress:      []*int{intPtr(2), intPtr(1), intPtr(2), intPtr(1), intPtr(2), intPtr(1), intPtr(2), intPtr(1)},
-		},
-		{
-			Name:          "Снимаем мерки",
-			Frequency:     "weekly",
-			FrequencyDays: 7,
-			ProgressType:  "habit_progress",
-			LastCheckIn:   now.Add(-6 * 24 * time.Hour),
-			Progress:      []*int{intPtr(1), intPtr(1), intPtr(0), intPtr(1), intPtr(1), intPtr(0), intPtr(1)},
 		},
 	}
 
