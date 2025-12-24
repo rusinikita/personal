@@ -14,6 +14,7 @@ import (
 	sloggin "github.com/samber/slog-gin"
 
 	"personal/action/auth"
+	"personal/action/progress"
 	"personal/gateways/db"
 	mcp2 "personal/transport/mcp"
 )
@@ -101,6 +102,10 @@ func main() {
 	authRequired.Any("/mcp", func(ctx *gin.Context) {
 		handler.ServeHTTP(ctx.Writer, ctx.Request)
 	})
+
+	// Progress dashboard route with API key authentication
+	basicAuth := gin.BasicAuth(gin.Accounts{os.Getenv("PROGRESS_USERNAME"): os.Getenv("PROGRESS_PASSWORD")})
+	router.GET("/web/progress", basicAuth, progress.DashboardWebHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {

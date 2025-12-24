@@ -7,7 +7,7 @@ services:
     networks:
       - caddy
     labels:
-      caddy: personal-mcp.rusiniqf.beget.tech
+      caddy: personal-mcp.nikitarusin.fun
       caddy.reverse_proxy: "{{upstreams 8080}}"
 
 networks:
