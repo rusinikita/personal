@@ -15,6 +15,7 @@ import (
 
 	"personal/action/auth"
 	"personal/action/progress"
+	"personal/gateways"
 	"personal/gateways/db"
 	mcp2 "personal/transport/mcp"
 )
@@ -105,7 +106,17 @@ func main() {
 
 	// Progress dashboard route with API key authentication
 	basicAuth := gin.BasicAuth(gin.Accounts{os.Getenv("PROGRESS_USERNAME"): os.Getenv("PROGRESS_PASSWORD")})
-	router.GET("/web/progress", basicAuth, progress.DashboardWebHandler)
+
+	// Middleware to inject DB into context for HTTP handlers
+	dbMiddleware := func(db gateways.DB) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			ctx := gateways.WithDB(c.Request.Context(), db)
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		}
+	}
+
+	router.GET("/web/progress", basicAuth, dbMiddleware(repo), progress.DashboardWebHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {

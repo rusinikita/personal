@@ -883,6 +883,9 @@ func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityF
 		query = query.Where("life_part_ids && ?", filter.LifePartIDs)
 	}
 
+	// Фильтр: не показывать активности, которые еще не начались
+	query = query.Where("started_at <= NOW()")
+
 	query = query.OrderBy("COALESCE((last_point_at::date + frequency_days) - CURRENT_DATE, 999999) ASC")
 
 	sql, args, err := query.ToSql()

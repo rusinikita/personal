@@ -113,13 +113,13 @@ func (s *IntegrationTestSuite) TestGetActivityList_OnlyActive() {
 	db := s.Repo()
 	userID := s.UserID()
 
-	// Create active activity
+	// Create active activity (started 1 day ago to avoid timezone/precision issues)
 	activeActivity := &domain.Activity{
 		UserID:        userID,
 		Name:          "Active Goal",
 		ProgressType:  domain.ProgressTypeMood,
 		FrequencyDays: 1,
-		StartedAt:     time.Now(),
+		StartedAt:     time.Now().AddDate(0, 0, -1),
 	}
 	activeID, err := db.CreateActivity(ctx, activeActivity)
 	require.NoError(s.T(), err)

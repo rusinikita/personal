@@ -1,12 +1,17 @@
 package progress
 
 import (
+	"context"
 	"fmt"
 	"html/template"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"personal/domain"
+	"personal/gateways"
 )
 
 const htmlTemplate = `<!DOCTYPE html>
@@ -266,15 +271,6 @@ type ProgressCell struct {
 	IsToday bool
 }
 
-type Activity struct {
-	Name          string
-	Frequency     string
-	FrequencyDays int
-	ProgressType  string
-	LastCheckIn   time.Time
-	Progress      []*int // nil means no check-in
-}
-
 type ActivityView struct {
 	Name           string
 	Frequency      string
@@ -291,8 +287,43 @@ type DashboardData struct {
 	Activities    []ActivityView
 }
 
-func intPtr(v int) *int {
-	return &v
+// DashboardWebHandler renders the progress dashboard HTML page.
+func DashboardWebHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// Получить DB из контекста
+	db := gateways.DBFromContext(ctx)
+	if db == nil {
+		c.String(500, "Database not available")
+		return
+	}
+
+	// Построить данные из БД
+	data, err := buildDashboardDataFromDB(ctx, db)
+	if err != nil {
+		c.String(500, "Failed to build dashboard data: %v", err)
+		return
+	}
+
+	funcMap := template.FuncMap{
+		"mod": func(a, b int) int { return a % b },
+		"add": func(a, b int) int { return a + b },
+	}
+
+	tmpl, err := template.New("dashboard").Funcs(funcMap).Parse(htmlTemplate)
+	if err != nil {
+		c.String(500, "Template error: %v", err)
+		return
+	}
+
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, data); err != nil {
+		c.String(500, "Render error: %v", err)
+		return
+	}
+
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(200, buf.String())
 }
 
 func formatTimeAgo(t time.Time) string {
@@ -329,124 +360,208 @@ func getEmoji(progressType string, value *int) string {
 	return ""
 }
 
-func buildActivityView(a Activity) ActivityView {
-	cells := make([]ProgressCell, len(a.Progress))
-	for i, v := range a.Progress {
+// calculateAvgGap вычисляет средний промежуток между днями
+func calculateAvgGap(gaps []int) string {
+	if len(gaps) == 0 {
+		return "0.0d"
+	}
+	sum := 0
+	for _, g := range gaps {
+		sum += g
+	}
+	avg := float64(sum) / float64(len(gaps))
+	return fmt.Sprintf("%.1fd", avg)
+}
+
+// filterProgressByActivity фильтрует точки прогресса по activity_id
+func filterProgressByActivity(points []domain.ActivityPoint, activityID int64) []domain.ActivityPoint {
+	filtered := make([]domain.ActivityPoint, 0)
+	for _, p := range points {
+		if p.ActivityID == activityID {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
+}
+
+// formatFrequency форматирует частоту (N -> "each Xd")
+func formatFrequency(days int) string {
+	return fmt.Sprintf("each %dd", days)
+}
+
+// formatTimeAgoPtr - перегрузка для *time.Time
+func formatTimeAgoPtr(t *time.Time) string {
+	if t == nil {
+		return "never"
+	}
+	return formatTimeAgo(*t)
+}
+
+// getStalenessClassPtr - перегрузка для *time.Time
+func getStalenessClassPtr(lastPointAt *time.Time, frequencyDays int) string {
+	if lastPointAt == nil {
+		return "warning"
+	}
+	diffDays := time.Since(*lastPointAt).Hours() / 24
+	if diffDays > float64(frequencyDays*2) {
+		return "warning"
+	}
+	return ""
+}
+
+// buildActivityProgressCells строит ячейки прогресса для активности за 30 дней
+// ВАЖНО: ячейки строятся СЛЕВА НАПРАВО от самых старых к сегодняшнему дню
+func buildActivityProgressCells(activity domain.Activity, allProgress []domain.ActivityPoint, thirtyDaysAgo time.Time) []ProgressCell {
+	// Отфильтровать точки для этой активности
+	activityProgress := filterProgressByActivity(allProgress, activity.ID)
+
+	// Построить карту дата -> значение
+	progressByDate := make(map[string]*int)
+	for _, p := range activityProgress {
+		dateKey := p.ProgressAt.Format("2006-01-02")
+		value := p.Value
+		progressByDate[dateKey] = &value
+	}
+
+	// Построить ячейки за 30 дней (СЛЕВА НАПРАВО: от самых старых к сегодня)
+	cells := make([]ProgressCell, 30)
+	for i := 0; i < 30; i++ {
+		date := thirtyDaysAgo.AddDate(0, 0, i) // от 30 дней назад вперед
+		dateKey := date.Format("2006-01-02")
+		value := progressByDate[dateKey] // nil если нет данных
+
+		isToday := i == 29 // последняя ячейка (самая правая) = сегодня
 		cells[i] = ProgressCell{
-			Emoji:   getEmoji(a.ProgressType, v),
-			IsToday: i == 0, // First cell (most recent) is marked as today
+			Emoji:   getEmoji(string(activity.ProgressType), value),
+			IsToday: isToday,
 		}
 	}
 
-	return ActivityView{
-		Name:           a.Name,
-		Frequency:      a.Frequency,
-		TimeAgo:        formatTimeAgo(a.LastCheckIn),
-		StalenessClass: getStalenessClass(a.LastCheckIn, a.FrequencyDays),
-		ProgressCells:  cells,
-	}
+	return cells
 }
 
-func getDemoData() DashboardData {
+// buildDashboardDataFromDB - главная функция построения данных из БД
+func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardData, error) {
+	// Получить userID из контекста, если есть, иначе использовать 1 (для личного дашборда)
+	userID := gateways.UserIDFromContext(ctx)
+	if userID == 0 {
+		userID = 1 // fallback для личного дашборда
+	}
+
+	// Шаг 1: Получить топ-5 активностей
+	activities, err := db.ListActivities(ctx, domain.ActivityFilter{
+		UserID:     userID,
+		ActiveOnly: true,
+	})
+	if err != nil {
+		return DashboardData{}, fmt.Errorf("failed to list activities: %w", err)
+	}
+
+	// Берем первые 5 (ListActivities уже сортирует по срочности)
+	if len(activities) > 5 {
+		activities = activities[:5]
+	}
+
+	// Шаг 2: Получить все замеры за 30 дней
 	now := time.Now()
+	thirtyDaysAgo := now.AddDate(0, 0, -30)
 
-	// Demo activities
-	activities := []Activity{
-		{
-			Name:          "Зарядка",
-			Frequency:     "daily",
-			FrequencyDays: 1,
-			ProgressType:  "habit_progress",
-			LastCheckIn:   now.Add(-2 * time.Hour),
-			Progress:      []*int{intPtr(2), intPtr(1), intPtr(2), intPtr(1), nil, intPtr(2), intPtr(2), nil, nil, intPtr(1), intPtr(2), intPtr(2), intPtr(0), intPtr(1)},
-		},
-		{
-			Name:          "Доволен прожитыми днями?",
-			Frequency:     "weekly",
-			FrequencyDays: 7,
-			ProgressType:  "mood",
-			LastCheckIn:   now.Add(-3 * 24 * time.Hour),
-			Progress:      []*int{intPtr(2), intPtr(1), intPtr(2), intPtr(0), intPtr(1), intPtr(2), intPtr(1), intPtr(0), intPtr(2), intPtr(1)},
-		},
-		{
-			Name:          "Trainer V2",
-			Frequency:     "weekly",
-			FrequencyDays: 7,
-			ProgressType:  "project_progress",
-			LastCheckIn:   now.Add(-5 * 24 * time.Hour),
-			Progress:      []*int{intPtr(2), intPtr(1), intPtr(0), intPtr(1), intPtr(2), intPtr(1), intPtr(0), intPtr(1)},
-		},
-		{
-			Name:          "Статья для inDrive",
-			Frequency:     "5d",
-			FrequencyDays: 5,
-			ProgressType:  "promise_state",
-			LastCheckIn:   now.Add(-8 * 24 * time.Hour),
-			Progress:      []*int{intPtr(1), intPtr(0), intPtr(0), intPtr(-1), intPtr(1), intPtr(0), intPtr(1)},
-		},
-		{
-			Name:          "Разговаривать с мамой",
-			Frequency:     "4d",
-			FrequencyDays: 4,
-			ProgressType:  "habit_progress",
-			LastCheckIn:   now.Add(-1 * 24 * time.Hour),
-			Progress:      []*int{intPtr(2), intPtr(1), intPtr(2), intPtr(1), intPtr(2), intPtr(1), intPtr(2), intPtr(1)},
-		},
+	allProgress, err := db.ListProgress(ctx, domain.ProgressFilter{
+		UserID: userID,
+		From:   thirtyDaysAgo,
+		To:     now,
+	})
+	if err != nil {
+		return DashboardData{}, fmt.Errorf("failed to list progress: %w", err)
 	}
 
-	// Build activity views
-	activityViews := make([]ActivityView, len(activities))
-	for i, a := range activities {
-		activityViews[i] = buildActivityView(a)
+	// Шаг 3: Вычислить общий стрик (30 дней)
+	dateMap := make(map[string]bool)
+	for _, point := range allProgress {
+		dateKey := point.ProgressAt.Format("2006-01-02")
+		dateMap[dateKey] = true
 	}
 
-	// Demo streak pattern (30 days)
-	streakPattern := []bool{false, false, true, true, true, false, false, true, true, true, true, true, false, true, true, true, true, false, false, true, true, true, true, true, true, false, true, true, true, true}
-	streakDays := make([]StreakDay, len(streakPattern))
-	for i, active := range streakPattern {
-		streakDays[i] = StreakDay{Active: active}
+	// Построить массив из 30 дней (от старых к новым)
+	streakDays := make([]StreakDay, 30)
+	for i := 0; i < 30; i++ {
+		date := thirtyDaysAgo.AddDate(0, 0, i)
+		dateKey := date.Format("2006-01-02")
+		streakDays[i] = StreakDay{Active: dateMap[dateKey]}
 	}
 
-	// Calculate current streak (count from end)
+	// Подсчитать текущий стрик (с конца массива)
 	currentStreak := 0
-	for i := len(streakPattern) - 1; i >= 0; i-- {
-		if streakPattern[i] {
+	for i := 29; i >= 0; i-- {
+		if streakDays[i].Active {
 			currentStreak++
 		} else {
 			break
 		}
 	}
 
+	// Шаг 4: Вычислить средние промежутки (avg gap)
+	activeDays := []int{}
+	for i, day := range streakDays {
+		if day.Active {
+			activeDays = append(activeDays, i)
+		}
+	}
+
+	gaps := []int{}
+	for i := 1; i < len(activeDays); i++ {
+		gap := activeDays[i] - activeDays[i-1] - 1
+		if gap > 0 {
+			gaps = append(gaps, gap)
+		}
+	}
+
+	avgGapMonth := calculateAvgGap(gaps)
+	lastSevenGaps := gaps
+	if len(gaps) > 7 {
+		lastSevenGaps = gaps[len(gaps)-7:]
+	}
+	avgGapWeek := calculateAvgGap(lastSevenGaps)
+
+	// Шаг 5: Построить ячейки прогресса для каждой активности
+	activityViews := make([]ActivityView, 0, len(activities))
+	for _, activity := range activities {
+		// Построить ячейки прогресса за 30 дней
+		cells := buildActivityProgressCells(activity, allProgress, thirtyDaysAgo)
+
+		view := ActivityView{
+			Name:           activity.Name,
+			Frequency:      formatFrequency(activity.FrequencyDays),
+			TimeAgo:        formatTimeAgoPtr(activity.LastPointAt),
+			StalenessClass: getStalenessClassPtr(activity.LastPointAt, activity.FrequencyDays),
+			ProgressCells:  cells,
+		}
+		activityViews = append(activityViews, view)
+
+		// Шаг 6: Вызвать GetTrendStats для каждой активности (для будущего использования)
+		_, err := db.GetTrendStats(ctx, activity.ID, userID, thirtyDaysAgo, now)
+		if err != nil {
+			// Логируем ошибку, но не прерываем рендеринг
+			log.Printf("Failed to get trend stats for activity %d: %v", activity.ID, err)
+		}
+	}
+
+	// Обработка edge case: нет активностей
+	if len(activities) == 0 {
+		return DashboardData{
+			CurrentStreak: 0,
+			AvgGapMonth:   "0.0d",
+			AvgGapWeek:    "0.0d",
+			StreakDays:    make([]StreakDay, 30),
+			Activities:    []ActivityView{},
+		}, nil
+	}
+
 	return DashboardData{
 		CurrentStreak: currentStreak,
-		AvgGapMonth:   "1.2d",
-		AvgGapWeek:    "0.8d",
+		AvgGapMonth:   avgGapMonth,
+		AvgGapWeek:    avgGapWeek,
 		StreakDays:    streakDays,
 		Activities:    activityViews,
-	}
-}
-
-// DashboardWebHandler renders the progress dashboard HTML page.
-func DashboardWebHandler(c *gin.Context) {
-	funcMap := template.FuncMap{
-		"mod": func(a, b int) int { return a % b },
-		"add": func(a, b int) int { return a + b },
-	}
-
-	tmpl, err := template.New("dashboard").Funcs(funcMap).Parse(htmlTemplate)
-	if err != nil {
-		c.String(500, "Template error: %v", err)
-		return
-	}
-
-	data := getDemoData()
-
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, data); err != nil {
-		c.String(500, "Render error: %v", err)
-		return
-	}
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.String(200, buf.String())
+	}, nil
 }
