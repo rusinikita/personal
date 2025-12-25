@@ -215,7 +215,7 @@ const htmlTemplate = `<!DOCTYPE html>
             <div class="streak-grid">
                 {{- range $i, $day := .StreakDays -}}
                 <div class="streak-cell{{if $day.Active}} active{{end}}"></div>
-                {{- if and (eq (mod (add $i 1) 7) 0) (ne (add $i 1) (len $.StreakDays)) -}}
+                {{- if and $day.IsSunday (ne (add $i 1) (len $.StreakDays)) -}}
                 <div class="week-separator"></div>
                 {{- end -}}
                 {{- end -}}
@@ -280,7 +280,8 @@ var emojiMappings = map[string]map[int]string{
 }
 
 type StreakDay struct {
-	Active bool
+	Active   bool
+	IsSunday bool // Флаг для быстрой проверки в шаблоне
 }
 
 type ProgressCell struct {
@@ -325,7 +326,6 @@ func DashboardWebHandler(c *gin.Context) {
 	}
 
 	funcMap := template.FuncMap{
-		"mod": func(a, b int) int { return a % b },
 		"add": func(a, b int) int { return a + b },
 	}
 
@@ -528,7 +528,11 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 	for i := 0; i < streakDaysCount; i++ {
 		date := streakStartDate.AddDate(0, 0, i)
 		dateKey := date.Format("2006-01-02")
-		streakDays[i] = StreakDay{Active: dateMap[dateKey]}
+
+		streakDays[i] = StreakDay{
+			Active:   dateMap[dateKey],
+			IsSunday: date.Weekday() == time.Sunday,
+		}
 	}
 
 	// Подсчитать текущий стрик (с конца массива)
