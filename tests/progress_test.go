@@ -23,16 +23,27 @@ func (s *IntegrationTestSuite) TestGetActivityList_WithActivities() {
 	ctx := s.Context()
 	db := s.Repo()
 	userID := s.UserID()
+	now := time.Now()
 
-	// Create 3 activities with different frequencies
+	// Create 3 activities with different frequencies and progress points
 	activity1 := &domain.Activity{
 		UserID:        userID,
 		Name:          "Daily Mood",
 		ProgressType:  domain.ProgressTypeMood,
 		FrequencyDays: 1,
-		StartedAt:     time.Now(),
+		StartedAt:     now.AddDate(0, 0, -5),
 	}
 	id1, err := db.CreateActivity(ctx, activity1)
+	require.NoError(s.T(), err)
+
+	// Add progress point 2 days ago -> distance = -1 (overdue)
+	point1 := &domain.ActivityPoint{
+		ActivityID: id1,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: now.AddDate(0, 0, -2),
+	}
+	_, err = db.CreateProgress(ctx, point1)
 	require.NoError(s.T(), err)
 
 	activity2 := &domain.Activity{
@@ -40,9 +51,19 @@ func (s *IntegrationTestSuite) TestGetActivityList_WithActivities() {
 		Name:          "Weekly Review",
 		ProgressType:  domain.ProgressTypeHabitProgress,
 		FrequencyDays: 7,
-		StartedAt:     time.Now(),
+		StartedAt:     now.AddDate(0, 0, -10),
 	}
 	id2, err := db.CreateActivity(ctx, activity2)
+	require.NoError(s.T(), err)
+
+	// Add progress point 3 days ago -> distance = +4 (due in 4 days)
+	point2 := &domain.ActivityPoint{
+		ActivityID: id2,
+		UserID:     userID,
+		Value:      2,
+		ProgressAt: now.AddDate(0, 0, -3),
+	}
+	_, err = db.CreateProgress(ctx, point2)
 	require.NoError(s.T(), err)
 
 	activity3 := &domain.Activity{
@@ -50,9 +71,19 @@ func (s *IntegrationTestSuite) TestGetActivityList_WithActivities() {
 		Name:          "Project Alpha",
 		ProgressType:  domain.ProgressTypeProjectProgress,
 		FrequencyDays: 1,
-		StartedAt:     time.Now(),
+		StartedAt:     now.AddDate(0, 0, -3),
 	}
 	id3, err := db.CreateActivity(ctx, activity3)
+	require.NoError(s.T(), err)
+
+	// Add progress point 1 day ago -> distance = 0 (due today)
+	point3 := &domain.ActivityPoint{
+		ActivityID: id3,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: now.AddDate(0, 0, -1),
+	}
+	_, err = db.CreateProgress(ctx, point3)
 	require.NoError(s.T(), err)
 
 	// Call get_activity_list
@@ -60,17 +91,19 @@ func (s *IntegrationTestSuite) TestGetActivityList_WithActivities() {
 	require.NoError(s.T(), err)
 	require.Len(s.T(), output.Activities, 3)
 
-	// Verify order: frequency_days ASC, name ASC
-	// Daily activities should come first (freq=1), sorted by name
-	assert.Equal(s.T(), id1, output.Activities[0].ID) // Daily Mood (freq=1, name starts with D)
+	// Verify order: sorted by days until check-in (distance)
+	// Daily Mood: -2 days + 1 = -1 (overdue by 1 day) - should be 1st
+	// Project Alpha: -1 day + 1 = 0 (due today) - should be 2nd
+	// Weekly Review: -3 days + 7 = +4 (due in 4 days) - should be 3rd
+	assert.Equal(s.T(), id1, output.Activities[0].ID)
 	assert.Equal(s.T(), "Daily Mood", output.Activities[0].Name)
 	assert.Equal(s.T(), 1, output.Activities[0].FrequencyDays)
 
-	assert.Equal(s.T(), id3, output.Activities[1].ID) // Project Alpha (freq=1, name starts with P)
+	assert.Equal(s.T(), id3, output.Activities[1].ID)
 	assert.Equal(s.T(), "Project Alpha", output.Activities[1].Name)
 	assert.Equal(s.T(), 1, output.Activities[1].FrequencyDays)
 
-	assert.Equal(s.T(), id2, output.Activities[2].ID) // Weekly Review (freq=7)
+	assert.Equal(s.T(), id2, output.Activities[2].ID)
 	assert.Equal(s.T(), "Weekly Review", output.Activities[2].Name)
 	assert.Equal(s.T(), 7, output.Activities[2].FrequencyDays)
 }
@@ -359,4 +392,140 @@ func (s *IntegrationTestSuite) TestFinishActivity_AlreadyFinished() {
 	_, _, err = progress.FinishActivity(ctx, nil, input)
 	require.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "activity not found or already finished")
+}
+
+func (s *IntegrationTestSuite) TestGetActivityList_SortedByDaysUntilCheckIn() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+	now := time.Now()
+
+	// Create Activity 1: "Overdue Daily" - freq=1, point 3 days ago → distance=-2 (should be 1st)
+	activity1 := &domain.Activity{
+		UserID:        userID,
+		Name:          "Overdue Daily",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -10),
+	}
+	id1, err := db.CreateActivity(ctx, activity1)
+	require.NoError(s.T(), err)
+
+	point1 := &domain.ActivityPoint{
+		ActivityID: id1,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: now.AddDate(0, 0, -3),
+	}
+	_, err = db.CreateProgress(ctx, point1)
+	require.NoError(s.T(), err)
+
+	// Create Activity 2: "Overdue Weekly" - freq=7, point 10 days ago → distance=-3 (should be 2nd)
+	activity2 := &domain.Activity{
+		UserID:        userID,
+		Name:          "Overdue Weekly",
+		ProgressType:  domain.ProgressTypeHabitProgress,
+		FrequencyDays: 7,
+		StartedAt:     now.AddDate(0, 0, -20),
+	}
+	id2, err := db.CreateActivity(ctx, activity2)
+	require.NoError(s.T(), err)
+
+	point2 := &domain.ActivityPoint{
+		ActivityID: id2,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: now.AddDate(0, 0, -10),
+	}
+	_, err = db.CreateProgress(ctx, point2)
+	require.NoError(s.T(), err)
+
+	// Create Activity 3: "Due Today" - freq=1, point 1 day ago → distance=0 (should be 3rd)
+	activity3 := &domain.Activity{
+		UserID:        userID,
+		Name:          "Due Today",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -5),
+	}
+	id3, err := db.CreateActivity(ctx, activity3)
+	require.NoError(s.T(), err)
+
+	point3 := &domain.ActivityPoint{
+		ActivityID: id3,
+		UserID:     userID,
+		Value:      2,
+		ProgressAt: now.AddDate(0, 0, -1),
+	}
+	_, err = db.CreateProgress(ctx, point3)
+	require.NoError(s.T(), err)
+
+	// Create Activity 4: "Due Soon" - freq=7, point 5 days ago → distance=+2 (should be 4th)
+	activity4 := &domain.Activity{
+		UserID:        userID,
+		Name:          "Due Soon",
+		ProgressType:  domain.ProgressTypeProjectProgress,
+		FrequencyDays: 7,
+		StartedAt:     now.AddDate(0, 0, -15),
+	}
+	id4, err := db.CreateActivity(ctx, activity4)
+	require.NoError(s.T(), err)
+
+	point4 := &domain.ActivityPoint{
+		ActivityID: id4,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: now.AddDate(0, 0, -5),
+	}
+	_, err = db.CreateProgress(ctx, point4)
+	require.NoError(s.T(), err)
+
+	// Create Activity 5: "Due Later" - freq=14, point 8 days ago → distance=+6 (should be 5th)
+	activity5 := &domain.Activity{
+		UserID:        userID,
+		Name:          "Due Later",
+		ProgressType:  domain.ProgressTypePromiseState,
+		FrequencyDays: 14,
+		StartedAt:     now.AddDate(0, 0, -30),
+	}
+	id5, err := db.CreateActivity(ctx, activity5)
+	require.NoError(s.T(), err)
+
+	point5 := &domain.ActivityPoint{
+		ActivityID: id5,
+		UserID:     userID,
+		Value:      2,
+		ProgressAt: now.AddDate(0, 0, -8),
+	}
+	_, err = db.CreateProgress(ctx, point5)
+	require.NoError(s.T(), err)
+
+	// Call get_activity_list
+	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{})
+	require.NoError(s.T(), err)
+
+	// Verify count
+	require.Len(s.T(), output.Activities, 5)
+
+	// Verify sorting order by days until check-in (distance calculation)
+	// Distance = (last_point_at + frequency_days) - NOW()
+	// Activity 2: (-10 days + 7 days) = -3 days (MOST overdue, comes first)
+	// Activity 1: (-3 days + 1 day) = -2 days (overdue)
+	// Activity 3: (-1 day + 1 day) = 0 days (due today)
+	// Activity 4: (-5 days + 7 days) = +2 days (due soon)
+	// Activity 5: (-8 days + 14 days) = +6 days (due later)
+	assert.Equal(s.T(), "Overdue Weekly", output.Activities[0].Name)
+	assert.Equal(s.T(), 7, output.Activities[0].FrequencyDays)
+
+	assert.Equal(s.T(), "Overdue Daily", output.Activities[1].Name)
+	assert.Equal(s.T(), 1, output.Activities[1].FrequencyDays)
+
+	assert.Equal(s.T(), "Due Today", output.Activities[2].Name)
+	assert.Equal(s.T(), 1, output.Activities[2].FrequencyDays)
+
+	assert.Equal(s.T(), "Due Soon", output.Activities[3].Name)
+	assert.Equal(s.T(), 7, output.Activities[3].FrequencyDays)
+
+	assert.Equal(s.T(), "Due Later", output.Activities[4].Name)
+	assert.Equal(s.T(), 14, output.Activities[4].FrequencyDays)
 }

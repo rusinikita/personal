@@ -32,6 +32,7 @@ type Activity struct {
 	FrequencyDays int          `json:"frequency_days" db:"frequency_days" jsonschema:"Check-in frequency in days (1 = daily, 7 = weekly)"`
 	StartedAt     time.Time    `json:"started_at" db:"started_at"`
 	EndedAt       *time.Time   `json:"ended_at,omitempty" db:"ended_at"` // NULL if active
+	LastPointAt   *time.Time   `json:"last_point_at,omitempty" db:"last_point_at"`
 	CreatedAt     time.Time    `json:"created_at" db:"created_at"`
 }
 

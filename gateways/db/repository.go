@@ -871,7 +871,7 @@ func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityF
 
 	query := psql.Select(
 		"id", "user_id", "life_part_ids", "name", "description",
-		"progress_type", "frequency_days", "started_at", "ended_at", "created_at",
+		"progress_type", "frequency_days", "started_at", "ended_at", "created_at", "last_point_at",
 	).From("activities").
 		Where(squirrel.Eq{"user_id": filter.UserID})
 
@@ -883,7 +883,7 @@ func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityF
 		query = query.Where("life_part_ids && ?", filter.LifePartIDs)
 	}
 
-	query = query.OrderBy("frequency_days ASC", "name ASC")
+	query = query.OrderBy("COALESCE((last_point_at::date + frequency_days) - CURRENT_DATE, 999999) ASC")
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -910,6 +910,7 @@ func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityF
 			&a.StartedAt,
 			&a.EndedAt,
 			&a.CreatedAt,
+			&a.LastPointAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan activity: %w", err)
@@ -992,7 +993,18 @@ func (r *repository) CreateProgress(ctx context.Context, progress *domain.Activi
 		progress.CreatedAt,
 	).Scan(&id)
 
-	return id, err
+	if err != nil {
+		return 0, err
+	}
+
+	// Update activity's last_point_at
+	updateQuery := `UPDATE activities SET last_point_at = $1 WHERE id = $2`
+	_, err = r.db.Exec(ctx, updateQuery, progress.ProgressAt, progress.ActivityID)
+	if err != nil {
+		return id, fmt.Errorf("failed to update last_point_at: %w", err)
+	}
+
+	return id, nil
 }
 
 func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error) {

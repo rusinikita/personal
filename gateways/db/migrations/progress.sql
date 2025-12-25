@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS activities (
     frequency_days INT NOT NULL CHECK (frequency_days > 0),
     started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at TIMESTAMP, -- NULL means active
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_point_at TIMESTAMP -- NULL means no points
 );
 
 CREATE INDEX idx_activities_user_id ON activities(user_id);
