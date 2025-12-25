@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -191,6 +192,13 @@ const htmlTemplate = `<!DOCTYPE html>
         .emoji-cell.today {
             border: 2px solid #000;
         }
+
+        .emoji-spacer {
+            font-size: 12px;
+            color: #808080;
+            padding: 0 4px;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -227,7 +235,11 @@ const htmlTemplate = `<!DOCTYPE html>
                 </div>
                 <div class="emoji-grid">
                     {{- range $i, $p := .ProgressCells -}}
-                    <div class="emoji-cell{{if not $p.Emoji}} empty{{end}}{{if $p.IsToday}} today{{end}}">{{$p.Emoji}}</div>
+                        {{if $p.IsSpacer -}}
+                            <div class="emoji-spacer">←{{$p.DaysGap}}d→</div>
+                        {{- else -}}
+                            <div class="emoji-cell{{if $p.IsToday}} today{{end}}">{{$p.Emoji}}</div>
+                        {{- end -}}
                     {{- end -}}
                 </div>
             </div>
@@ -272,8 +284,10 @@ type StreakDay struct {
 }
 
 type ProgressCell struct {
-	Emoji   string
-	IsToday bool
+	Emoji    string
+	IsToday  bool
+	IsSpacer bool // true если это разделитель между замерами
+	DaysGap  int  // количество дней в разделителе (если IsSpacer=true)
 }
 
 type ActivityView struct {
@@ -414,32 +428,53 @@ func getStalenessClassPtr(lastPointAt *time.Time, frequencyDays int) string {
 	return ""
 }
 
-// buildActivityProgressCells строит ячейки прогресса для активности за N дней (определяется константой streakDaysCount)
-// ВАЖНО: ячейки строятся СЛЕВА НАПРАВО от самых старых к сегодняшнему дню
-func buildActivityProgressCells(activity domain.Activity, allProgress []domain.ActivityPoint, streakStartDate time.Time) []ProgressCell {
+// isSameDay проверяет, являются ли две даты одним и тем же днем
+func isSameDay(date1, date2 time.Time) bool {
+	y1, m1, d1 := date1.Date()
+	y2, m2, d2 := date2.Date()
+	return y1 == y2 && m1 == m2 && d1 == d2
+}
+
+// buildActivityProgressCells строит компактные ячейки прогресса для активности
+// Показывает только замеры (без пустых дней), вставляя разделители с количеством пропущенных дней между замерами
+// ВАЖНО: ячейки строятся СЛЕВА НАПРАВО от самых старых к новым
+func buildActivityProgressCells(activity domain.Activity, allProgress []domain.ActivityPoint, today time.Time) []ProgressCell {
 	// Отфильтровать точки для этой активности
 	activityProgress := filterProgressByActivity(allProgress, activity.ID)
 
-	// Построить карту дата -> значение
-	progressByDate := make(map[string]*int)
-	for _, p := range activityProgress {
-		dateKey := p.ProgressAt.Format("2006-01-02")
-		value := p.Value
-		progressByDate[dateKey] = &value
-	}
+	// Отсортировать по дате (от старых к новым)
+	sort.Slice(activityProgress, func(i, j int) bool {
+		return activityProgress[i].ProgressAt.Before(activityProgress[j].ProgressAt)
+	})
 
-	// Построить ячейки за N дней (СЛЕВА НАПРАВО: от самых старых к сегодня)
-	cells := make([]ProgressCell, streakDaysCount)
-	for i := 0; i < streakDaysCount; i++ {
-		date := streakStartDate.AddDate(0, 0, i) // от (N-1) дней назад до сегодня
-		dateKey := date.Format("2006-01-02")
-		value := progressByDate[dateKey] // nil если нет данных
+	// Построить ячейки
+	cells := []ProgressCell{}
+	var prevDate *time.Time
 
-		isToday := i == streakDaysCount-1 // последняя ячейка (самая правая) = сегодня
-		cells[i] = ProgressCell{
-			Emoji:   getEmoji(string(activity.ProgressType), value),
-			IsToday: isToday,
+	for _, point := range activityProgress {
+		// Если есть предыдущая точка, проверить разрыв
+		if prevDate != nil {
+			daysGap := int(point.ProgressAt.Sub(*prevDate).Hours() / 24)
+			if daysGap > 1 {
+				// Добавить разделитель
+				cells = append(cells, ProgressCell{
+					IsSpacer: true,
+					DaysGap:  daysGap,
+				})
+			}
 		}
+
+		// Добавить ячейку с замером
+		isToday := isSameDay(point.ProgressAt, today)
+		emoji := getEmoji(string(activity.ProgressType), &point.Value)
+
+		cells = append(cells, ProgressCell{
+			Emoji:   emoji,
+			IsToday: isToday,
+		})
+
+		progressDate := point.ProgressAt
+		prevDate = &progressDate
 	}
 
 	return cells
@@ -532,8 +567,8 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 	// Шаг 5: Построить ячейки прогресса для каждой активности
 	activityViews := make([]ActivityView, 0, len(activities))
 	for _, activity := range activities {
-		// Построить ячейки прогресса за N дней
-		cells := buildActivityProgressCells(activity, allProgress, streakStartDate)
+		// Построить компактные ячейки прогресса (только замеры с разделителями)
+		cells := buildActivityProgressCells(activity, allProgress, now)
 
 		view := ActivityView{
 			Name:           activity.Name,
