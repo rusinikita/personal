@@ -14,6 +14,11 @@ import (
 	"personal/gateways"
 )
 
+const (
+	streakDaysCount    = 30 // количество дней для отображения в стрике
+	topActivitiesCount = 5  // количество топ активностей для показа
+)
+
 const htmlTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -409,9 +414,9 @@ func getStalenessClassPtr(lastPointAt *time.Time, frequencyDays int) string {
 	return ""
 }
 
-// buildActivityProgressCells строит ячейки прогресса для активности за 30 дней
+// buildActivityProgressCells строит ячейки прогресса для активности за N дней (определяется константой streakDaysCount)
 // ВАЖНО: ячейки строятся СЛЕВА НАПРАВО от самых старых к сегодняшнему дню
-func buildActivityProgressCells(activity domain.Activity, allProgress []domain.ActivityPoint, thirtyDaysAgo time.Time) []ProgressCell {
+func buildActivityProgressCells(activity domain.Activity, allProgress []domain.ActivityPoint, streakStartDate time.Time) []ProgressCell {
 	// Отфильтровать точки для этой активности
 	activityProgress := filterProgressByActivity(allProgress, activity.ID)
 
@@ -423,14 +428,14 @@ func buildActivityProgressCells(activity domain.Activity, allProgress []domain.A
 		progressByDate[dateKey] = &value
 	}
 
-	// Построить ячейки за 30 дней (СЛЕВА НАПРАВО: от самых старых к сегодня)
-	cells := make([]ProgressCell, 30)
-	for i := 0; i < 30; i++ {
-		date := thirtyDaysAgo.AddDate(0, 0, i) // от 30 дней назад вперед
+	// Построить ячейки за N дней (СЛЕВА НАПРАВО: от самых старых к сегодня)
+	cells := make([]ProgressCell, streakDaysCount)
+	for i := 0; i < streakDaysCount; i++ {
+		date := streakStartDate.AddDate(0, 0, i) // от (N-1) дней назад до сегодня
 		dateKey := date.Format("2006-01-02")
 		value := progressByDate[dateKey] // nil если нет данных
 
-		isToday := i == 29 // последняя ячейка (самая правая) = сегодня
+		isToday := i == streakDaysCount-1 // последняя ячейка (самая правая) = сегодня
 		cells[i] = ProgressCell{
 			Emoji:   getEmoji(string(activity.ProgressType), value),
 			IsToday: isToday,
@@ -457,14 +462,14 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 		return DashboardData{}, fmt.Errorf("failed to list activities: %w", err)
 	}
 
-	// Берем первые 5 (ListActivities уже сортирует по срочности)
-	if len(activities) > 5 {
-		activities = activities[:5]
+	// Берем первые N активностей (ListActivities уже сортирует по срочности)
+	if len(activities) > topActivitiesCount {
+		activities = activities[:topActivitiesCount]
 	}
 
-	// Шаг 2: Получить все замеры за 30 дней
+	// Шаг 2: Получить все замеры за N дней
 	now := time.Now()
-	thirtyDaysAgo := now.AddDate(0, 0, -30)
+	thirtyDaysAgo := now.AddDate(0, 0, -streakDaysCount)
 
 	allProgress, err := db.ListProgress(ctx, domain.ProgressFilter{
 		UserID: userID,
@@ -475,24 +480,25 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 		return DashboardData{}, fmt.Errorf("failed to list progress: %w", err)
 	}
 
-	// Шаг 3: Вычислить общий стрик (30 дней)
+	// Шаг 3: Вычислить общий стрик (N дней включая сегодня)
 	dateMap := make(map[string]bool)
 	for _, point := range allProgress {
 		dateKey := point.ProgressAt.Format("2006-01-02")
 		dateMap[dateKey] = true
 	}
 
-	// Построить массив из 30 дней (от старых к новым)
-	streakDays := make([]StreakDay, 30)
-	for i := 0; i < 30; i++ {
-		date := thirtyDaysAgo.AddDate(0, 0, i)
+	// Построить массив из N дней (от старых к новым, включая сегодня)
+	streakStartDate := now.AddDate(0, 0, -(streakDaysCount - 1))
+	streakDays := make([]StreakDay, streakDaysCount)
+	for i := 0; i < streakDaysCount; i++ {
+		date := streakStartDate.AddDate(0, 0, i)
 		dateKey := date.Format("2006-01-02")
 		streakDays[i] = StreakDay{Active: dateMap[dateKey]}
 	}
 
 	// Подсчитать текущий стрик (с конца массива)
 	currentStreak := 0
-	for i := 29; i >= 0; i-- {
+	for i := streakDaysCount - 1; i >= 0; i-- {
 		if streakDays[i].Active {
 			currentStreak++
 		} else {
@@ -526,8 +532,8 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 	// Шаг 5: Построить ячейки прогресса для каждой активности
 	activityViews := make([]ActivityView, 0, len(activities))
 	for _, activity := range activities {
-		// Построить ячейки прогресса за 30 дней
-		cells := buildActivityProgressCells(activity, allProgress, thirtyDaysAgo)
+		// Построить ячейки прогресса за N дней
+		cells := buildActivityProgressCells(activity, allProgress, streakStartDate)
 
 		view := ActivityView{
 			Name:           activity.Name,
@@ -552,7 +558,7 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 			CurrentStreak: 0,
 			AvgGapMonth:   "0.0d",
 			AvgGapWeek:    "0.0d",
-			StreakDays:    make([]StreakDay, 30),
+			StreakDays:    make([]StreakDay, streakDaysCount),
 			Activities:    []ActivityView{},
 		}, nil
 	}

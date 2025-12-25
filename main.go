@@ -104,9 +104,6 @@ func main() {
 		handler.ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
-	// Progress dashboard route with API key authentication
-	basicAuth := gin.BasicAuth(gin.Accounts{os.Getenv("PROGRESS_USERNAME"): os.Getenv("PROGRESS_PASSWORD")})
-
 	// Middleware to inject DB into context for HTTP handlers
 	dbMiddleware := func(db gateways.DB) gin.HandlerFunc {
 		return func(c *gin.Context) {
@@ -116,7 +113,7 @@ func main() {
 		}
 	}
 
-	router.GET("/web/progress", basicAuth, dbMiddleware(repo), progress.DashboardWebHandler)
+	router.GET("/web/progress", dbMiddleware(repo), progress.DashboardWebHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
