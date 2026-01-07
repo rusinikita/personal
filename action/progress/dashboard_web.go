@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -495,6 +497,24 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 	})
 	if err != nil {
 		return DashboardData{}, fmt.Errorf("failed to list activities: %w", err)
+	}
+
+	// Stable sort: активность с TOP_ACTIVITY_ID всегда наверху
+	if topActivityIDStr := os.Getenv("TOP_ACTIVITY_ID"); topActivityIDStr != "" {
+		if topActivityID, err := strconv.ParseInt(topActivityIDStr, 10, 64); err == nil {
+			sort.SliceStable(activities, func(i, j int) bool {
+				// Если i имеет TOP_ACTIVITY_ID, он должен быть перед j
+				if activities[i].ID == topActivityID {
+					return true
+				}
+				// Если j имеет TOP_ACTIVITY_ID, он должен быть перед i
+				if activities[j].ID == topActivityID {
+					return false
+				}
+				// Иначе сохраняем исходный порядок (stable sort)
+				return false
+			})
+		}
 	}
 
 	// Берем первые N активностей (ListActivities уже сортирует по срочности)
