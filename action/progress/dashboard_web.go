@@ -168,7 +168,7 @@ const htmlTemplate = `<!DOCTYPE html>
         }
 
         .activity-desc {
-            font-size: 13px;
+            font-size: 11px;
             color: #808080;
         }
         
