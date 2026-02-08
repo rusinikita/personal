@@ -166,6 +166,11 @@ const htmlTemplate = `<!DOCTYPE html>
             color: #000;
             font-weight: 700;
         }
+
+        .activity-desc {
+            font-size: 13px;
+            color: #808080;
+        }
         
         .emoji-grid {
             display: flex;
@@ -235,6 +240,7 @@ const htmlTemplate = `<!DOCTYPE html>
                     </div>
                     <span class="activity-ago{{if .StalenessClass}} {{.StalenessClass}}{{end}}">{{.TimeAgo}}</span>
                 </div>
+                {{if .Description}}<div class="activity-desc">{{.Description}}</div>{{end}}
                 <div class="emoji-grid">
                     {{- range $i, $p := .ProgressCells -}}
                         {{if $p.IsSpacer -}}
@@ -295,6 +301,7 @@ type ProgressCell struct {
 
 type ActivityView struct {
 	Name           string
+	Description    string
 	Frequency      string
 	TimeAgo        string
 	StalenessClass string
@@ -618,6 +625,7 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 
 		view := ActivityView{
 			Name:           activity.Name,
+			Description:    activity.Description,
 			Frequency:      formatFrequency(activity.FrequencyDays),
 			TimeAgo:        formatTimeAgoPtr(activity.LastPointAt),
 			StalenessClass: getStalenessClassPtr(activity.LastPointAt, activity.FrequencyDays),
