@@ -499,19 +499,41 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 		return DashboardData{}, fmt.Errorf("failed to list activities: %w", err)
 	}
 
-	// Stable sort: активность с TOP_ACTIVITY_ID всегда наверху
+	// Stable sort: активности с TOP_ACTIVITY_ID всегда наверху в указанном порядке
 	if topActivityIDStr := os.Getenv("TOP_ACTIVITY_ID"); topActivityIDStr != "" {
-		if topActivityID, err := strconv.ParseInt(topActivityIDStr, 10, 64); err == nil {
+		// Парсим список ID через запятую
+		topActivityIDs := []int64{}
+		for _, idStr := range strings.Split(topActivityIDStr, ",") {
+			idStr = strings.TrimSpace(idStr)
+			if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+				topActivityIDs = append(topActivityIDs, id)
+			}
+		}
+
+		if len(topActivityIDs) > 0 {
+			// Создаем map для быстрого поиска позиции ID в приоритетном списке
+			priorityMap := make(map[int64]int)
+			for idx, id := range topActivityIDs {
+				priorityMap[id] = idx
+			}
+
 			sort.SliceStable(activities, func(i, j int) bool {
-				// Если i имеет TOP_ACTIVITY_ID, он должен быть перед j
-				if activities[i].ID == topActivityID {
+				iPriority, iHasPriority := priorityMap[activities[i].ID]
+				jPriority, jHasPriority := priorityMap[activities[j].ID]
+
+				// Оба имеют приоритет - сортируем по позиции в списке
+				if iHasPriority && jHasPriority {
+					return iPriority < jPriority
+				}
+				// Только i имеет приоритет
+				if iHasPriority {
 					return true
 				}
-				// Если j имеет TOP_ACTIVITY_ID, он должен быть перед i
-				if activities[j].ID == topActivityID {
+				// Только j имеет приоритет
+				if jHasPriority {
 					return false
 				}
-				// Иначе сохраняем исходный порядок (stable sort)
+				// Ни один не имеет приоритета - сохраняем исходный порядок
 				return false
 			})
 		}
