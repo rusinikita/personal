@@ -205,6 +205,9 @@ const htmlTemplate = `<!DOCTYPE html>
             color: #808080;
             padding: 0 4px;
             white-space: nowrap;
+            display: flex;
+            align-items: center;
+            height: 22px;
         }
     </style>
 </head>
