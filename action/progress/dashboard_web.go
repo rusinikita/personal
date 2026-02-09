@@ -178,13 +178,13 @@ const htmlTemplate = `<!DOCTYPE html>
         }
         
         .emoji-cell {
-            width: 26px;
-            height: 26px;
+            width: 22px;
+            height: 22px;
             border: 1px solid #808080;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 15px;
+            font-size: 13px;
             background: #fff;
             font-family: 'Noto Emoji', sans-serif;
             color: #000;
@@ -275,9 +275,9 @@ var emojiMappings = map[string]map[int]string{
 	},
 	"project_progress": {
 		2:  "🚀",
-		1:  "➡️",
-		0:  "⏸️",
-		-1: "↩️",
+		1:  "⮕",
+		0:  "⌛",
+		-1: "⬅",
 		-2: "🔄",
 	},
 	"promise_state": {
