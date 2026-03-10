@@ -304,7 +304,7 @@ type ProgressCell struct {
 
 type ActivityView struct {
 	Name           string
-	Description    string
+	Description    template.HTML
 	Frequency      string
 	TimeAgo        string
 	StalenessClass string
@@ -416,6 +416,31 @@ func filterProgressByActivity(points []domain.ActivityPoint, activityID int64) [
 }
 
 // formatFrequency форматирует частоту (N -> "each Xd")
+func renderBoldMarkdown(s string) template.HTML {
+	escaped := template.HTMLEscapeString(s)
+	var b strings.Builder
+	for {
+		start := strings.Index(escaped, "**")
+		if start == -1 {
+			b.WriteString(escaped)
+			break
+		}
+		b.WriteString(escaped[:start])
+		escaped = escaped[start+2:]
+		end := strings.Index(escaped, "**")
+		if end == -1 {
+			b.WriteString("**")
+			b.WriteString(escaped)
+			break
+		}
+		b.WriteString("<strong>")
+		b.WriteString(escaped[:end])
+		b.WriteString("</strong>")
+		escaped = escaped[end+2:]
+	}
+	return template.HTML(b.String())
+}
+
 func formatFrequency(days int) string {
 	return fmt.Sprintf("each %dd", days)
 }
@@ -628,7 +653,7 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 
 		view := ActivityView{
 			Name:           activity.Name,
-			Description:    activity.Description,
+			Description:    renderBoldMarkdown(activity.Description),
 			Frequency:      formatFrequency(activity.FrequencyDays),
 			TimeAgo:        formatTimeAgoPtr(activity.LastPointAt),
 			StalenessClass: getStalenessClassPtr(activity.LastPointAt, activity.FrequencyDays),
