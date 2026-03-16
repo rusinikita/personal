@@ -585,6 +585,68 @@ func (r *repository) ListExercises(ctx context.Context, userID int64, limit int6
 	return exercises, nil
 }
 
+func (r *repository) GetExercise(ctx context.Context, exerciseID int64, userID int64) (*domain.Exercise, error) {
+	query := `
+		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
+		       MAX(s.created_at) as last_used_at
+		FROM exercises e
+		LEFT JOIN sets s ON e.id = s.exercise_id AND s.user_id = $2
+		WHERE e.id = $1 AND e.user_id = $2
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at`
+
+	var ex domain.Exercise
+	err := r.db.QueryRow(ctx, query, exerciseID, userID).Scan(
+		&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.CreatedAt, &ex.LastUsedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get exercise: %w", err)
+	}
+	return &ex, nil
+}
+
+func (r *repository) UpdateExercise(ctx context.Context, exercise *domain.Exercise) error {
+	query := `UPDATE exercises SET name = $1, equipment_type = $2 WHERE id = $3 AND user_id = $4`
+	tag, err := r.db.Exec(ctx, query, exercise.Name, exercise.EquipmentType, exercise.ID, exercise.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to update exercise: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("exercise not found")
+	}
+	return nil
+}
+
+func (r *repository) SearchExercises(ctx context.Context, userID int64, query string) ([]domain.Exercise, error) {
+	sql := `
+		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
+		       MAX(s.created_at) as last_used_at
+		FROM exercises e
+		LEFT JOIN sets s ON e.id = s.exercise_id AND s.user_id = $1
+		WHERE e.user_id = $1 AND e.name ILIKE $2
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at
+		ORDER BY last_used_at DESC NULLS LAST, e.name ASC`
+
+	rows, err := r.db.Query(ctx, sql, userID, "%"+query+"%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to search exercises: %w", err)
+	}
+	defer rows.Close()
+
+	var exercises []domain.Exercise
+	for rows.Next() {
+		var ex domain.Exercise
+		if err := rows.Scan(&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.CreatedAt, &ex.LastUsedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan exercise: %w", err)
+		}
+		exercises = append(exercises, ex)
+	}
+
+	return exercises, rows.Err()
+}
+
 func (r *repository) CreateWorkout(ctx context.Context, workout *domain.Workout) (int64, error) {
 	query := `
 		INSERT INTO workouts (user_id, started_at, completed_at)

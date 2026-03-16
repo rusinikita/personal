@@ -31,6 +31,9 @@ type DB interface {
 	CreateExercise(ctx context.Context, exercise *domain.Exercise) (int64, error)
 	ListWithLastUsed(ctx context.Context, userID int64) ([]domain.Exercise, error)
 	ListExercises(ctx context.Context, userID int64, limit int64) ([]domain.Exercise, error)
+	SearchExercises(ctx context.Context, userID int64, query string) ([]domain.Exercise, error)
+	GetExercise(ctx context.Context, exerciseID int64, userID int64) (*domain.Exercise, error)
+	UpdateExercise(ctx context.Context, exercise *domain.Exercise) error
 
 	// Workout methods
 	CreateWorkout(ctx context.Context, workout *domain.Workout) (int64, error)
