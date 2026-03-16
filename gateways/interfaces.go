@@ -36,6 +36,7 @@ type DB interface {
 	CreateWorkout(ctx context.Context, workout *domain.Workout) (int64, error)
 	CloseWorkout(ctx context.Context, workoutID int64, completedAt time.Time) error
 	ListWorkouts(ctx context.Context, userID int64) ([]domain.Workout, error)
+	GetWorkoutByDate(ctx context.Context, userID int64, date time.Time) (*domain.Workout, error)
 
 	// Set methods
 	CreateSet(ctx context.Context, set *domain.Set) (int64, error)
@@ -45,6 +46,8 @@ type DB interface {
 	ListSets(ctx context.Context, userID int64, from time.Time, to time.Time) ([]domain.Set, error)
 	GetExercisesByIDs(ctx context.Context, userID int64, exerciseIDs []int64) ([]domain.Exercise, error)
 	GetWorkoutsByIDs(ctx context.Context, userID int64, workoutIDs []int64) ([]domain.Workout, error)
+	GetExerciseHistory(ctx context.Context, userID int64, exerciseID int64, limit int, offset int) ([]domain.Workout, error)
+	ListSetsByExerciseAndWorkouts(ctx context.Context, userID int64, exerciseID int64, workoutIDs []int64) ([]domain.Set, error)
 
 	// Progress tracking methods
 	CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error)

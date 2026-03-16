@@ -211,3 +211,58 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_Validation() {
 	assert.Contains(s.T(), err.Error(), "reps")
 	assert.Contains(s.T(), err.Error(), "duration_seconds")
 }
+
+func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDateCreatesBackdatedWorkout() {
+	ctx := s.Context()
+
+	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+		Name: "Overhead Press", EquipmentType: "barbell",
+	})
+	require.NoError(s.T(), err)
+
+	input := log_workout_set.LogWorkoutSetInput{
+		ExerciseID: exerciseOutput.ID,
+		Reps:       5,
+		WeightKg:   60.0,
+		Date:       "2026-01-15",
+	}
+	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	require.NoError(s.T(), err)
+	assert.True(s.T(), output.IsNewWorkout)
+
+	workoutSet, err := s.Repo().GetLastSet(ctx, s.UserID())
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "2026-01-15", workoutSet.Set.CreatedAt.Format("2006-01-02"))
+	assert.Equal(s.T(), "2026-01-15", workoutSet.Workout.StartedAt.Format("2006-01-02"))
+	assert.NotNil(s.T(), workoutSet.Workout.CompletedAt, "backdated workout should be completed")
+}
+
+func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDateReusesExistingWorkout() {
+	ctx := s.Context()
+
+	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+		Name: "Incline Press", EquipmentType: "barbell",
+	})
+	require.NoError(s.T(), err)
+
+	// Create an existing workout for 2026-01-15
+	targetDate := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+	completedAt := time.Date(2026, 1, 15, 23, 59, 59, 0, time.UTC)
+	existingWorkoutID, err := s.Repo().CreateWorkout(ctx, &domain.Workout{
+		UserID:      s.UserID(),
+		StartedAt:   targetDate,
+		CompletedAt: &completedAt,
+	})
+	require.NoError(s.T(), err)
+
+	input := log_workout_set.LogWorkoutSetInput{
+		ExerciseID: exerciseOutput.ID,
+		Reps:       8,
+		WeightKg:   55.0,
+		Date:       "2026-01-15",
+	}
+	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	require.NoError(s.T(), err)
+	assert.False(s.T(), output.IsNewWorkout)
+	assert.Equal(s.T(), existingWorkoutID, output.WorkoutID)
+}

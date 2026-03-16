@@ -646,6 +646,32 @@ func (r *repository) ListWorkouts(ctx context.Context, userID int64) ([]domain.W
 	return workouts, nil
 }
 
+func (r *repository) GetWorkoutByDate(ctx context.Context, userID int64, date time.Time) (*domain.Workout, error) {
+	query := `
+		SELECT id, user_id, started_at, completed_at
+		FROM workouts
+		WHERE user_id = $1
+		  AND started_at >= $2
+		  AND started_at < $3
+		LIMIT 1`
+
+	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	dayEnd := dayStart.AddDate(0, 0, 1)
+
+	var w domain.Workout
+	err := r.db.QueryRow(ctx, query, userID, dayStart, dayEnd).Scan(
+		&w.ID, &w.UserID, &w.StartedAt, &w.CompletedAt,
+	)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &w, nil
+}
+
 func (r *repository) CreateSet(ctx context.Context, set *domain.Set) (int64, error) {
 	query := `
 		INSERT INTO sets (user_id, workout_id, exercise_id, reps, duration_seconds, weight_kg, created_at)
@@ -881,6 +907,68 @@ func (r *repository) GetWorkoutsByIDs(ctx context.Context, userID int64, workout
 	}
 
 	return workouts, nil
+}
+
+func (r *repository) GetExerciseHistory(ctx context.Context, userID int64, exerciseID int64, limit int, offset int) ([]domain.Workout, error) {
+	query := `
+		SELECT DISTINCT w.id, w.user_id, w.started_at, w.completed_at
+		FROM workouts w
+		JOIN sets s ON s.workout_id = w.id
+		WHERE s.user_id = $1 AND s.exercise_id = $2
+		ORDER BY w.started_at DESC
+		LIMIT $3 OFFSET $4`
+
+	rows, err := r.db.Query(ctx, query, userID, exerciseID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query exercise history: %w", err)
+	}
+	defer rows.Close()
+
+	var workouts []domain.Workout
+	for rows.Next() {
+		var w domain.Workout
+		if err := rows.Scan(&w.ID, &w.UserID, &w.StartedAt, &w.CompletedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan workout: %w", err)
+		}
+		workouts = append(workouts, w)
+	}
+
+	return workouts, rows.Err()
+}
+
+func (r *repository) ListSetsByExerciseAndWorkouts(ctx context.Context, userID int64, exerciseID int64, workoutIDs []int64) ([]domain.Set, error) {
+	if len(workoutIDs) == 0 {
+		return []domain.Set{}, nil
+	}
+
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+	q, args, err := psql.Select(
+		"id", "user_id", "workout_id", "exercise_id",
+		"COALESCE(reps, 0)", "COALESCE(duration_seconds, 0)", "COALESCE(weight_kg, 0)", "created_at",
+	).From("sets").
+		Where(squirrel.Eq{"user_id": userID, "exercise_id": exerciseID, "workout_id": workoutIDs}).
+		OrderBy("created_at ASC").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sets: %w", err)
+	}
+	defer rows.Close()
+
+	var sets []domain.Set
+	for rows.Next() {
+		var s domain.Set
+		if err := rows.Scan(&s.ID, &s.UserID, &s.WorkoutID, &s.ExerciseID, &s.Reps, &s.DurationSeconds, &s.WeightKg, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan set: %w", err)
+		}
+		sets = append(sets, s)
+	}
+
+	return sets, rows.Err()
 }
 
 func (r *repository) CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error) {

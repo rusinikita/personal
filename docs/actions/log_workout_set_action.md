@@ -28,6 +28,8 @@
 
 Пользователь логирует подход указывая упражнение и параметры (повторения/время, вес). Если у пользователя нет активной тренировки (completed_at IS NULL), то автоматически создается новая. Подход добавляется в активную тренировку.
 
+Если указана дата (`date`), подход добавляется к тренировке на эту дату. Если тренировка на эту дату уже существует — подход добавляется к ней. Если нет — создаётся новая тренировка с started_at = начало указанного дня. Тренировка на конкретную дату считается завершённой (completed_at = конец дня).
+
 ## E2E Tests
 
 ### Test: Log workout set with reps creates active workout
@@ -73,6 +75,23 @@
 // Verify error returned (at least one required)
 ```
 
+### Test: Log workout set with date creates backdated workout
+```go
+// Create exercise
+// Call log_workout_set with exercise_id, reps, date="2026-01-15"
+// Verify is_new_workout=true
+// Verify set created_at is on 2026-01-15
+// Verify workout started_at is on 2026-01-15
+```
+
+### Test: Log workout set with date reuses existing workout on that date
+```go
+// Create exercise
+// Create workout with started_at=2026-01-15T10:00:00, completed_at=2026-01-15T23:59:59 via DB
+// Call log_workout_set with exercise_id, reps, date="2026-01-15"
+// Verify is_new_workout=false and same workout_id
+```
+
 ## Implementation
 
 ### Domain structure
@@ -99,8 +118,8 @@ type Set struct {
 }
 
 type WorkoutSet struct {
-    Workout
-    Set
+    Workout Workout
+    Set     Set
 }
 ```
 
@@ -113,6 +132,7 @@ CloseWorkout(ctx context.Context, workoutID int64) error
 CreateSet(ctx context.Context, set *domain.Set) error
 GetLastSet(ctx context.Context, userID int64) (*domain.WorkoutSet, error)
 ListWorkouts(ctx context.Context, userID int64) ([]domain.Workout, error)
+GetWorkoutByDate(ctx context.Context, userID int64, date time.Time) (*domain.Workout, error)  // NEW
 ```
 
 ```mermaid
@@ -154,23 +174,31 @@ erDiagram
 **Input:**
 ```go
 {
-    "exercise_id": int64,
-    "reps": int | null,              // optional
-    "duration_seconds": int | null,  // optional
-    "weight_kg": float | null        // optional
+    "exercise_id":      int64,
+    "reps":             int | null,    // optional
+    "duration_seconds": int | null,    // optional
+    "weight_kg":        float | null,  // optional
+    "date":             string | null  // optional, ISO 8601 date e.g. "2026-02-19"
 }
 ```
 
 **Output:**
 ```go
 {
-    "set_id": int64,
-    "workout_id": int64,
+    "set_id":        int64,
+    "workout_id":    int64,
     "is_new_workout": bool
 }
 ```
 
-**Logic:**
+**Logic (date provided):**
+- Parse date string as local date (YYYY-MM-DD)
+- Call DB.GetWorkoutByDate(user_id, date) — finds any workout whose started_at falls on that calendar day
+- If found: use existing workout_id, is_new_workout=false
+- If not found: create new Workout with started_at=date 00:00:00, completed_at=date 23:59:59, is_new_workout=true
+- Create Set with created_at = date 12:00:00 (noon, stable ordering for backdated sets)
+
+**Logic (no date — existing behavior):**
 - Use default user_id (single-user mode)
 - Validate at least one of reps or duration_seconds provided
 - Call DB.GetLastSet(user_id) to get last set with workout info

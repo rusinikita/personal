@@ -32,6 +32,7 @@ Parameters:
 - reps: Number of repetitions (optional, for rep-based exercises)
 - duration_seconds: Duration in seconds (optional, for static exercises like plank)
 - weight_kg: Weight in kilograms (optional, for weighted exercises)
+- date: ISO 8601 date string e.g. "2026-02-19" (optional, for backdating a set to a past workout)
 
 Returns:
 - set_id: ID of the created set
@@ -44,6 +45,7 @@ type LogWorkoutSetInput struct {
 	Reps            int64   `json:"reps,omitempty" jsonschema:"Number of repetitions (optional, 0 if not provided)"`
 	DurationSeconds int64   `json:"duration_seconds,omitempty" jsonschema:"Duration in seconds (optional, 0 if not provided)"`
 	WeightKg        float64 `json:"weight_kg,omitempty" jsonschema:"Weight in kilograms (optional, 0 if not provided)"`
+	Date            string  `json:"date,omitempty" jsonschema:"ISO 8601 date for backdating e.g. 2026-02-19 (optional)"`
 }
 
 type LogWorkoutSetOutput struct {
@@ -53,29 +55,79 @@ type LogWorkoutSetOutput struct {
 }
 
 func LogWorkoutSet(ctx context.Context, _ *mcp.CallToolRequest, input LogWorkoutSetInput) (*mcp.CallToolResult, LogWorkoutSetOutput, error) {
-	// Get database from context
 	db := gateways.DBFromContext(ctx)
 	if db == nil {
 		return nil, LogWorkoutSetOutput{}, fmt.Errorf("database not available in context")
 	}
 
-	// Get user ID from context
 	userID := gateways.UserIDFromContext(ctx)
 	if userID == 0 {
 		return nil, LogWorkoutSetOutput{}, fmt.Errorf("user_id not available in context")
 	}
 
-	// 1. Validate input
 	if err := validateInput(input); err != nil {
 		return nil, LogWorkoutSetOutput{}, fmt.Errorf("validation error: %w", err)
 	}
 
-	// 2. Get last set to determine if we need a new workout
+	if input.Date != "" {
+		return logBackdated(ctx, db, userID, input)
+	}
+
+	return logCurrent(ctx, db, userID, input)
+}
+
+func logBackdated(ctx context.Context, db gateways.DB, userID int64, input LogWorkoutSetInput) (*mcp.CallToolResult, LogWorkoutSetOutput, error) {
+	date, err := time.Parse("2006-01-02", input.Date)
+	if err != nil {
+		return nil, LogWorkoutSetOutput{}, fmt.Errorf("invalid date format, expected YYYY-MM-DD: %w", err)
+	}
+
+	var workoutID int64
+	isNewWorkout := false
+
+	existing, err := db.GetWorkoutByDate(ctx, userID, date)
+	if err != nil {
+		return nil, LogWorkoutSetOutput{}, fmt.Errorf("failed to look up workout by date: %w", err)
+	}
+
+	if existing != nil {
+		workoutID = existing.ID
+	} else {
+		dayStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+		dayEnd := time.Date(date.Year(), date.Month(), date.Day(), 23, 59, 59, 0, time.UTC)
+		workoutID, err = db.CreateWorkout(ctx, &domain.Workout{
+			UserID:      userID,
+			StartedAt:   dayStart,
+			CompletedAt: &dayEnd,
+		})
+		if err != nil {
+			return nil, LogWorkoutSetOutput{}, fmt.Errorf("failed to create backdated workout: %w", err)
+		}
+		isNewWorkout = true
+	}
+
+	setTime := time.Date(date.Year(), date.Month(), date.Day(), 12, 0, 0, 0, time.UTC)
+	setID, err := db.CreateSet(ctx, &domain.Set{
+		UserID:          userID,
+		WorkoutID:       workoutID,
+		ExerciseID:      input.ExerciseID,
+		Reps:            input.Reps,
+		DurationSeconds: input.DurationSeconds,
+		WeightKg:        input.WeightKg,
+		CreatedAt:       setTime,
+	})
+	if err != nil {
+		return nil, LogWorkoutSetOutput{}, fmt.Errorf("failed to create set: %w", err)
+	}
+
+	return nil, LogWorkoutSetOutput{SetID: setID, WorkoutID: workoutID, IsNewWorkout: isNewWorkout}, nil
+}
+
+func logCurrent(ctx context.Context, db gateways.DB, userID int64, input LogWorkoutSetInput) (*mcp.CallToolResult, LogWorkoutSetOutput, error) {
 	lastSet, err := db.GetLastSet(ctx, userID)
 	var workoutID int64
 	var isNewWorkout bool
 
-	// 3. Determine if we need to create a new workout
 	now := time.Now()
 	twoHoursAgo := now.Add(-2 * time.Hour)
 
@@ -83,46 +135,34 @@ func LogWorkoutSet(ctx context.Context, _ *mcp.CallToolRequest, input LogWorkout
 	var oldWorkoutID int64
 
 	if err != nil || lastSet == nil {
-		// No previous sets, need new workout
 		needNewWorkout = true
 	} else if lastSet.Workout.CompletedAt != nil {
-		// Last workout is completed, need new workout
 		needNewWorkout = true
 	} else if lastSet.Set.CreatedAt.Before(twoHoursAgo) {
-		// Last set was more than 2 hours ago, need new workout
 		needNewWorkout = true
 		oldWorkoutID = lastSet.Workout.ID
 	} else {
-		// Reuse existing workout
 		workoutID = lastSet.Workout.ID
-		isNewWorkout = false
 	}
 
-	// 4. Close old workout if needed
 	if needNewWorkout && oldWorkoutID != 0 {
-		err = db.CloseWorkout(ctx, oldWorkoutID, lastSet.Set.CreatedAt)
-		if err != nil {
+		if err = db.CloseWorkout(ctx, oldWorkoutID, lastSet.Set.CreatedAt); err != nil {
 			return nil, LogWorkoutSetOutput{}, fmt.Errorf("failed to close old workout: %w", err)
 		}
 	}
 
-	// 5. Create new workout if needed
 	if needNewWorkout {
-		workout := &domain.Workout{
-			UserID:      userID,
-			StartedAt:   now,
-			CompletedAt: nil,
-		}
-
-		workoutID, err = db.CreateWorkout(ctx, workout)
+		workoutID, err = db.CreateWorkout(ctx, &domain.Workout{
+			UserID:    userID,
+			StartedAt: now,
+		})
 		if err != nil {
 			return nil, LogWorkoutSetOutput{}, fmt.Errorf("failed to create workout: %w", err)
 		}
 		isNewWorkout = true
 	}
 
-	// 6. Create set
-	set := &domain.Set{
+	setID, err := db.CreateSet(ctx, &domain.Set{
 		UserID:          userID,
 		WorkoutID:       workoutID,
 		ExerciseID:      input.ExerciseID,
@@ -130,19 +170,12 @@ func LogWorkoutSet(ctx context.Context, _ *mcp.CallToolRequest, input LogWorkout
 		DurationSeconds: input.DurationSeconds,
 		WeightKg:        input.WeightKg,
 		CreatedAt:       now,
-	}
-
-	setID, err := db.CreateSet(ctx, set)
+	})
 	if err != nil {
 		return nil, LogWorkoutSetOutput{}, fmt.Errorf("failed to create set: %w", err)
 	}
 
-	// 7. Return success response
-	return nil, LogWorkoutSetOutput{
-		SetID:        setID,
-		WorkoutID:    workoutID,
-		IsNewWorkout: isNewWorkout,
-	}, nil
+	return nil, LogWorkoutSetOutput{SetID: setID, WorkoutID: workoutID, IsNewWorkout: isNewWorkout}, nil
 }
 
 func validateInput(input LogWorkoutSetInput) error {
