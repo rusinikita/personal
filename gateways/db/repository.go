@@ -619,6 +619,31 @@ func (r *repository) UpdateExercise(ctx context.Context, exercise *domain.Exerci
 	return nil
 }
 
+func (r *repository) MoveSetsBetweenExercises(ctx context.Context, sourceID, targetID, userID int64) (int64, error) {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE sets SET exercise_id = $2 WHERE exercise_id = $1 AND user_id = $3`,
+		sourceID, targetID, userID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to move sets: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+func (r *repository) DeleteExercise(ctx context.Context, exerciseID int64, userID int64) error {
+	tag, err := r.db.Exec(ctx,
+		`DELETE FROM exercises WHERE id = $1 AND user_id = $2`,
+		exerciseID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete exercise: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("exercise not found")
+	}
+	return nil
+}
+
 func (r *repository) SearchExercises(ctx context.Context, userID int64, query string) ([]domain.Exercise, error) {
 	sql := `
 		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
@@ -996,6 +1021,54 @@ func (r *repository) GetExerciseHistory(ctx context.Context, userID int64, exerc
 	}
 
 	return workouts, rows.Err()
+}
+
+func (r *repository) GetPersonalRecords(ctx context.Context, userID int64, exerciseID int64) (*domain.PersonalRecords, error) {
+	records := &domain.PersonalRecords{}
+
+	scanSetRecord := func(query string) (*domain.SetRecord, error) {
+		rec := &domain.SetRecord{}
+		err := r.db.QueryRow(ctx, query, exerciseID, userID).Scan(&rec.WeightKg, &rec.Reps, &rec.CreatedAt)
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return rec, err
+	}
+
+	var err error
+	records.MaxWeight, err = scanSetRecord(
+		`SELECT weight_kg, reps, created_at FROM sets
+		 WHERE exercise_id=$1 AND user_id=$2 AND reps>0 AND weight_kg>0
+		 ORDER BY weight_kg DESC, reps DESC LIMIT 1`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query max_weight: %w", err)
+	}
+
+	records.MaxReps, err = scanSetRecord(
+		`SELECT weight_kg, reps, created_at FROM sets
+		 WHERE exercise_id=$1 AND user_id=$2 AND reps>0
+		 ORDER BY reps DESC, weight_kg DESC LIMIT 1`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query max_reps: %w", err)
+	}
+
+	vr := &domain.VolumeRecord{}
+	err = r.db.QueryRow(ctx,
+		`SELECT SUM(s.weight_kg*s.reps) AS vol, w.started_at
+		 FROM sets s JOIN workouts w ON s.workout_id=w.id
+		 WHERE s.exercise_id=$1 AND s.user_id=$2 AND s.reps>0 AND s.weight_kg>0
+		 GROUP BY s.workout_id, w.started_at
+		 ORDER BY vol DESC LIMIT 1`,
+		exerciseID, userID,
+	).Scan(&vr.Volume, &vr.StartedAt)
+	if err != nil && err != pgx.ErrNoRows {
+		return nil, fmt.Errorf("failed to query max_volume: %w", err)
+	}
+	if err == nil {
+		records.MaxVolume = vr
+	}
+
+	return records, nil
 }
 
 func (r *repository) ListSetsByExerciseAndWorkouts(ctx context.Context, userID int64, exerciseID int64, workoutIDs []int64) ([]domain.Set, error) {

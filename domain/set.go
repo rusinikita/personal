@@ -22,3 +22,20 @@ type SetWithExercise struct {
 	Set
 	ExerciseName string `json:"exercise_name"`
 }
+
+type SetRecord struct {
+	WeightKg  float64
+	Reps      int64
+	CreatedAt time.Time
+}
+
+type VolumeRecord struct {
+	Volume    float64
+	StartedAt time.Time
+}
+
+type PersonalRecords struct {
+	MaxWeight *SetRecord
+	MaxReps   *SetRecord
+	MaxVolume *VolumeRecord
+}

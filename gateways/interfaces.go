@@ -34,6 +34,9 @@ type DB interface {
 	SearchExercises(ctx context.Context, userID int64, query string) ([]domain.Exercise, error)
 	GetExercise(ctx context.Context, exerciseID int64, userID int64) (*domain.Exercise, error)
 	UpdateExercise(ctx context.Context, exercise *domain.Exercise) error
+	MoveSetsBetweenExercises(ctx context.Context, sourceID, targetID, userID int64) (int64, error)
+	DeleteExercise(ctx context.Context, exerciseID int64, userID int64) error
+	GetPersonalRecords(ctx context.Context, userID int64, exerciseID int64) (*domain.PersonalRecords, error)
 
 	// Workout methods
 	CreateWorkout(ctx context.Context, workout *domain.Workout) (int64, error)

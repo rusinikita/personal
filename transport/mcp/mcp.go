@@ -12,10 +12,12 @@ import (
 	"personal/action/edit_exercise"
 	"personal/action/find_food"
 	"personal/action/get_exercise_history"
+	"personal/action/get_personal_records"
 	"personal/action/list_exercises"
 	"personal/action/list_workouts"
 	"personal/action/log_food"
 	"personal/action/log_workout_set"
+	"personal/action/merge_exercises"
 	"personal/action/nutrition_stats"
 	"personal/action/progress"
 	"personal/action/search_exercises"
@@ -202,9 +204,11 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &list_exercises.MCPDefinition, list_exercises.ListExercises)
 	mcp.AddTool(server, &search_exercises.MCPDefinition, search_exercises.SearchExercises)
 	mcp.AddTool(server, &edit_exercise.MCPDefinition, edit_exercise.EditExercise)
+	mcp.AddTool(server, &merge_exercises.MCPDefinition, merge_exercises.MergeExercises)
 	mcp.AddTool(server, &log_workout_set.MCPDefinition, log_workout_set.LogWorkoutSet)
 	mcp.AddTool(server, &delete_workout_set.MCPDefinition, delete_workout_set.DeleteWorkoutSet)
 	mcp.AddTool(server, &get_exercise_history.MCPDefinition, get_exercise_history.GetExerciseHistory)
+	mcp.AddTool(server, &get_personal_records.MCPDefinition, get_personal_records.GetPersonalRecords)
 	mcp.AddTool(server, &list_workouts.MCPDefinition, list_workouts.ListWorkouts)
 	mcp.AddTool(server, &progress.GetActivityListMCPDefinition, progress.GetActivityList)
 	mcp.AddTool(server, &progress.GetProgressTypeExamplesMCPDefinition, progress.GetProgressTypeExamples)
