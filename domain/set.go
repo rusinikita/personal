@@ -17,3 +17,8 @@ type WorkoutSet struct {
 	Workout
 	Set
 }
+
+type SetWithExercise struct {
+	Set
+	ExerciseName string `json:"exercise_name"`
+}

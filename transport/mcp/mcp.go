@@ -8,6 +8,7 @@ import (
 
 	"personal/action/add_food"
 	"personal/action/create_exercise"
+	"personal/action/delete_workout_set"
 	"personal/action/find_food"
 	"personal/action/list_exercises"
 	"personal/action/list_workouts"
@@ -197,6 +198,7 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &create_exercise.MCPDefinition, create_exercise.CreateExercise)
 	mcp.AddTool(server, &list_exercises.MCPDefinition, list_exercises.ListExercises)
 	mcp.AddTool(server, &log_workout_set.MCPDefinition, log_workout_set.LogWorkoutSet)
+	mcp.AddTool(server, &delete_workout_set.MCPDefinition, delete_workout_set.DeleteWorkoutSet)
 	mcp.AddTool(server, &list_workouts.MCPDefinition, list_workouts.ListWorkouts)
 	mcp.AddTool(server, &progress.GetActivityListMCPDefinition, progress.GetActivityList)
 	mcp.AddTool(server, &progress.GetProgressTypeExamplesMCPDefinition, progress.GetProgressTypeExamples)

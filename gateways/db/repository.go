@@ -705,6 +705,48 @@ func (r *repository) GetLastSet(ctx context.Context, userID int64) (*domain.Work
 	return &ws, nil
 }
 
+func (r *repository) GetSetByID(ctx context.Context, setID int64, userID int64) (*domain.SetWithExercise, error) {
+	query := `
+		SELECT s.id, s.user_id, s.workout_id, s.exercise_id,
+		       COALESCE(s.reps, 0), COALESCE(s.duration_seconds, 0), COALESCE(s.weight_kg, 0),
+		       s.created_at, e.name
+		FROM sets s
+		JOIN exercises e ON s.exercise_id = e.id
+		WHERE s.id = $1 AND s.user_id = $2`
+
+	var s domain.SetWithExercise
+	err := r.db.QueryRow(ctx, query, setID, userID).Scan(
+		&s.Set.ID,
+		&s.Set.UserID,
+		&s.Set.WorkoutID,
+		&s.Set.ExerciseID,
+		&s.Set.Reps,
+		&s.Set.DurationSeconds,
+		&s.Set.WeightKg,
+		&s.Set.CreatedAt,
+		&s.ExerciseName,
+	)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, fmt.Errorf("set not found")
+		}
+		return nil, err
+	}
+
+	return &s, nil
+}
+
+func (r *repository) DeleteSet(ctx context.Context, setID int64, userID int64) error {
+	result, err := r.db.Exec(ctx, `DELETE FROM sets WHERE id = $1 AND user_id = $2`, setID, userID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("set not found")
+	}
+	return nil
+}
+
 func (r *repository) ListSets(ctx context.Context, userID int64, from time.Time, to time.Time) ([]domain.Set, error) {
 	query := `
 		SELECT id, user_id, workout_id, exercise_id,

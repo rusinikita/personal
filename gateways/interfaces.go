@@ -40,6 +40,8 @@ type DB interface {
 	// Set methods
 	CreateSet(ctx context.Context, set *domain.Set) (int64, error)
 	GetLastSet(ctx context.Context, userID int64) (*domain.WorkoutSet, error)
+	GetSetByID(ctx context.Context, setID int64, userID int64) (*domain.SetWithExercise, error)
+	DeleteSet(ctx context.Context, setID int64, userID int64) error
 	ListSets(ctx context.Context, userID int64, from time.Time, to time.Time) ([]domain.Set, error)
 	GetExercisesByIDs(ctx context.Context, userID int64, exerciseIDs []int64) ([]domain.Exercise, error)
 	GetWorkoutsByIDs(ctx context.Context, userID int64, workoutIDs []int64) ([]domain.Workout, error)
