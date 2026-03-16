@@ -14,8 +14,8 @@ type Set struct {
 }
 
 type WorkoutSet struct {
-	Workout
-	Set
+	Workout Workout
+	Set     Set
 }
 
 type SetWithExercise struct {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"personal/action/auth"
 )
@@ -28,7 +29,7 @@ func TestAuth_WellKnown(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 
 	assert.Equal(t, "http://localhost:8081", response["issuer"])
 	assert.Equal(t, "http://localhost:8081/oauth/authorize", response["authorization_endpoint"])

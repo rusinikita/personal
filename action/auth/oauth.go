@@ -263,7 +263,7 @@ func AuthorizeHandler(c *gin.Context) {
 
 func generateAuthorizationCode() string {
 	b := make([]byte, 32)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
 }
 

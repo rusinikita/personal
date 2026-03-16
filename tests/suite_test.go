@@ -56,8 +56,8 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	homeDir, err := os.UserHomeDir()
 	s.Require().NoError(err)
 
-	os.Setenv("DOCKER_HOST", fmt.Sprintf("unix://%s/.colima/default/docker.sock", homeDir))
-	os.Setenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/var/run/docker.sock")
+	s.Require().NoError(os.Setenv("DOCKER_HOST", fmt.Sprintf("unix://%s/.colima/default/docker.sock", homeDir)))
+	s.Require().NoError(os.Setenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/var/run/docker.sock"))
 
 	ctx := s.Context()
 

@@ -371,14 +371,6 @@ func formatTimeAgo(t time.Time) string {
 	return fmt.Sprintf("%dd", days)
 }
 
-func getStalenessClass(lastCheckIn time.Time, frequencyDays int) string {
-	diffDays := time.Since(lastCheckIn).Hours() / 24
-	if diffDays > float64(frequencyDays*2) {
-		return "warning"
-	}
-	return ""
-}
-
 func getEmoji(progressType string, value *int) string {
 	if value == nil {
 		return ""

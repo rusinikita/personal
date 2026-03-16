@@ -69,10 +69,10 @@ func DeleteWorkoutSet(ctx context.Context, _ *mcp.CallToolRequest, input DeleteW
 	}
 
 	return nil, DeleteWorkoutSetOutput{
-		SetID:           set.Set.ID,
+		SetID:           set.ID,
 		ExerciseName:    set.ExerciseName,
-		WeightKg:        set.Set.WeightKg,
-		Reps:            set.Set.Reps,
-		DurationSeconds: set.Set.DurationSeconds,
+		WeightKg:        set.WeightKg,
+		Reps:            set.Reps,
+		DurationSeconds: set.DurationSeconds,
 	}, nil
 }

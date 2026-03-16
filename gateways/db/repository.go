@@ -716,14 +716,14 @@ func (r *repository) GetSetByID(ctx context.Context, setID int64, userID int64) 
 
 	var s domain.SetWithExercise
 	err := r.db.QueryRow(ctx, query, setID, userID).Scan(
-		&s.Set.ID,
-		&s.Set.UserID,
-		&s.Set.WorkoutID,
-		&s.Set.ExerciseID,
-		&s.Set.Reps,
-		&s.Set.DurationSeconds,
-		&s.Set.WeightKg,
-		&s.Set.CreatedAt,
+		&s.ID,
+		&s.UserID,
+		&s.WorkoutID,
+		&s.ExerciseID,
+		&s.Reps,
+		&s.DurationSeconds,
+		&s.WeightKg,
+		&s.CreatedAt,
 		&s.ExerciseName,
 	)
 	if err != nil {
