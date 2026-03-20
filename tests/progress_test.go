@@ -14,7 +14,7 @@ func (s *IntegrationTestSuite) TestGetActivityList_Empty() {
 	ctx := s.Context()
 
 	// Call get_activity_list with no activities
-	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{})
+	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), output.Activities)
 }
@@ -87,7 +87,7 @@ func (s *IntegrationTestSuite) TestGetActivityList_WithActivities() {
 	require.NoError(s.T(), err)
 
 	// Call get_activity_list
-	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{})
+	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
 	require.NoError(s.T(), err)
 	require.Len(s.T(), output.Activities, 3)
 
@@ -138,7 +138,7 @@ func (s *IntegrationTestSuite) TestGetActivityList_OnlyActive() {
 	require.NoError(s.T(), err)
 
 	// Call get_activity_list (should only return active)
-	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{})
+	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
 	require.NoError(s.T(), err)
 	require.Len(s.T(), output.Activities, 1)
 	assert.Equal(s.T(), activeID, output.Activities[0].ID)
@@ -362,7 +362,7 @@ func (s *IntegrationTestSuite) TestFinishActivity() {
 	assert.NotNil(s.T(), finishedActivity.EndedAt)
 
 	// Verify it no longer appears in active list
-	_, listOutput, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{})
+	_, listOutput, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), listOutput.Activities)
 }
@@ -392,6 +392,307 @@ func (s *IntegrationTestSuite) TestFinishActivity_AlreadyFinished() {
 	_, _, err = progress.FinishActivity(ctx, nil, input)
 	require.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "activity not found or already finished")
+}
+
+func (s *IntegrationTestSuite) TestCreateActivity_Success() {
+	ctx := s.Context()
+
+	// Use a past started_at to avoid clock skew with Docker Postgres container
+	startedAt := time.Now().AddDate(0, 0, -1).UTC().Format(time.RFC3339)
+	input := progress.CreateActivityInput{
+		Name:          "User Outreach",
+		ProgressType:  "project_progress",
+		FrequencyDays: 1,
+		StartedAt:     startedAt,
+	}
+	_, output, err := progress.CreateActivity(ctx, nil, input)
+	require.NoError(s.T(), err)
+	assert.Greater(s.T(), output.Activity.ID, int64(0))
+	assert.Equal(s.T(), "User Outreach", output.Activity.Name)
+	assert.Equal(s.T(), "project_progress", output.Activity.ProgressType)
+	assert.Equal(s.T(), 1, output.Activity.FrequencyDays)
+	assert.Empty(s.T(), output.Activity.Description)
+	assert.NotEmpty(s.T(), output.Activity.StartedAt)
+	assert.NotEmpty(s.T(), output.Activity.CreatedAt)
+
+	// Verify appears in get_activity_list
+	_, listOutput, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), listOutput.Activities, 1)
+	assert.Equal(s.T(), output.Activity.ID, listOutput.Activities[0].ID)
+}
+
+func (s *IntegrationTestSuite) TestCreateActivity_WithAllFields() {
+	ctx := s.Context()
+
+	startedAt := time.Now().AddDate(0, 0, -7).UTC().Format(time.RFC3339)
+	input := progress.CreateActivityInput{
+		Name:          "Daily Meditation",
+		ProgressType:  "habit_progress",
+		FrequencyDays: 1,
+		Description:   "Morning meditation practice",
+		StartedAt:     startedAt,
+	}
+	_, output, err := progress.CreateActivity(ctx, nil, input)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "Daily Meditation", output.Activity.Name)
+	assert.Equal(s.T(), "habit_progress", output.Activity.ProgressType)
+	assert.Equal(s.T(), "Morning meditation practice", output.Activity.Description)
+}
+
+func (s *IntegrationTestSuite) TestCreateActivity_InvalidProgressType() {
+	ctx := s.Context()
+
+	input := progress.CreateActivityInput{
+		Name:          "Test",
+		ProgressType:  "invalid_type",
+		FrequencyDays: 1,
+	}
+	_, _, err := progress.CreateActivity(ctx, nil, input)
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "invalid progress_type")
+}
+
+func (s *IntegrationTestSuite) TestCreateActivity_InvalidFrequencyDays() {
+	ctx := s.Context()
+
+	input := progress.CreateActivityInput{
+		Name:          "Test",
+		ProgressType:  "mood",
+		FrequencyDays: 0,
+	}
+	_, _, err := progress.CreateActivity(ctx, nil, input)
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "frequency_days must be at least 1")
+}
+
+func (s *IntegrationTestSuite) TestCreateActivity_EmptyName() {
+	ctx := s.Context()
+
+	input := progress.CreateActivityInput{
+		Name:          "",
+		ProgressType:  "mood",
+		FrequencyDays: 1,
+	}
+	_, _, err := progress.CreateActivity(ctx, nil, input)
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "name is required")
+}
+
+func (s *IntegrationTestSuite) TestCreateActivity_FutureStartedAt_NotInList() {
+	ctx := s.Context()
+
+	futureStartedAt := time.Now().AddDate(0, 0, 1).UTC().Format(time.RFC3339)
+	input := progress.CreateActivityInput{
+		Name:          "Future Activity",
+		ProgressType:  "project_progress",
+		FrequencyDays: 1,
+		StartedAt:     futureStartedAt,
+	}
+	_, output, err := progress.CreateActivity(ctx, nil, input)
+	require.NoError(s.T(), err)
+	assert.Greater(s.T(), output.Activity.ID, int64(0))
+
+	// Should not appear in get_activity_list (started_at > NOW())
+	_, listOutput, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{})
+	require.NoError(s.T(), err)
+	for _, a := range listOutput.Activities {
+		assert.NotEqual(s.T(), output.Activity.ID, a.ID)
+	}
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_UpdateName() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Old Name",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	newName := "New Name"
+	_, output, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID: activityID,
+		Name:       &newName,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "New Name", output.Activity.Name)
+	assert.Equal(s.T(), activityID, output.Activity.ID)
+
+	// Verify persisted
+	updated, err := db.GetActivity(ctx, activityID, userID)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "New Name", updated.Name)
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_UpdateDescription() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Driver's License",
+		Description:   "Выписка, теория, занятия, экзамен",
+		ProgressType:  domain.ProgressTypeProjectProgress,
+		FrequencyDays: 7,
+		StartedAt:     time.Now().AddDate(0, -6, 0),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	newDesc := "Экзамен сдан, права получены"
+	_, output, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID:  activityID,
+		Description: &newDesc,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "Экзамен сдан, права получены", output.Activity.Description)
+	assert.Equal(s.T(), "Driver's License", output.Activity.Name) // unchanged
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_ClearDescription() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test",
+		Description:   "Some description",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	emptyDesc := ""
+	_, output, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID:  activityID,
+		Description: &emptyDesc,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "", output.Activity.Description)
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_UpdateFrequencyDays() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Weekly Review",
+		ProgressType:  domain.ProgressTypeHabitProgress,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	newFreq := 7
+	_, output, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID:    activityID,
+		FrequencyDays: &newFreq,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), 7, output.Activity.FrequencyDays)
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_UpdateMultipleFields() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Old Name",
+		Description:   "Old description",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	newName := "New Name"
+	newDesc := "New description"
+	newFreq := 7
+	_, output, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID:    activityID,
+		Name:          &newName,
+		Description:   &newDesc,
+		FrequencyDays: &newFreq,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "New Name", output.Activity.Name)
+	assert.Equal(s.T(), "New description", output.Activity.Description)
+	assert.Equal(s.T(), 7, output.Activity.FrequencyDays)
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_NotFound() {
+	ctx := s.Context()
+
+	newName := "Whatever"
+	_, _, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID: 999999,
+		Name:       &newName,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "activity not found")
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_NoFieldsProvided() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	_, _, err = progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID: activityID,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "at least one field must be provided")
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_InvalidFrequencyDays() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	invalidFreq := 0
+	_, _, err = progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID:    activityID,
+		FrequencyDays: &invalidFreq,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "frequency_days must be at least 1")
 }
 
 func (s *IntegrationTestSuite) TestGetActivityList_SortedByDaysUntilCheckIn() {
@@ -501,7 +802,7 @@ func (s *IntegrationTestSuite) TestGetActivityList_SortedByDaysUntilCheckIn() {
 	require.NoError(s.T(), err)
 
 	// Call get_activity_list
-	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{})
+	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
 	require.NoError(s.T(), err)
 
 	// Verify count

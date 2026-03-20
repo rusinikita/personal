@@ -23,6 +23,9 @@ movement towards goals.
 **Create Activity** - Define new trackable activity with progress scale type and check-in frequency. Important to establish tracking system and
 reflection cadence.
 
+**Edit Activity** - Update mutable fields of an existing activity (name, description, frequency_days, life_part_ids). Important for keeping
+activity metadata accurate over time.
+
 **Create Life Part** - Organize activities into life areas. Important for structured reflection and balanced life review.
 
 **Create Progress Point** - Log progress with value and optional notes. Important for building historical data and trend analysis.
@@ -201,9 +204,10 @@ type ProgressRepository interface {
 
     // Activity CRUD
     CreateActivity(ctx context.Context, activity *Activity) (int64, error)
+    GetActivity(ctx context.Context, activityID int64, userID int64) (*Activity, error)
     ListActivities(ctx context.Context, filter ActivityFilter) ([]Activity, error)
     UpdateActivity(ctx context.Context, activity *Activity) error
-    FinishActivity(ctx context.Context, activityID int64, endedAt time.Time) error
+    FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
 
     // Progress CRUD
     CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error)
@@ -236,11 +240,10 @@ with ID.
 **Errors**: Invalid name length, database error
 
 ### create_activity
-**DO NOT IMPLEMENT** - Activities will be created via repository/script, not through MCP tools.
 
-Creates a new trackable activity. Validates all required fields, sets started_at to current time, ended_at to NULL. Requires progress_type
-(mood/habit_progress/project_progress/promise_state) and frequency_days (positive integer). Activity can belong to multiple life parts via
-life_part_ids array.
+Creates a new trackable activity. Validates all required fields, sets started_at to current time if not provided, ended_at to NULL. Requires
+progress_type (mood/habit_progress/project_progress/promise_state) and frequency_days (positive integer). Activity can belong to multiple life
+parts via life_part_ids array.
 
 **Input**:
 ```json
@@ -248,17 +251,56 @@ life_part_ids array.
   "name": "string",
   "progress_type": "mood|habit_progress|project_progress|promise_state",
   "frequency_days": 1,
+  "description": "",
   "life_part_ids": [123, 456],
-  "description": ""
+  "started_at": ""
 }
 ```
 
 **Output**:
 ```json
-{"activity": {"id": 456, "name": "...", "life_part_ids": [123, 456], ...}}
+{"id": 456, "name": "...", "description": "...", "progress_type": "project_progress", "frequency_days": 1, "life_part_ids": [123, 456], "started_at": "...", "created_at": "..."}
 ```
 
+**Logic**:
+- Validate: name non-empty; progress_type is valid enum; frequency_days >= 1
+- Parse started_at or default to time.Now()
+- Call `DB.CreateActivity` → new ID
+- Fetch via `DB.GetActivity` and return
+
 **Errors**: Invalid fields, invalid enums, database error
+
+### edit_activity
+
+Updates mutable fields of an existing activity. At least one optional field must be provided. Fetches current activity, applies only provided
+fields, saves. description can be explicitly cleared to empty string.
+
+**Input**:
+```json
+{
+  "activity_id": 456,
+  "name": "",
+  "description": "",
+  "frequency_days": 0,
+  "life_part_ids": []
+}
+```
+
+At least one of `name`, `description`, `frequency_days`, `life_part_ids` must be provided (use pointer/omitempty semantics: omit field to leave unchanged, pass empty string to clear description).
+
+**Output**:
+```json
+{"id": 456, "name": "...", "description": "...", "progress_type": "project_progress", "frequency_days": 7, "life_part_ids": [], "started_at": "...", "created_at": "..."}
+```
+
+**Logic**:
+- Validate: at least one field provided; frequency_days >= 1 if provided
+- Call `DB.GetActivity(activityID, userID)` — error if not found
+- Apply updates over existing values
+- Call `DB.UpdateActivity(activity)`
+- Fetch via `DB.GetActivity` and return
+
+**Errors**: Activity not found, no fields provided, invalid frequency_days, database error
 
 ### get_activity_list
 Lists all active activities (ended_at IS NULL) for authenticated user, ordered by frequency_days ASC (most frequent first), then by name. Returns

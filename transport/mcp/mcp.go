@@ -91,9 +91,14 @@ This MCP server provides tools for managing food database, nutrition tracking, w
 
 ## Progress Tracking Workflow:
 
-**IMPORTANT**: Progress tracking is for daily/weekly reflection on life areas (mood, habits, projects, promises). Activities are pre-created by the user (NOT via MCP tools).
+**IMPORTANT**: Progress tracking is for daily/weekly reflection on life areas (mood, habits, projects, promises).
 
-1. **Starting a Reflection Session:**
+1. **Managing Activities:**
+   - Use 'create_activity' to add a new project, habit, goal, or promise to track
+   - Use 'edit_activity' to update name, description, frequency, or life area of an existing activity
+   - Use 'finish_activity' to permanently mark an activity as completed
+
+2. **Starting a Reflection Session:**
    - ALWAYS call 'get_progress_type_examples' FIRST to load natural language mappings
    - Then call 'get_activity_list' to see what needs check-in today
    - Activities are ordered by frequency (daily first, weekly next)
@@ -210,6 +215,8 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &get_exercise_history.MCPDefinition, get_exercise_history.GetExerciseHistory)
 	mcp.AddTool(server, &get_personal_records.MCPDefinition, get_personal_records.GetPersonalRecords)
 	mcp.AddTool(server, &list_workouts.MCPDefinition, list_workouts.ListWorkouts)
+	mcp.AddTool(server, &progress.CreateActivityMCPDefinition, progress.CreateActivity)
+	mcp.AddTool(server, &progress.EditActivityMCPDefinition, progress.EditActivity)
 	mcp.AddTool(server, &progress.GetActivityListMCPDefinition, progress.GetActivityList)
 	mcp.AddTool(server, &progress.GetProgressTypeExamplesMCPDefinition, progress.GetProgressTypeExamples)
 	mcp.AddTool(server, &progress.GetActivityStatsMCPDefinition, progress.GetActivityStats)

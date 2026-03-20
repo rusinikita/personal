@@ -1142,6 +1142,8 @@ func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityF
 
 	if filter.ActiveOnly {
 		query = query.Where(squirrel.Eq{"ended_at": nil})
+	} else {
+		query = query.Where("ended_at IS NOT NULL")
 	}
 
 	if len(filter.LifePartIDs) > 0 {
@@ -1221,6 +1223,31 @@ func (r *repository) GetActivity(ctx context.Context, activityID int64, userID i
 	}
 
 	return &a, nil
+}
+
+func (r *repository) UpdateActivity(ctx context.Context, activity *domain.Activity) error {
+	query := `
+		UPDATE activities
+		SET name = $1, description = $2, frequency_days = $3, life_part_ids = $4
+		WHERE id = $5 AND user_id = $6`
+
+	result, err := r.db.Exec(ctx, query,
+		activity.Name,
+		activity.Description,
+		activity.FrequencyDays,
+		activity.LifePartIDs,
+		activity.ID,
+		activity.UserID,
+	)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("activity not found")
+	}
+
+	return nil
 }
 
 func (r *repository) FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error {
