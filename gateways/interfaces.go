@@ -64,6 +64,7 @@ type DB interface {
 	CreateProgress(ctx context.Context, progress *domain.ActivityPoint) (int64, error)
 	ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error)
 	GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error)
+	SearchProgressNotes(ctx context.Context, filter domain.ProgressNoteSearchFilter) ([]domain.ActivityPointWithActivity, error)
 }
 
 type DBMaintainer interface {

@@ -222,6 +222,7 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &progress.GetActivityStatsMCPDefinition, progress.GetActivityStats)
 	mcp.AddTool(server, &progress.CreateProgressPointMCPDefinition, progress.CreateProgressPoint)
 	mcp.AddTool(server, &progress.FinishActivityMCPDefinition, progress.FinishActivity)
+	mcp.AddTool(server, &progress.SearchProgressNotesMCPDefinition, progress.SearchProgressNotes)
 
 	return server
 }

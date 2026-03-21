@@ -1364,6 +1364,77 @@ func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFil
 	return points, nil
 }
 
+func (r *repository) SearchProgressNotes(ctx context.Context, filter domain.ProgressNoteSearchFilter) ([]domain.ActivityPointWithActivity, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := psql.Select(
+		"ap.id", "ap.activity_id", "ap.user_id", "ap.value", "ap.hours_left", "ap.note", "ap.progress_at", "ap.created_at",
+		"a.name AS activity_name",
+	).
+		From("activity_progress ap").
+		Join("activities a ON a.id = ap.activity_id").
+		Where(squirrel.Eq{"ap.user_id": filter.UserID}).
+		Where(squirrel.ILike{"ap.note": "%" + filter.Query + "%"}).
+		OrderBy("ap.progress_at DESC")
+
+	if filter.ActivityID != 0 {
+		query = query.Where(squirrel.Eq{"ap.activity_id": filter.ActivityID})
+	}
+
+	if !filter.From.IsZero() {
+		query = query.Where(squirrel.GtOrEq{"ap.progress_at": filter.From})
+	}
+
+	if !filter.To.IsZero() {
+		query = query.Where(squirrel.LtOrEq{"ap.progress_at": filter.To})
+	}
+
+	if filter.ValueMin != nil {
+		query = query.Where(squirrel.GtOrEq{"ap.value": *filter.ValueMin})
+	}
+
+	if filter.ValueMax != nil {
+		query = query.Where(squirrel.LtOrEq{"ap.value": *filter.ValueMax})
+	}
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query progress notes: %w", err)
+	}
+	defer rows.Close()
+
+	var results []domain.ActivityPointWithActivity
+	for rows.Next() {
+		var p domain.ActivityPointWithActivity
+		err := rows.Scan(
+			&p.ID,
+			&p.ActivityID,
+			&p.UserID,
+			&p.Value,
+			&p.HoursLeft,
+			&p.Note,
+			&p.ProgressAt,
+			&p.CreatedAt,
+			&p.ActivityName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan progress note: %w", err)
+		}
+		results = append(results, p)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return results, nil
+}
+
 func (r *repository) GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error) {
 	query := `
 		SELECT COUNT(*) as count,

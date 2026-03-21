@@ -79,3 +79,20 @@ type ProgressFilter struct {
 	To         time.Time `json:"to,omitempty" jsonschema:"End date filter (empty = no end filter)"`
 	Limit      int64     `json:"limit,omitempty" jsonschema:"Limit of returned progresses sorted by progress_at DESC"`
 }
+
+// ActivityPointWithActivity is ActivityPoint enriched with the parent activity name
+type ActivityPointWithActivity struct {
+	ActivityPoint
+	ActivityName string `json:"activity_name" db:"activity_name"`
+}
+
+// ProgressNoteSearchFilter defines parameters for a single-variant note ILIKE search
+type ProgressNoteSearchFilter struct {
+	UserID     int64     `json:"user_id"`
+	Query      string    `json:"query"`
+	ActivityID int64     `json:"activity_id,omitempty"` // 0 = all activities
+	From       time.Time `json:"from,omitempty"`
+	To         time.Time `json:"to,omitempty"`
+	ValueMin   *int      `json:"value_min,omitempty"`
+	ValueMax   *int      `json:"value_max,omitempty"`
+}
