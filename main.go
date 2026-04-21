@@ -14,6 +14,7 @@ import (
 	sloggin "github.com/samber/slog-gin"
 
 	"personal/action/auth"
+	money_import "personal/action/money_import"
 	"personal/action/progress"
 	"personal/gateways"
 	"personal/gateways/db"
@@ -114,6 +115,19 @@ func main() {
 	}
 
 	router.GET("/web/progress", dbMiddleware(repo), progress.DashboardWebHandler)
+
+	// Money CSV import — protected by HTTP Basic Auth
+	importUser := os.Getenv("IMPORT_USERNAME")
+	importPass := os.Getenv("IMPORT_PASSWORD")
+	if importUser == "" {
+		importUser = "admin"
+	}
+	if importPass == "" {
+		importPass = "admin"
+	}
+	moneyImport := router.Group("/money", money_import.BasicAuthMiddleware(importUser, importPass), dbMiddleware(repo))
+	moneyImport.GET("/import", money_import.ImportGETHandler)
+	moneyImport.POST("/import", money_import.ImportPOSTHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
