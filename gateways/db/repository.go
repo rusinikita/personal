@@ -179,7 +179,373 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 		return err
 	}
 
+	_, err = r.db.Exec(ctx, `DELETE FROM transactions WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM budgets WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Money tracking
+// ---------------------------------------------------------------------------
+
+func (r *repository) AddTransactions(ctx context.Context, txs []*domain.Transaction) ([]*domain.Transaction, error) {
+	now := time.Now().UTC()
+	for _, tx := range txs {
+		tx.CreatedAt = now
+		var id int64
+		err := r.db.QueryRow(ctx, `
+			INSERT INTO transactions
+				(user_id, type, amount_original, currency, amount_eur, account, category,
+				 merchant, note, original_description, transacted_at, created_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			RETURNING id`,
+			tx.UserID, tx.Type, tx.AmountOriginal, tx.Currency, tx.AmountEUR,
+			tx.Account, tx.Category, tx.Merchant, tx.Note, tx.OriginalDescription,
+			tx.TransactedAt, tx.CreatedAt,
+		).Scan(&id)
+		if err != nil {
+			return nil, err
+		}
+		tx.ID = id
+	}
+	return txs, nil
+}
+
+func (r *repository) EditTransactions(ctx context.Context, userID int64, updates []domain.TransactionUpdate) (int, error) {
+	// Verify all IDs belong to userID first — atomicity guarantee.
+	ids := make([]int64, len(updates))
+	for i, u := range updates {
+		ids[i] = u.ID
+	}
+
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+	checkSQL, checkArgs, err := psql.
+		Select("id").
+		From("transactions").
+		Where(squirrel.Eq{"id": ids, "user_id": userID}).
+		ToSql()
+	if err != nil {
+		return 0, err
+	}
+
+	rows, err := r.db.Query(ctx, checkSQL, checkArgs...)
+	if err != nil {
+		return 0, err
+	}
+	found := 0
+	for rows.Next() {
+		found++
+	}
+	rows.Close()
+	if rows.Err() != nil {
+		return 0, rows.Err()
+	}
+	if found != len(ids) {
+		return 0, fmt.Errorf("one or more transaction IDs not found or not owned by user")
+	}
+
+	// Apply each update individually.
+	for _, u := range updates {
+		q := psql.Update("transactions").Where(squirrel.Eq{"id": u.ID, "user_id": userID})
+		if u.Type != nil {
+			q = q.Set("type", *u.Type)
+		}
+		if u.AmountOriginal != nil {
+			q = q.Set("amount_original", *u.AmountOriginal)
+		}
+		if u.Currency != nil {
+			q = q.Set("currency", *u.Currency)
+		}
+		if u.AmountEUR != nil {
+			q = q.Set("amount_eur", *u.AmountEUR)
+		}
+		if u.Account != nil {
+			q = q.Set("account", *u.Account)
+		}
+		if u.Category != nil {
+			q = q.Set("category", *u.Category)
+		}
+		if u.Merchant != nil {
+			q = q.Set("merchant", *u.Merchant)
+		}
+		if u.Note != nil {
+			q = q.Set("note", *u.Note)
+		}
+		if u.OriginalDescription != nil {
+			q = q.Set("original_description", *u.OriginalDescription)
+		}
+		if u.TransactedAt != nil {
+			q = q.Set("transacted_at", *u.TransactedAt)
+		}
+		sql, args, err := q.ToSql()
+		if err != nil {
+			return 0, err
+		}
+		if _, err = r.db.Exec(ctx, sql, args...); err != nil {
+			return 0, err
+		}
+	}
+	return len(updates), nil
+}
+
+func (r *repository) DeleteTransaction(ctx context.Context, id int64, userID int64) error {
+	tag, err := r.db.Exec(ctx,
+		`DELETE FROM transactions WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("transaction not found")
+	}
+	return nil
+}
+
+func (r *repository) SetBudget(ctx context.Context, b *domain.Budget) (int64, error) {
+	b.CreatedAt = time.Now().UTC()
+	var id int64
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO budgets (user_id, name, category, amount_eur, starts_at, ends_at, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		ON CONFLICT (user_id, name) DO UPDATE
+			SET category   = EXCLUDED.category,
+			    amount_eur = EXCLUDED.amount_eur,
+			    starts_at  = EXCLUDED.starts_at,
+			    ends_at    = EXCLUDED.ends_at
+		RETURNING id`,
+		b.UserID, b.Name, b.Category, b.AmountEUR, b.StartsAt, b.EndsAt, b.CreatedAt,
+	).Scan(&id)
+	return id, err
+}
+
+func (r *repository) GetTransactions(ctx context.Context, filter domain.TransactionFilter) ([]*domain.Transaction, int, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	base := psql.Select(
+		"id", "user_id", "type", "amount_original", "currency", "amount_eur",
+		"account", "category", "merchant", "note", "original_description",
+		"transacted_at", "created_at",
+	).From("transactions").Where(squirrel.Eq{"user_id": filter.UserID})
+
+	if filter.From != nil {
+		base = base.Where(squirrel.GtOrEq{"transacted_at": *filter.From})
+	}
+	if filter.To != nil {
+		base = base.Where(squirrel.LtOrEq{"transacted_at": *filter.To})
+	}
+	if filter.Account != nil {
+		base = base.Where(squirrel.Eq{"account": *filter.Account})
+	}
+	if filter.Category != nil {
+		base = base.Where("category LIKE ?", *filter.Category+"%")
+	}
+	if filter.Type != nil {
+		base = base.Where(squirrel.Eq{"type": *filter.Type})
+	}
+	if filter.Merchant != nil {
+		base = base.Where(squirrel.Eq{"merchant": *filter.Merchant})
+	}
+
+	// Count query
+	countQ := base.RemoveColumns().Column("COUNT(*)")
+	countSQL, countArgs, err := countQ.ToSql()
+	if err != nil {
+		return nil, 0, err
+	}
+	var total int
+	if err = r.db.QueryRow(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Data query
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	dataQ := base.OrderBy("transacted_at DESC").Limit(uint64(limit)).Offset(uint64(filter.Offset))
+	dataSQL, dataArgs, err := dataQ.ToSql()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.Query(ctx, dataSQL, dataArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var result []*domain.Transaction
+	for rows.Next() {
+		tx := &domain.Transaction{}
+		if err = rows.Scan(
+			&tx.ID, &tx.UserID, &tx.Type, &tx.AmountOriginal, &tx.Currency, &tx.AmountEUR,
+			&tx.Account, &tx.Category, &tx.Merchant, &tx.Note, &tx.OriginalDescription,
+			&tx.TransactedAt, &tx.CreatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		result = append(result, tx)
+	}
+	if rows.Err() != nil {
+		return nil, 0, rows.Err()
+	}
+	return result, total, nil
+}
+
+func (r *repository) GetSpendingByCategory(ctx context.Context, userID int64, from, to time.Time, depth int) ([]domain.SpendingByCategory, error) {
+	if depth < 1 {
+		depth = 1
+	}
+	// Build category prefix expression: array_to_string(ARRAY[...split_parts...], '/')
+	parts := make([]string, depth)
+	for i := range parts {
+		parts[i] = fmt.Sprintf("split_part(category, '/', %d)", i+1)
+	}
+	catExpr := fmt.Sprintf("array_to_string(ARRAY[%s], '/', '')", join(parts, ", "))
+	// Trim trailing slashes that appear when there are fewer depth levels than requested
+	catExpr = fmt.Sprintf("TRIM(TRAILING '/' FROM %s)", catExpr)
+
+	sql := fmt.Sprintf(`
+		SELECT %s AS cat, SUM(amount_eur) AS total_eur, COUNT(*) AS cnt
+		FROM transactions
+		WHERE user_id = $1
+		  AND type = 'expense'
+		  AND transacted_at >= $2
+		  AND transacted_at <= $3
+		GROUP BY cat
+		ORDER BY total_eur DESC`, catExpr)
+
+	rows, err := r.db.Query(ctx, sql, userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []domain.SpendingByCategory
+	for rows.Next() {
+		var s domain.SpendingByCategory
+		if err = rows.Scan(&s.Category, &s.TotalEUR, &s.Count); err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+	}
+	return result, rows.Err()
+}
+
+func (r *repository) GetTopMerchants(ctx context.Context, userID int64, from, to time.Time, limit int) ([]domain.MerchantSummary, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT merchant, SUM(amount_eur) AS total_eur, COUNT(*) AS cnt
+		FROM transactions
+		WHERE user_id = $1
+		  AND type = 'expense'
+		  AND transacted_at >= $2
+		  AND transacted_at <= $3
+		GROUP BY merchant
+		ORDER BY total_eur DESC
+		LIMIT $4`, userID, from, to, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []domain.MerchantSummary
+	for rows.Next() {
+		var m domain.MerchantSummary
+		if err = rows.Scan(&m.Merchant, &m.TotalEUR, &m.Count); err != nil {
+			return nil, err
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
+}
+
+func (r *repository) GetSpendingForPeriod(ctx context.Context, userID int64, from, to time.Time) ([]domain.SpendingByCategory, error) {
+	return r.GetSpendingByCategory(ctx, userID, from, to, 1)
+}
+
+func (r *repository) GetBudgetProgress(ctx context.Context, userID int64, at time.Time) ([]domain.BudgetProgress, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT b.id, b.user_id, b.name, b.category, b.amount_eur, b.starts_at, b.ends_at, b.created_at,
+		       COALESCE(SUM(t.amount_eur), 0) AS spent_eur
+		FROM budgets b
+		LEFT JOIN transactions t
+		       ON t.user_id = b.user_id
+		      AND t.type = 'expense'
+		      AND t.category LIKE b.category || '%'
+		      AND t.transacted_at >= b.starts_at
+		      AND t.transacted_at <= b.ends_at
+		WHERE b.user_id = $1
+		  AND b.starts_at <= $2
+		  AND b.ends_at >= $2
+		GROUP BY b.id, b.user_id, b.name, b.category, b.amount_eur, b.starts_at, b.ends_at, b.created_at
+		ORDER BY b.starts_at`, userID, at)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []domain.BudgetProgress
+	for rows.Next() {
+		var bp domain.BudgetProgress
+		if err = rows.Scan(
+			&bp.ID, &bp.UserID, &bp.Name, &bp.Category, &bp.AmountEUR,
+			&bp.StartsAt, &bp.EndsAt, &bp.CreatedAt, &bp.SpentEUR,
+		); err != nil {
+			return nil, err
+		}
+		bp.RemainingEUR = bp.AmountEUR - bp.SpentEUR
+		result = append(result, bp)
+	}
+	return result, rows.Err()
+}
+
+func (r *repository) GetBalance(ctx context.Context, userID int64, from, to time.Time) (domain.BalanceResult, error) {
+	var income, expense float64
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(CASE WHEN type = 'income'  THEN amount_eur ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN type = 'expense' THEN amount_eur ELSE 0 END), 0)
+		FROM transactions
+		WHERE user_id = $1
+		  AND type IN ('income', 'expense')
+		  AND transacted_at >= $2
+		  AND transacted_at <= $3`, userID, from, to,
+	).Scan(&income, &expense)
+	if err != nil {
+		return domain.BalanceResult{}, err
+	}
+	return domain.BalanceResult{
+		From:       from,
+		To:         to,
+		IncomeEUR:  income,
+		ExpenseEUR: expense,
+		BalanceEUR: income - expense,
+	}, nil
+}
+
+// join is a local helper because strings.Join is not in scope here.
+func join(parts []string, sep string) string {
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += sep
+		}
+		result += p
+	}
+	return result
 }
 
 func (r *repository) AddConsumptionLog(ctx context.Context, log *domain.ConsumptionLog) error {

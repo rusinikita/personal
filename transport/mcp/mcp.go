@@ -7,12 +7,21 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"personal/action/add_food"
+	"personal/action/add_transactions"
+	"personal/action/compare_periods"
 	"personal/action/create_exercise"
+	"personal/action/delete_transaction"
 	"personal/action/delete_workout_set"
 	"personal/action/edit_exercise"
+	"personal/action/edit_transactions"
 	"personal/action/find_food"
+	"personal/action/get_balance"
+	"personal/action/get_budget_progress"
 	"personal/action/get_exercise_history"
 	"personal/action/get_personal_records"
+	"personal/action/get_spending_by_category"
+	"personal/action/get_top_merchants"
+	"personal/action/get_transactions"
 	"personal/action/list_exercises"
 	"personal/action/list_workouts"
 	"personal/action/log_food"
@@ -21,6 +30,7 @@ import (
 	"personal/action/nutrition_stats"
 	"personal/action/progress"
 	"personal/action/search_exercises"
+	"personal/action/set_budget"
 	"personal/action/top_products"
 	"personal/gateways"
 )
@@ -223,6 +233,18 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &progress.CreateProgressPointMCPDefinition, progress.CreateProgressPoint)
 	mcp.AddTool(server, &progress.FinishActivityMCPDefinition, progress.FinishActivity)
 	mcp.AddTool(server, &progress.SearchProgressNotesMCPDefinition, progress.SearchProgressNotes)
+
+	// Money tracking tools
+	mcp.AddTool(server, &add_transactions.MCPDefinition, add_transactions.AddTransactions)
+	mcp.AddTool(server, &edit_transactions.MCPDefinition, edit_transactions.EditTransactions)
+	mcp.AddTool(server, &delete_transaction.MCPDefinition, delete_transaction.DeleteTransaction)
+	mcp.AddTool(server, &set_budget.MCPDefinition, set_budget.SetBudget)
+	mcp.AddTool(server, &get_transactions.MCPDefinition, get_transactions.GetTransactions)
+	mcp.AddTool(server, &get_spending_by_category.MCPDefinition, get_spending_by_category.GetSpendingByCategory)
+	mcp.AddTool(server, &get_top_merchants.MCPDefinition, get_top_merchants.GetTopMerchants)
+	mcp.AddTool(server, &compare_periods.MCPDefinition, compare_periods.ComparePeriods)
+	mcp.AddTool(server, &get_budget_progress.MCPDefinition, get_budget_progress.GetBudgetProgress)
+	mcp.AddTool(server, &get_balance.MCPDefinition, get_balance.GetBalance)
 
 	return server
 }

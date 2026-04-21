@@ -55,6 +55,18 @@ type DB interface {
 	GetExerciseHistory(ctx context.Context, userID int64, exerciseID int64, limit int, offset int) ([]domain.Workout, error)
 	ListSetsByExerciseAndWorkouts(ctx context.Context, userID int64, exerciseID int64, workoutIDs []int64) ([]domain.Set, error)
 
+	// Money tracking methods
+	AddTransactions(ctx context.Context, txs []*domain.Transaction) ([]*domain.Transaction, error)
+	EditTransactions(ctx context.Context, userID int64, updates []domain.TransactionUpdate) (int, error)
+	DeleteTransaction(ctx context.Context, id int64, userID int64) error
+	SetBudget(ctx context.Context, b *domain.Budget) (int64, error)
+	GetTransactions(ctx context.Context, filter domain.TransactionFilter) ([]*domain.Transaction, int, error)
+	GetSpendingByCategory(ctx context.Context, userID int64, from, to time.Time, depth int) ([]domain.SpendingByCategory, error)
+	GetTopMerchants(ctx context.Context, userID int64, from, to time.Time, limit int) ([]domain.MerchantSummary, error)
+	GetSpendingForPeriod(ctx context.Context, userID int64, from, to time.Time) ([]domain.SpendingByCategory, error)
+	GetBudgetProgress(ctx context.Context, userID int64, at time.Time) ([]domain.BudgetProgress, error)
+	GetBalance(ctx context.Context, userID int64, from, to time.Time) (domain.BalanceResult, error)
+
 	// Progress tracking methods
 	CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error)
 	ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error)
