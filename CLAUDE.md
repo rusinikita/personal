@@ -44,7 +44,7 @@ make down
 
 *   **Code Style:** Follow the standard Go formatting guidelines. Use `gofmt` to format your code before committing.
 *   **Testing:** HTTP handlers, bot handlers, and workers MUST be covered by end-to-end tests in root tests package following requirements from docs/architecture.md
-*   **Commits:** Follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification.
+*   **Commits:** Follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification. NEVER add `Co-Authored-By` or any co-authorship lines to commit messages.
 *   **Architecture:** Follow project structure and architecture requirements written in docs/architecture.md
 
 ## Feature Document Convention
@@ -52,66 +52,76 @@ make down
 ### Feature Document Template
 
 ```markdown
-# {Feature name}
+# {Subdomain} - Complete Specification
 
-## Requirements
+## Overview
 
-// TODO requirements specification
+// TODO short description of the system and its purpose
 
-## E2E Tests
+## Best Practices Applied
 
-// TODO list of tests
+// TODO bullet list of key design decisions and patterns
 
-## Implementation
+## Architecture Diagrams
 
-### Domain structure
+### Entity Relation Diagram
 
-// TODO domain structure (structs and fields) code block
+// TODO mermaid erDiagram
 
-### Database
+### C4 Context Diagram
 
-// TODO repository interface methods specification code block
-// TODO database tables and columns as mermaid ER diagram code block
+// TODO mermaid graph with actors and tool/handler calls
 
-### External API
+### Sequence Diagram: {Flow of few actions name}
 
-// TODO external API if present
+// TODO mermaid sequenceDiagram per main flow, NOT single action
 
-### Handler/Command/Tool/Worker
+## Database Schema
 
-// TODO header and description for each interface
+### SQL DDL
 
-// TODO internal logic short description
-// TODO input and output data code blocks
+// TODO CREATE TABLE statements with indexes and constraints
 
+## Go Code Structure
+
+### Domain Models
+
+// TODO Go structs for domain objects and filter/search params
+
+### Repository Interface
+
+// TODO Go interface with method signatures (NO internal logic)
+
+## MCP Tools / HTTP Handlers / Bot Commands
+
+### {tool_name or route}
+
+// TODO short description. NOT Input, Output, Logic, Errors - only short desc
 ```
 
-### Requirements
+### Overview
 
-Agent should ask for task details if not everything is provided: involved entities, database tables, HTTP requests, and bot commands.
-Agent should ask about data flow if not everything is provided: input data formats, database data formats, state changes, and data mutations.
+Agent should write a short description of the system and its purpose. Ask user for missing details: involved entities, database tables, HTTP routes, bot commands, MCP tools.
 
-### Tests Idea
+### Best Practices Applied
 
-Agent should write ideas for creating or modifying existing end-to-end tests in the tests package for this feature.
+Agent should list key design decisions and patterns. Ask about data flow if unclear: input formats, state changes, data mutations.
 
-If there is no repository method or handler required for the test - leave a TODO note.
-Example:
+### Architecture Diagrams
 
-```go
-// Call repository to get nutrition log
-```
+Agent should produce ER diagram, C4 context diagram, and sequence diagrams for each main flow.
 
-### Implementation Decision
+### Database Schema
 
-Agent should provide an implementation plan.
+Agent should write SQL DDL with all tables, indexes, and constraints.
 
-Implementation plan consists of:
-- Domain structure (structs and fields)
-- Repository interface methods specification (NO INTERNAL LOGIC)
-- Database tables and columns as Mermaid ER diagram
-- Handler/worker input and output data short description
-- Handler/worker internal logic short description
+### Go Code Structure
+
+Agent should write domain structs and repository interface method signatures (NO internal logic).
+
+### MCP Tools / HTTP Handlers / Bot Commands
+
+Agent should document each tool/handler.
 
 ## AI-Driven Development Convention
 
@@ -120,19 +130,20 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 ### Stage 1: Planning and Working on Feature Document
 
 **What agent MUST do:**
-- Find existing or create NEW feature document in `docs/actions/` folder
-- Document name format: `docs/actions/{name}_action.md` (MUST include .md extension)
-- One document per action (each action can contain different handlers: HTTP, bot, MCP tool, worker)
-- Write requirements section by asking user for complete information
-- Write E2E tests section with test scenarios
-- Write implementation section with domain structures, database schemas, handler specifications
+- Find existing or create NEW feature document in `docs/functions/` folder
+- Document name format: `docs/functions/{subdomain}-spec.md` (MUST include .md extension)
+- One document per subdomain (each subdomain document covers all related actions and handlers: HTTP, bot, MCP tool, worker)
+- Write Overview and Best Practices by asking user for complete information
+- Write Architecture Diagrams (ER, C4 context, sequence diagrams)
+- Write Database Schema (SQL DDL), Go Code Structure (domain models, repository interface)
+- Write handler/tool sections with only short description
 - Use SHORT, UNDERSTANDABLE style in all sections
 - If feature document already exists - agent MUST EDIT it to add newly appeared requirements
 
 **What agent MUST NOT do:**
 - NEVER write or edit ANY .go files (including test files)
 - NEVER write or edit ANY code files in ANY programming language
-- NEVER create any files outside docs/actions/ folder
+- NEVER create any files outside docs/functions/ folder
 - NEVER proceed to Stage 2 without explicit user approval
 
 **Communication rules:**
@@ -142,7 +153,7 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 - Agent can iterate multiple times on feature document based on user feedback
 - Continue to Stage 2 ONLY after user explicitly says "APPROVED" or "proceed to stage 2" or similar explicit approval
 
-**Stage 1 deliverable:** Complete feature document with all sections filled (Requirements, E2E Tests, Implementation)
+**Stage 1 deliverable:** Complete feature document with all sections filled (Overview, Best Practices, Architecture Diagrams, Database Schema, Go Code Structure, handlers/tools, E2E Tests, Configuration)
 
 ### Stage 2: E2E Tests Implementation
 
