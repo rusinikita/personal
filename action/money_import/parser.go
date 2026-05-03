@@ -290,15 +290,22 @@ var categoryRules = []struct {
 	{"supermarket", "groceries"},
 	{"grocery", "groceries"},
 	{"bolt", "transport/taxi"},
+	{"electra", "transport/scootersharing"},
+	{"ridenow", "transport/carsharing"},
 	{"uber eats", "food/delivery"},
 	{"uber", "transport/taxi"},
 	{"wolt", "food/delivery"},
 	{"amazon", "shopping/online"},
 	{"netflix", "entertainment/streaming"},
 	{"spotify", "entertainment/streaming"},
+	{"youtube", "services/youtube"},
+	{"google", "services/subscriptions"},
+	{"claude", "services/ai"},
+	{"anthropic", "services/ai"},
 	{"apple", "shopping/digital"},
 	{"zuma", "food/restaurant"},
 	{"mcdonald", "food/fast_food"},
+	{"mc donald", "food/fast_food"},
 	{"kfc", "food/fast_food"},
 	{"burger king", "food/fast_food"},
 	{"subway", "food/fast_food"},
@@ -307,6 +314,8 @@ var categoryRules = []struct {
 	{"ikea", "shopping/home"},
 	{"h&m", "shopping/clothes"},
 	{"zara", "shopping/clothes"},
+	{"bfj", "shopping/clothes"},
+	{"ecco", "shopping/clothes"},
 	{"circle k", "transport/fuel"},
 	{"bp ", "transport/fuel"},
 	{"shell", "transport/fuel"},
@@ -326,6 +335,8 @@ var categoryRules = []struct {
 	{"yandex cafe", "food/cafe"},
 	{"uluwatu", "food/cafe"},
 	{"tamper", "food/cafe"},
+	{"paradosiaki", "food/cafe"},
+	{"cafe toucan", "food/cafe"},
 	{"wagmi", "food/cafe"},
 	{"nomad bread", "food/cafe"},
 	{"deja brew", "food/cafe"},
@@ -354,6 +365,7 @@ var categoryRules = []struct {
 	{"nuovo caf", "food/cafe"},
 	// Restaurants
 	{"thymari", "food/restaurant"},
+	{"ocean basket", "food/restaurant"},
 	{"tasters", "food/restaurant"},
 	{"malindi", "food/restaurant"},
 	{"elefante", "food/restaurant"},
@@ -386,6 +398,8 @@ var categoryRules = []struct {
 	// Food delivery
 	{"glovo", "food/delivery"},
 	// Groceries
+	{"sklavenitis", "groceries"},
+	{"papanicolaou", "groceries"},
 	{"alphamega", "groceries"},
 	{"cargills", "groceries"},
 	{"freshmart", "groceries"},
@@ -411,18 +425,38 @@ var categoryRules = []struct {
 	{"kelly's", "shopping"},
 	{"olympus plaza", "shopping"},
 	// Personal care
-	{"oldboy barbershop", "personal_care"},
+	{"oldboy", "personal_care"},
 	// Travel
 	{"premier inn", "travel/hotel"},
 	{"soul temple", "travel/hotel"},
 	{"weligama", "travel/hotel"},
 	{"lm botanique", "travel/hotel"},
 	{"astry", "travel/hotel"},
+	{"airbnb", "travel/hotel"},
 	{"bandaranaike", "travel/airport"},
 	{"k-eta", "travel/visa"},
+	{"papadopoulos dimitrios", "housing/rent"},
+	{"papandopolous", "housing/rent"},
+	{"qatar", "travel/flight"},
+	{"kiwi.com", "travel/flight"},
+	{"wizz", "travel/flight"},
+	{"airarabia", "travel/flight"},
+	{"air arabia", "travel/flight"},
 	// Utilities & finance
 	{"primetel", "housing/utilities"},
-	{"revolut bank", "finance"},
+	{"waterboard", "housing/utilities"},
+	{"ibu-maintenance", "housing/utilities"},
+	{"revolut", "transfer/topup"},
+	{"atm cash", "transfer/cash"},
+	// Cafes
+	{"stories", "food/cafe"},
+	{"a2mnomad", "food/cafe"},
+	{"a2m nomad", "food/cafe"},
+	// Country catch-alls (must be last — overridden by more specific rules above)
+	{"ge ", "travel/georgia"},
+	{"lk ", "travel/srilanka"},
+	{"ae ", "travel/uae"},
+	{"tips out transfer fees", "finance/fees"},
 }
 
 // typeOverrides maps lowercased description keywords to a forced transaction type.
@@ -431,6 +465,8 @@ var typeOverrides = []struct {
 	txType  string
 }{
 	{"top-up by", "transfer"},
+	{"revolut", "transfer"},
+	{"atm cash", "transfer"},
 }
 
 // InferTypeOverride returns a forced transaction type for known description patterns.

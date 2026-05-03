@@ -41,6 +41,7 @@ func main() {
 	skipped, imported := 0, 0
 	categoryTotals := map[string]float64{}
 	uncategorizedByMerchant := map[string]float64{}
+	uncategorizedCountByMerchant := map[string]int{}
 
 	fmt.Printf("%-12s %-10s %-8s %8s %-20s %-30s\n", "date", "type", "currency", "amount", "merchant", "category")
 	fmt.Println("----------------------------------------------------------------------------------------------------")
@@ -89,6 +90,7 @@ func main() {
 		categoryTotals[category] += amt
 		if category == "(uncategorized)" {
 			uncategorizedByMerchant[merchant] += amt
+			uncategorizedCountByMerchant[merchant]++
 		}
 	}
 
@@ -113,19 +115,20 @@ func main() {
 		type merchantTotal struct {
 			name  string
 			total float64
+			count int
 		}
 		ranked := make([]merchantTotal, 0, len(uncategorizedByMerchant))
 		for m, t := range uncategorizedByMerchant {
-			ranked = append(ranked, merchantTotal{m, t})
+			ranked = append(ranked, merchantTotal{m, t, uncategorizedCountByMerchant[m]})
 		}
 		sort.Slice(ranked, func(i, j int) bool {
 			return ranked[i].total > ranked[j].total
 		})
 
-		fmt.Printf("\n%-35s %10s\n", "uncategorized merchant", "total EUR")
-		fmt.Println("-----------------------------------------------")
+		fmt.Printf("\n%-35s %10s %6s\n", "uncategorized merchant", "total EUR", "count")
+		fmt.Println("---------------------------------------------------")
 		for _, mt := range ranked {
-			fmt.Printf("%-35s %10.2f\n", mt.name, mt.total)
+			fmt.Printf("%-35s %10.2f %6d\n", mt.name, mt.total, mt.count)
 		}
 	}
 }
