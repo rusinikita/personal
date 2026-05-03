@@ -44,7 +44,11 @@ button { padding: 8px 20px; font-family: monospace; font-size: 13px; cursor: poi
 <h1>💰 Bank CSV Import</h1>
 <form method="POST" enctype="multipart/form-data">
     <label>Account name:</label>
-    <input type="text" name="account" placeholder="Revolut / Bank of Cyprus" required>
+    <select name="account" required>
+        <option value="">— select account —</option>
+        <option value="revolut">Revolut</option>
+        <option value="bank of cyprus">Bank of Cyprus</option>
+    </select>
 
     <label>CSV file:</label>
     <input type="file" name="file" accept=".csv" required>
