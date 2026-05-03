@@ -210,6 +210,15 @@ var knownMerchants = []struct {
 	keyword  string
 	merchant string
 }{
+	{"revpoints spare change", "Revolut Rounding"},
+	{"top-up by", "Bank of Cyprus"},
+	{"yandex cafe", "Yandex Cafe"},
+	{"yandex.taxi", "Yandex Taxi"},
+	{"yango", "Yandex Taxi"},
+	{"yandex", "Yandex"},
+	{"mms", "MMS"},
+	{"the melting pot", "The Melting Pot"},
+	{"buffalo wings", "Buffalo Wings"},
 	{"starbucks", "Starbucks"},
 	{"costa coffee", "Costa Coffee"},
 	{"costa", "Costa Coffee"},
@@ -267,6 +276,13 @@ var categoryRules = []struct {
 	keyword  string
 	category string
 }{
+	{"revpoints spare", "finance/rev_rounding"},
+	{"top-up by", "transfer/topup"},
+	{"maria ochirova", "housing/rent"},
+	{"mariia kruglova", "transfer/to_masha"},
+	{"maria sofokleous", "education/driving"},
+	{"phivos charalambous", "education/driving"},
+	{"christakis christoforou", "education/driving"},
 	{"starbucks", "food/cafe"},
 	{"costa", "food/cafe"},
 	{"lidl", "groceries"},
@@ -306,6 +322,127 @@ var categoryRules = []struct {
 	{"electric", "housing/utilities"},
 	{"water bill", "housing/utilities"},
 	{"internet", "housing/internet"},
+	// Cafes & coffee
+	{"yandex cafe", "food/cafe"},
+	{"uluwatu", "food/cafe"},
+	{"tamper", "food/cafe"},
+	{"wagmi", "food/cafe"},
+	{"nomad bread", "food/cafe"},
+	{"deja brew", "food/cafe"},
+	{"javion", "food/cafe"},
+	{"kiku", "food/cafe"},
+	{"bean bar", "food/cafe"},
+	{"blend coffee", "food/cafe"},
+	{"lula coffee", "food/cafe"},
+	{"nutry", "food/cafe"},
+	{"t lounge", "food/cafe"},
+	{"java lounge", "food/cafe"},
+	{"intercaff", "food/cafe"},
+	{"aroma", "food/cafe"},
+	{"artist specialty", "food/cafe"},
+	{"outpost lanka", "food/cafe"},
+	{"cafe kumbuk", "food/cafe"},
+	{"lolami", "food/cafe"},
+	{"tziamouda", "food/cafe"},
+	{"the melting", "food/cafe"},
+	{"franz by", "food/cafe"},
+	{"iyers", "food/cafe"},
+	{"evgeniou grains", "food/cafe"},
+	{"lucky's", "food/cafe"},
+	{"food for", "food/cafe"},
+	{"buffalo wings", "food/cafe"},
+	{"nuovo caf", "food/cafe"},
+	// Restaurants
+	{"thymari", "food/restaurant"},
+	{"tasters", "food/restaurant"},
+	{"malindi", "food/restaurant"},
+	{"elefante", "food/restaurant"},
+	{"crispy duck", "food/restaurant"},
+	{"wagamama", "food/restaurant"},
+	{"smash burger", "food/restaurant"},
+	{"pan orient", "food/restaurant"},
+	{"libabon", "food/restaurant"},
+	{"manoushe", "food/restaurant"},
+	{"street dogs", "food/restaurant"},
+	{"submarines by", "food/restaurant"},
+	{"pokeloha", "food/restaurant"},
+	{"potato king", "food/restaurant"},
+	{"restoran brankovina", "food/restaurant"},
+	{"ristorante bella", "food/restaurant"},
+	{"tt bistro", "food/restaurant"},
+	{"the dutchman", "food/restaurant"},
+	{"kafana", "food/restaurant"},
+	{"kai beach", "food/restaurant"},
+	{"berezka", "food/restaurant"},
+	{"factory kitchen", "food/restaurant"},
+	{"barel", "food/restaurant"},
+	{"indian street", "food/restaurant"},
+	{"just beer", "food/bar"},
+	// Bakery
+	{"koulouromag", "food/bakery"},
+	{"koulourades", "food/bakery"},
+	// Ice cream
+	{"oeskimo", "food/icecream"},
+	// Food delivery
+	{"glovo", "food/delivery"},
+	// Groceries
+	{"alphamega", "groceries"},
+	{"cargills", "groceries"},
+	{"freshmart", "groceries"},
+	{"global foodcity", "groceries"},
+	{"limassol agora", "groceries"},
+	{"nour daily", "groceries"},
+	{"nour fresh", "groceries"},
+	{"tharanga", "groceries"},
+	{"urban fresh", "groceries"},
+	{"mms", "groceries"},
+	// Transport
+	{"yandex.taxi", "transport/taxi"},
+	{"yango", "transport/taxi"},
+	{"yandex", "transport/taxi"},
+	{"eko", "transport/fuel"},
+	{"omv", "transport/fuel"},
+	// Shopping
+	{"sports direct", "shopping/sport"},
+	{"fat burner", "shopping/sport"},
+	{"superhome", "shopping/home"},
+	{"lilly drog", "shopping/beauty"},
+	{"cyprus duty", "shopping"},
+	{"kelly's", "shopping"},
+	{"olympus plaza", "shopping"},
+	// Personal care
+	{"oldboy barbershop", "personal_care"},
+	// Travel
+	{"premier inn", "travel/hotel"},
+	{"soul temple", "travel/hotel"},
+	{"weligama", "travel/hotel"},
+	{"lm botanique", "travel/hotel"},
+	{"astry", "travel/hotel"},
+	{"bandaranaike", "travel/airport"},
+	{"k-eta", "travel/visa"},
+	// Utilities & finance
+	{"primetel", "housing/utilities"},
+	{"revolut bank", "finance"},
+}
+
+// typeOverrides maps lowercased description keywords to a forced transaction type.
+var typeOverrides = []struct {
+	keyword string
+	txType  string
+}{
+	{"top-up by", "transfer"},
+}
+
+// InferTypeOverride returns a forced transaction type for known description patterns.
+// Returns empty string if no override applies — caller keeps the default type.
+func InferTypeOverride(description string) string {
+	lower := strings.ToLower(description)
+	for _, rule := range typeOverrides {
+		if strings.Contains(lower, rule.keyword) {
+			return rule.txType
+		}
+	}
+	return ""
 }
 
 // InferCategory infers a category from merchant name and raw description.

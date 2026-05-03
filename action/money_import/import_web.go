@@ -134,11 +134,11 @@ func ImportPOSTHandler(c *gin.Context) {
 
 		// Determine type.
 		txType := domain.TransactionTypeExpense
-		amt := raw.Amount
-		if raw.Amount > 0 {
+		amt := math.Abs(raw.Amount)
+		if override := InferTypeOverride(raw.Description); override != "" {
+			txType = domain.TransactionType(override)
+		} else if raw.Amount > 0 {
 			txType = domain.TransactionTypeIncome
-		} else {
-			amt = math.Abs(raw.Amount)
 		}
 
 		// amount_eur = original if EUR, else 0 (manual correction later).

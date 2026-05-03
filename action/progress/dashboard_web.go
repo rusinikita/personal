@@ -37,14 +37,14 @@ const htmlTemplate = `<!DOCTYPE html>
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
             background: #fff;
             margin: 0;
             padding: 0;
         }
-        
+
         .dashboard {
             width: 100vw;
             height: 100vh;
@@ -54,20 +54,20 @@ const htmlTemplate = `<!DOCTYPE html>
             flex-direction: column;
             overflow: hidden;
         }
-        
+
         /* Overall Streak Section */
         .overall-streak {
             padding: 12px 16px;
             border-bottom: 2px solid #000;
         }
-        
+
         .section-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 8px;
         }
-        
+
         .section-title {
             font-size: 11px;
             font-weight: 600;
@@ -75,23 +75,23 @@ const htmlTemplate = `<!DOCTYPE html>
             text-transform: uppercase;
             color: #000;
         }
-        
+
         .streak-stats {
             display: flex;
             gap: 16px;
             font-size: 11px;
             color: #808080;
         }
-        
+
         .streak-stats strong {
             color: #000;
         }
-        
+
         .streak-grid {
             display: flex;
             gap: 3px;
         }
-        
+
         .streak-cell {
             width: 18px;
             height: 18px;
@@ -110,14 +110,45 @@ const htmlTemplate = `<!DOCTYPE html>
             margin: 0 6px;
             position: relative;
         }
-        
+
+        /* Split panels */
+        .panels {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-separator {
+            width: 2px;
+            background: #000;
+        }
+
+        .panel-footer {
+            padding: 8px 16px;
+            border-top: 2px solid #000;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: #808080;
+            text-align: center;
+        }
+
         /* Activities Section */
         .activities {
             flex: 1;
             display: flex;
             flex-direction: column;
+            overflow-y: auto;
         }
-        
+
         .activity-row {
             padding: 10px 16px;
             border-bottom: 1px solid #808080;
@@ -125,29 +156,29 @@ const htmlTemplate = `<!DOCTYPE html>
             flex-direction: column;
             gap: 5px;
         }
-        
+
         .activity-row:last-child {
             border-bottom: none;
         }
-        
+
         .activity-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        
+
         .activity-info {
             display: flex;
             align-items: baseline;
             gap: 6px;
         }
-        
+
         .activity-name {
             font-size: 14px;
             font-weight: 500;
             color: #000;
         }
-        
+
         .activity-freq {
             font-size: 11px;
             color: #808080;
@@ -161,7 +192,7 @@ const htmlTemplate = `<!DOCTYPE html>
         .activity-ago.stale {
             color: #808080;
         }
-        
+
         .activity-ago.warning {
             color: #000;
             font-weight: 700;
@@ -171,12 +202,12 @@ const htmlTemplate = `<!DOCTYPE html>
             font-size: 11px;
             color: #808080;
         }
-        
+
         .emoji-grid {
             display: flex;
             gap: 2px;
         }
-        
+
         .emoji-cell {
             width: 22px;
             height: 22px;
@@ -191,7 +222,7 @@ const htmlTemplate = `<!DOCTYPE html>
             font-weight: 900;
             filter: contrast(2);
         }
-        
+
         .emoji-cell.empty {
             background: #fff;
         }
@@ -231,30 +262,62 @@ const htmlTemplate = `<!DOCTYPE html>
                 {{- end -}}
             </div>
         </div>
-        
-        <!-- Activities Section -->
-        <div class="activities">
-            {{- range .Activities}}
-            <div class="activity-row">
-                <div class="activity-header">
-                    <div class="activity-info">
-                        <span class="activity-name">{{.Name}}</span>
-                        <span class="activity-freq">· {{.Frequency}}</span>
+
+        <!-- Split panels -->
+        <div class="panels">
+            <div class="panel">
+                <div class="activities">
+                    {{- range .ProjectActivities}}
+                    <div class="activity-row">
+                        <div class="activity-header">
+                            <div class="activity-info">
+                                <span class="activity-name">{{.Name}}</span>
+                                <span class="activity-freq">· {{.Frequency}}</span>
+                            </div>
+                            <span class="activity-ago{{if .StalenessClass}} {{.StalenessClass}}{{end}}">{{.TimeAgo}}</span>
+                        </div>
+                        {{if .Description}}<div class="activity-desc">{{.Description}}</div>{{end}}
+                        <div class="emoji-grid">
+                            {{- range $i, $p := .ProgressCells -}}
+                                {{if $p.IsSpacer -}}
+                                    <div class="emoji-spacer">←{{$p.DaysGap}}d→</div>
+                                {{- else -}}
+                                    <div class="emoji-cell{{if $p.IsToday}} today{{end}}">{{$p.Emoji}}</div>
+                                {{- end -}}
+                            {{- end -}}
+                        </div>
                     </div>
-                    <span class="activity-ago{{if .StalenessClass}} {{.StalenessClass}}{{end}}">{{.TimeAgo}}</span>
+                    {{- end}}
                 </div>
-                {{if .Description}}<div class="activity-desc">{{.Description}}</div>{{end}}
-                <div class="emoji-grid">
-                    {{- range $i, $p := .ProgressCells -}}
-                        {{if $p.IsSpacer -}}
-                            <div class="emoji-spacer">←{{$p.DaysGap}}d→</div>
-                        {{- else -}}
-                            <div class="emoji-cell{{if $p.IsToday}} today{{end}}">{{$p.Emoji}}</div>
-                        {{- end -}}
-                    {{- end -}}
-                </div>
+                <div class="panel-footer">projects</div>
             </div>
-            {{- end}}
+            <div class="panel-separator"></div>
+            <div class="panel">
+                <div class="activities">
+                    {{- range .HabitActivities}}
+                    <div class="activity-row">
+                        <div class="activity-header">
+                            <div class="activity-info">
+                                <span class="activity-name">{{.Name}}</span>
+                                <span class="activity-freq">· {{.Frequency}}</span>
+                            </div>
+                            <span class="activity-ago{{if .StalenessClass}} {{.StalenessClass}}{{end}}">{{.TimeAgo}}</span>
+                        </div>
+                        {{if .Description}}<div class="activity-desc">{{.Description}}</div>{{end}}
+                        <div class="emoji-grid">
+                            {{- range $i, $p := .ProgressCells -}}
+                                {{if $p.IsSpacer -}}
+                                    <div class="emoji-spacer">←{{$p.DaysGap}}d→</div>
+                                {{- else -}}
+                                    <div class="emoji-cell{{if $p.IsToday}} today{{end}}">{{$p.Emoji}}</div>
+                                {{- end -}}
+                            {{- end -}}
+                        </div>
+                    </div>
+                    {{- end}}
+                </div>
+                <div class="panel-footer">habits</div>
+            </div>
         </div>
     </div>
 </body>
@@ -312,11 +375,12 @@ type ActivityView struct {
 }
 
 type DashboardData struct {
-	CurrentStreak int
-	AvgGapMonth   string
-	AvgGapWeek    string
-	StreakDays    []StreakDay
-	Activities    []ActivityView
+	CurrentStreak     int
+	AvgGapMonth       string
+	AvgGapWeek        string
+	StreakDays        []StreakDay
+	ProjectActivities []ActivityView
+	HabitActivities   []ActivityView
 }
 
 // DashboardWebHandler renders the progress dashboard HTML page.
@@ -566,9 +630,22 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 		}
 	}
 
-	// Берем первые N активностей (ListActivities уже сортирует по срочности)
-	if len(activities) > topActivitiesCount {
-		activities = activities[:topActivitiesCount]
+	// Split activities into project panel (project_progress, promise_state)
+	// and habit panel (mood, habit_progress), then take top N from each.
+	var projectActivities, habitActivities []domain.Activity
+	for _, a := range activities {
+		switch a.ProgressType {
+		case domain.ProgressTypeProjectProgress, domain.ProgressTypePromiseState:
+			projectActivities = append(projectActivities, a)
+		case domain.ProgressTypeMood, domain.ProgressTypeHabitProgress:
+			habitActivities = append(habitActivities, a)
+		}
+	}
+	if len(projectActivities) > topActivitiesCount {
+		projectActivities = projectActivities[:topActivitiesCount]
+	}
+	if len(habitActivities) > topActivitiesCount {
+		habitActivities = habitActivities[:topActivitiesCount]
 	}
 
 	// Шаг 2: Получить все замеры за N дней
@@ -637,46 +714,40 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 	}
 	avgGapWeek := calculateAvgGap(lastSevenGaps)
 
-	// Шаг 5: Построить ячейки прогресса для каждой активности
-	activityViews := make([]ActivityView, 0, len(activities))
-	for _, activity := range activities {
-		// Построить компактные ячейки прогресса (только замеры с разделителями)
-		cells := buildActivityProgressCells(activity, allProgress, now)
+	// Шаг 5: Построить ячейки прогресса для каждой панели
+	projectViews := buildActivityViews(projectActivities, allProgress, now)
+	habitViews := buildActivityViews(habitActivities, allProgress, now)
 
-		view := ActivityView{
+	// Шаг 6: Вызвать GetTrendStats для всех отображаемых активностей
+	for _, activity := range append(projectActivities, habitActivities...) {
+		_, err := db.GetTrendStats(ctx, activity.ID, userID, thirtyDaysAgo, now)
+		if err != nil {
+			log.Printf("Failed to get trend stats for activity %d: %v", activity.ID, err)
+		}
+	}
+
+	return DashboardData{
+		CurrentStreak:     currentStreak,
+		AvgGapMonth:       avgGapMonth,
+		AvgGapWeek:        avgGapWeek,
+		StreakDays:        streakDays,
+		ProjectActivities: projectViews,
+		HabitActivities:   habitViews,
+	}, nil
+}
+
+func buildActivityViews(activities []domain.Activity, allProgress []domain.ActivityPoint, now time.Time) []ActivityView {
+	views := make([]ActivityView, 0, len(activities))
+	for _, activity := range activities {
+		cells := buildActivityProgressCells(activity, allProgress, now)
+		views = append(views, ActivityView{
 			Name:           activity.Name,
 			Description:    renderBoldMarkdown(activity.Description),
 			Frequency:      formatFrequency(activity.FrequencyDays),
 			TimeAgo:        formatTimeAgoPtr(activity.LastPointAt),
 			StalenessClass: getStalenessClassPtr(activity.LastPointAt, activity.FrequencyDays),
 			ProgressCells:  cells,
-		}
-		activityViews = append(activityViews, view)
-
-		// Шаг 6: Вызвать GetTrendStats для каждой активности (для будущего использования)
-		_, err := db.GetTrendStats(ctx, activity.ID, userID, thirtyDaysAgo, now)
-		if err != nil {
-			// Логируем ошибку, но не прерываем рендеринг
-			log.Printf("Failed to get trend stats for activity %d: %v", activity.ID, err)
-		}
+		})
 	}
-
-	// Обработка edge case: нет активностей
-	if len(activities) == 0 {
-		return DashboardData{
-			CurrentStreak: 0,
-			AvgGapMonth:   "0.0d",
-			AvgGapWeek:    "0.0d",
-			StreakDays:    make([]StreakDay, streakDaysCount),
-			Activities:    []ActivityView{},
-		}, nil
-	}
-
-	return DashboardData{
-		CurrentStreak: currentStreak,
-		AvgGapMonth:   avgGapMonth,
-		AvgGapWeek:    avgGapWeek,
-		StreakDays:    streakDays,
-		Activities:    activityViews,
-	}, nil
+	return views
 }

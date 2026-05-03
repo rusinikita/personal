@@ -33,3 +33,7 @@ go.work.sum
  .idea/*
  .idea/
 # .vscode/
+
+# Temp files
+tmp/
+tests/dry_run/tmp/
