@@ -135,6 +135,9 @@ func ImportPOSTHandler(c *gin.Context) {
 
 		// Stage 3: category inference.
 		category := InferCategory(merchant, origDesc)
+		if category == "" {
+			category = "uncategorized"
+		}
 
 		// Determine type.
 		txType := domain.TransactionTypeExpense

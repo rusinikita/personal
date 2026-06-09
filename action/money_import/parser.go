@@ -302,6 +302,9 @@ var categoryRules = []struct {
 	{"google", "services/subscriptions"},
 	{"claude", "services/ai"},
 	{"anthropic", "services/ai"},
+	{"linode", "services/hosting"},
+	{"akamai", "services/hosting"},
+	{"neon.tech", "services/hosting"},
 	{"apple", "shopping/digital"},
 	{"zuma", "food/restaurant"},
 	{"mcdonald", "food/fast_food"},
@@ -457,6 +460,10 @@ var categoryRules = []struct {
 	{"lk ", "travel/srilanka"},
 	{"ae ", "travel/uae"},
 	{"tips out transfer fees", "finance/fees"},
+	{"transfer commission", "finance/bank-fees"},
+	{"processing fees", "finance/bank-fees"},
+	{"opo trnsfr", "finance/bank-fees"},
+	{"o.p.o", "finance/bank-fees"},
 }
 
 // typeOverrides maps lowercased description keywords to a forced transaction type.
@@ -548,4 +555,19 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+type Order struct {
+	StartTS int64
+	EndTS   int64
+}
+
+type Aggregation struct {
+	StartTS             int64
+	EndTS               int64
+	ParallelOrdersCount int
+}
+
+func MakeTimeline(orders []Order) (timeline []Aggregation) {
+	return timeline
 }
