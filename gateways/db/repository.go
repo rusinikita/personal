@@ -1594,14 +1594,16 @@ func (r *repository) GetActivity(ctx context.Context, activityID int64, userID i
 func (r *repository) UpdateActivity(ctx context.Context, activity *domain.Activity) error {
 	query := `
 		UPDATE activities
-		SET name = $1, description = $2, frequency_days = $3, life_part_ids = $4
-		WHERE id = $5 AND user_id = $6`
+		SET name = $1, description = $2, frequency_days = $3, life_part_ids = $4, started_at = $5, ended_at = $6
+		WHERE id = $7 AND user_id = $8`
 
 	result, err := r.db.Exec(ctx, query,
 		activity.Name,
 		activity.Description,
 		activity.FrequencyDays,
 		activity.LifePartIDs,
+		activity.StartedAt,
+		activity.EndedAt,
 		activity.ID,
 		activity.UserID,
 	)

@@ -3,6 +3,7 @@ package progress
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -29,6 +30,8 @@ Optional inputs (at least one required):
 - description: New description (pass empty string "" to clear)
 - frequency_days: New check-in frequency in days (1 = daily, 7 = weekly)
 - life_part_ids: New life area IDs — replaces all existing (omit to keep current)
+- started_at: New start date/time (ISO8601, omit to keep current)
+- ended_at: New end date/time (ISO8601, pass empty string "" to reopen the activity, omit to keep current)
 
 Example:
 User: "Update the description of my driver's license activity - the exam is done"
@@ -41,6 +44,8 @@ type EditActivityInput struct {
 	Description   *string `json:"description,omitempty" jsonschema:"New description, pass empty string to clear (omit to keep current)"`
 	FrequencyDays *int    `json:"frequency_days,omitempty" jsonschema:"New check-in frequency in days (omit to keep current)"`
 	LifePartIDs   []int64 `json:"life_part_ids,omitempty" jsonschema:"New life part IDs replacing existing (omit to keep current)"`
+	StartedAt     *string `json:"started_at,omitempty" jsonschema:"New start date/time (ISO8601, omit to keep current)"`
+	EndedAt       *string `json:"ended_at,omitempty" jsonschema:"New end date/time (ISO8601, pass empty string to reopen the activity, omit to keep current)"`
 }
 
 type EditActivityOutput struct {
@@ -58,12 +63,31 @@ func EditActivity(ctx context.Context, _ *mcp.CallToolRequest, input EditActivit
 		return nil, EditActivityOutput{}, fmt.Errorf("user_id not available in context")
 	}
 
-	if input.Name == nil && input.Description == nil && input.FrequencyDays == nil && input.LifePartIDs == nil {
+	if input.Name == nil && input.Description == nil && input.FrequencyDays == nil &&
+		input.LifePartIDs == nil && input.StartedAt == nil && input.EndedAt == nil {
 		return nil, EditActivityOutput{}, fmt.Errorf("at least one field must be provided to update")
 	}
 
 	if input.FrequencyDays != nil && *input.FrequencyDays < 1 {
 		return nil, EditActivityOutput{}, fmt.Errorf("frequency_days must be at least 1")
+	}
+
+	var startedAt time.Time
+	if input.StartedAt != nil {
+		t, err := time.Parse(time.RFC3339, *input.StartedAt)
+		if err != nil {
+			return nil, EditActivityOutput{}, fmt.Errorf("invalid started_at format, expected RFC3339: %w", err)
+		}
+		startedAt = t
+	}
+
+	var endedAt *time.Time
+	if input.EndedAt != nil && *input.EndedAt != "" {
+		t, err := time.Parse(time.RFC3339, *input.EndedAt)
+		if err != nil {
+			return nil, EditActivityOutput{}, fmt.Errorf("invalid ended_at format, expected RFC3339: %w", err)
+		}
+		endedAt = &t
 	}
 
 	activity, err := db.GetActivity(ctx, input.ActivityID, userID)
@@ -85,6 +109,12 @@ func EditActivity(ctx context.Context, _ *mcp.CallToolRequest, input EditActivit
 	}
 	if input.LifePartIDs != nil {
 		activity.LifePartIDs = input.LifePartIDs
+	}
+	if input.StartedAt != nil {
+		activity.StartedAt = startedAt
+	}
+	if input.EndedAt != nil {
+		activity.EndedAt = endedAt
 	}
 
 	if err := db.UpdateActivity(ctx, activity); err != nil {
