@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     merchant         VARCHAR(255) NOT NULL DEFAULT '',
     note             TEXT,
     original_description TEXT,
+    idempotency_key  TEXT,
     transacted_at    TIMESTAMPTZ NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -19,7 +20,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     CONSTRAINT check_tx_currency_length CHECK (char_length(currency) = 3)
 );
 
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, transacted_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_user_account_idempotency_key ON transactions(user_id, account, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS budgets (
     id          BIGSERIAL PRIMARY KEY,

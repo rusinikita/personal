@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -17,6 +18,9 @@ import (
 	"personal/gateways"
 	"personal/util"
 )
+
+// pgUniqueViolation is the Postgres SQLSTATE code for a unique constraint/index violation.
+const pgUniqueViolation = "23505"
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
@@ -198,25 +202,31 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 
 func (r *repository) AddTransactions(ctx context.Context, txs []*domain.Transaction) ([]*domain.Transaction, error) {
 	now := time.Now().UTC()
+	saved := make([]*domain.Transaction, 0, len(txs))
 	for _, tx := range txs {
 		tx.CreatedAt = now
 		var id int64
 		err := r.db.QueryRow(ctx, `
 			INSERT INTO transactions
 				(user_id, type, amount_original, currency, amount_eur, account, category,
-				 merchant, note, original_description, transacted_at, created_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+				 merchant, note, original_description, idempotency_key, transacted_at, created_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 			RETURNING id`,
 			tx.UserID, tx.Type, tx.AmountOriginal, tx.Currency, tx.AmountEUR,
 			tx.Account, tx.Category, tx.Merchant, tx.Note, tx.OriginalDescription,
-			tx.TransactedAt, tx.CreatedAt,
+			tx.IdempotencyKey, tx.TransactedAt, tx.CreatedAt,
 		).Scan(&id)
 		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+				continue // already imported — skip duplicate idempotency_key
+			}
 			return nil, err
 		}
 		tx.ID = id
+		saved = append(saved, tx)
 	}
-	return txs, nil
+	return saved, nil
 }
 
 func (r *repository) EditTransactions(ctx context.Context, userID int64, updates []domain.TransactionUpdate) (int, error) {

@@ -24,6 +24,7 @@ type Transaction struct {
 	Merchant            string          `db:"merchant"`
 	Note                *string         `db:"note"`
 	OriginalDescription *string         `db:"original_description"`
+	IdempotencyKey      *string         `db:"idempotency_key"`
 	TransactedAt        time.Time       `db:"transacted_at"`
 	CreatedAt           time.Time       `db:"created_at"`
 }

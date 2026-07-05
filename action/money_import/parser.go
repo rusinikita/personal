@@ -16,6 +16,7 @@ type RawTransaction struct {
 	Description string
 	Amount      float64 // positive = income, negative = expense
 	Currency    string
+	Reference   string // bank-provided transaction reference, if any (used for idempotency_key)
 }
 
 // Parser parses a bank CSV export into raw transactions.
@@ -141,6 +142,7 @@ func (p *BankOfCyprusParser) Parse(r io.Reader) ([]RawTransaction, error) {
 	creditCol := firstOf(idx, "Credit")
 	curCol := firstOf(idx, "Currency")
 	dateCol := firstOf(idx, "Date", "Value Date", "Transaction Date")
+	refCol := firstOf(idx, "Bank reference number")
 
 	var result []RawTransaction
 	for _, row := range records[headerIdx+1:] {
@@ -184,6 +186,7 @@ func (p *BankOfCyprusParser) Parse(r io.Reader) ([]RawTransaction, error) {
 			Description: strings.TrimSpace(safeGet(row, descCol)),
 			Amount:      amount,
 			Currency:    currency,
+			Reference:   strings.TrimSpace(safeGet(row, refCol)),
 		})
 	}
 	return result, nil

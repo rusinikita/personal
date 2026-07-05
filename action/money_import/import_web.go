@@ -166,6 +166,7 @@ func ImportPOSTHandler(c *gin.Context) {
 			Category:            category,
 			Merchant:            merchant,
 			OriginalDescription: &origDesc,
+			IdempotencyKey:      buildIdempotencyKey(parser, raw),
 			TransactedAt:        raw.Date,
 		})
 	}
@@ -194,16 +195,47 @@ func ImportPOSTHandler(c *gin.Context) {
 		return
 	}
 
+	duplicates := len(domainTxs) - len(saved)
+
+	if len(saved) == 0 {
+		renderImportPage(c, importPageData{
+			Message: fmt.Sprintf("✅ imported 0, skipped %d (invalid), %d duplicates", skipped, duplicates),
+		})
+		return
+	}
+
 	renderImportPage(c, importPageData{
 		Message: fmt.Sprintf(
-			"✅ imported %d transactions, skipped %d\nlast imported: %s — %s (%.2f %s)",
-			len(saved), skipped,
+			"✅ imported %d, skipped %d (invalid), %d duplicates\nlast imported: %s — %s (%.2f %s)",
+			len(saved), skipped, duplicates,
 			saved[len(saved)-1].TransactedAt.Format(time.DateOnly),
 			saved[len(saved)-1].Merchant,
 			saved[len(saved)-1].AmountOriginal,
 			saved[len(saved)-1].Currency,
 		),
 	})
+}
+
+// buildIdempotencyKey derives a stable dedup key for a raw transaction so
+// re-importing the same CSV export skips rows already stored in the DB.
+// The unique index is scoped to (user_id, account, idempotency_key), so the
+// key itself only needs to be unique within one account's export.
+// Returns nil when there isn't enough stable data to key on (caller then
+// stores no key, and the row is never treated as a duplicate).
+func buildIdempotencyKey(parser Parser, raw RawTransaction) *string {
+	switch parser.(type) {
+	case *RevolutParser:
+		key := fmt.Sprintf("%s:%.2f", raw.Date.UTC().Format(time.RFC3339), raw.Amount)
+		return &key
+	case *BankOfCyprusParser:
+		if raw.Reference == "" {
+			return nil
+		}
+		key := fmt.Sprintf("ref:%s", raw.Reference)
+		return &key
+	default:
+		return nil
+	}
 }
 
 func renderImportPage(c *gin.Context, data importPageData) {

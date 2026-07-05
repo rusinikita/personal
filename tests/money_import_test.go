@@ -184,10 +184,10 @@ func (s *IntegrationTestSuite) TestImport_POST_Revolut_OriginalDescriptionPreser
 
 // --- POST /money/import — Bank of Cyprus -------------------------------------
 
-const bocCSV = `Date,Description,Debit,Credit,Currency,Balance
-02/04/2026,WOLT ORDER #12345,18.50,,EUR,481.50
-03/04/2026,ATM WITHDRAWAL,50.00,,EUR,431.50
-01/04/2026,SALARY TRANSFER,,2000.00,EUR,2431.50
+const bocCSV = `Date,Description,Debit,Credit,Currency,Balance,Bank reference number
+02/04/2026,WOLT ORDER #12345,18.50,,EUR,481.50,REF-001
+03/04/2026,ATM WITHDRAWAL,50.00,,EUR,431.50,REF-002
+01/04/2026,SALARY TRANSFER,,2000.00,EUR,2431.50,REF-003
 `
 
 func (s *IntegrationTestSuite) TestImport_POST_BankOfCyprus_Success() {
@@ -294,4 +294,129 @@ func (s *IntegrationTestSuite) TestImport_POST_MissingAccountField() {
 
 	assert.Equal(s.T(), http.StatusOK, w.Code)
 	assert.Contains(s.T(), strings.ToLower(w.Body.String()), "account name is required")
+}
+
+// --- POST /money/import — idempotency / re-import dedup ---------------------
+
+func (s *IntegrationTestSuite) TestImport_POST_Revolut_ReimportSkipsDuplicates() {
+	ctx := s.Context()
+	r := s.importRouter(ctx)
+
+	body, ct := multipartCSV("Revolut", revolutCSV)
+	req := httptest.NewRequest(http.MethodPost, "/money/import", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(s.T(), http.StatusOK, w.Code)
+	require.Contains(s.T(), w.Body.String(), "imported 3")
+
+	// Re-import the exact same file — every row must be recognized as a duplicate.
+	body2, ct2 := multipartCSV("Revolut", revolutCSV)
+	req2 := httptest.NewRequest(http.MethodPost, "/money/import", body2)
+	req2.Header.Set("Content-Type", ct2)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+
+	assert.Equal(s.T(), http.StatusOK, w2.Code)
+	assert.Contains(s.T(), w2.Body.String(), "imported 0")
+	assert.Contains(s.T(), w2.Body.String(), "3 duplicates")
+
+	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
+		get_transactions.GetTransactionsInput{Limit: 50})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), 3, listOut.Total, "re-import must not create duplicate rows")
+}
+
+func (s *IntegrationTestSuite) TestImport_POST_Revolut_ReimportInsertsOnlyNewRows() {
+	ctx := s.Context()
+	r := s.importRouter(ctx)
+
+	body, ct := multipartCSV("Revolut", revolutCSV)
+	req := httptest.NewRequest(http.MethodPost, "/money/import", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(s.T(), http.StatusOK, w.Code)
+	require.Contains(s.T(), w.Body.String(), "imported 3")
+
+	// Same 3 rows plus one genuinely new transaction.
+	mixedCSV := revolutCSV + "CARD_PAYMENT,Current,2026-04-04 08:00:00,2026-04-04 08:00:00,New Merchant,-7.50,0.00,EUR,COMPLETED,900.00\n"
+
+	body2, ct2 := multipartCSV("Revolut", mixedCSV)
+	req2 := httptest.NewRequest(http.MethodPost, "/money/import", body2)
+	req2.Header.Set("Content-Type", ct2)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+
+	assert.Equal(s.T(), http.StatusOK, w2.Code)
+	assert.Contains(s.T(), w2.Body.String(), "imported 1")
+	assert.Contains(s.T(), w2.Body.String(), "3 duplicates")
+
+	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
+		get_transactions.GetTransactionsInput{Limit: 50})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), 4, listOut.Total)
+}
+
+func (s *IntegrationTestSuite) TestImport_POST_BankOfCyprus_ReimportSkipsDuplicates() {
+	ctx := s.Context()
+	r := s.importRouter(ctx)
+
+	body, ct := multipartCSV("Bank of Cyprus", bocCSV)
+	req := httptest.NewRequest(http.MethodPost, "/money/import", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(s.T(), http.StatusOK, w.Code)
+	require.Contains(s.T(), w.Body.String(), "imported 3")
+
+	// Re-import the exact same file — every row must be recognized as a duplicate
+	// by its "Bank reference number".
+	body2, ct2 := multipartCSV("Bank of Cyprus", bocCSV)
+	req2 := httptest.NewRequest(http.MethodPost, "/money/import", body2)
+	req2.Header.Set("Content-Type", ct2)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+
+	assert.Equal(s.T(), http.StatusOK, w2.Code)
+	assert.Contains(s.T(), w2.Body.String(), "imported 0")
+	assert.Contains(s.T(), w2.Body.String(), "3 duplicates")
+
+	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
+		get_transactions.GetTransactionsInput{Limit: 50})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), 3, listOut.Total, "re-import must not create duplicate rows")
+}
+
+func (s *IntegrationTestSuite) TestImport_POST_BankOfCyprus_MissingReferenceNeverDedups() {
+	ctx := s.Context()
+	r := s.importRouter(ctx)
+
+	// No "Bank reference number" column — rows without a reference must not
+	// be silently deduped against each other (idempotency_key stays nil).
+	noRefCSV := `Date,Description,Debit,Credit,Currency,Balance
+02/04/2026,WOLT ORDER #12345,18.50,,EUR,481.50
+`
+
+	body, ct := multipartCSV("Bank of Cyprus", noRefCSV)
+	req := httptest.NewRequest(http.MethodPost, "/money/import", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(s.T(), http.StatusOK, w.Code)
+	require.Contains(s.T(), w.Body.String(), "imported 1")
+
+	body2, ct2 := multipartCSV("Bank of Cyprus", noRefCSV)
+	req2 := httptest.NewRequest(http.MethodPost, "/money/import", body2)
+	req2.Header.Set("Content-Type", ct2)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(s.T(), http.StatusOK, w2.Code)
+	assert.Contains(s.T(), w2.Body.String(), "imported 1")
+	assert.Contains(s.T(), w2.Body.String(), "0 duplicates")
+
+	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
+		get_transactions.GetTransactionsInput{Limit: 50})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), 2, listOut.Total)
 }
