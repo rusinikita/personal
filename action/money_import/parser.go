@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -251,8 +252,16 @@ var knownMerchants = []struct {
 	{"total ", "TotalEnergies"},
 }
 
+// mccRe matches a leading 2-letter country code + 4-digit merchant category
+// code in foreign card transaction descriptions, e.g. "ME 5411 VOLI 83".
+var mccRe = regexp.MustCompile(`^[A-Z]{2}\s+(\d{4})\b`)
+
 // RecognizeMerchant extracts a clean merchant name from a raw description.
 func RecognizeMerchant(description string) string {
+	description = strings.TrimSpace(description)
+	if m := mccRe.FindString(description); m != "" {
+		description = strings.TrimSpace(description[len(m):])
+	}
 	lower := strings.ToLower(description)
 	for _, km := range knownMerchants {
 		if strings.Contains(lower, km.keyword) {
@@ -437,7 +446,6 @@ var categoryRules = []struct {
 	{"soul temple", "travel/hotel"},
 	{"weligama", "travel/hotel"},
 	{"lm botanique", "travel/hotel"},
-	{"astry", "travel/hotel"},
 	{"airbnb", "travel/hotel"},
 	{"bandaranaike", "travel/airport"},
 	{"k-eta", "travel/visa"},
@@ -458,15 +466,132 @@ var categoryRules = []struct {
 	{"stories", "food/cafe"},
 	{"a2mnomad", "food/cafe"},
 	{"a2m nomad", "food/cafe"},
-	// Country catch-alls (must be last — overridden by more specific rules above)
-	{"ge ", "travel/georgia"},
-	{"lk ", "travel/srilanka"},
-	{"ae ", "travel/uae"},
+	// Insurance refunds
+	{"cyprialife", "income/insurance-refund"},
+	{"policy gp-", "income/insurance-refund"},
+	// Montenegro: specific merchants whose MCC is too generic/risky to map
+	// broadly (travel agency, books/press, tax payments, non-standard code).
+	{"virparis", "groceries"},
+	{"opstina kotor", "tickets"},
+	{"ski-pass", "tickets"},
+	// Fees
 	{"tips out transfer fees", "finance/fees"},
 	{"transfer commission", "finance/bank-fees"},
 	{"processing fees", "finance/bank-fees"},
 	{"opo trnsfr", "finance/bank-fees"},
 	{"o.p.o", "finance/bank-fees"},
+}
+
+// countryPrefixRe matches a leading 2-letter country code, e.g. the "ME" in
+// "ME 5411 VOLI 83". Anchored to the start of the description — unlike a bare
+// substring check, this can't false-positive on ordinary words that happen to
+// contain a country code (e.g. "ge " also occurs inside "SAUSAGE FEE" or
+// "COLLEGE FEE").
+var countryPrefixRe = regexp.MustCompile(`^([A-Z]{2})\s`)
+
+// countryNames maps ISO 3166-1 alpha-2 codes to a lowercase slug used to
+// build the "travel/<country>" fallback category. Checked only after
+// categoryRules and the MCC fallback fail to classify a transaction.
+// CY (home country) is intentionally omitted — a domestic transaction isn't
+// "travel".
+var countryNames = map[string]string{
+	"AD": "andorra", "AE": "uae", "AF": "afghanistan", "AG": "antiguabarbuda",
+	"AI": "anguilla", "AL": "albania", "AM": "armenia", "AO": "angola",
+	"AR": "argentina", "AT": "austria", "AU": "australia", "AW": "aruba",
+	"AZ": "azerbaijan", "BA": "bosnia", "BB": "barbados", "BD": "bangladesh",
+	"BE": "belgium", "BF": "burkinafaso", "BG": "bulgaria", "BH": "bahrain",
+	"BI": "burundi", "BJ": "benin", "BN": "brunei", "BO": "bolivia",
+	"BR": "brazil", "BS": "bahamas", "BT": "bhutan", "BW": "botswana",
+	"BY": "belarus", "BZ": "belize", "CA": "canada", "CD": "congo",
+	"CF": "centralafricanrepublic", "CG": "congo", "CH": "switzerland",
+	"CI": "ivorycoast", "CL": "chile", "CM": "cameroon", "CN": "china",
+	"CO": "colombia", "CR": "costarica", "CU": "cuba", "CV": "capeverde",
+	"CZ": "czechia", "DE": "germany", "DJ": "djibouti", "DK": "denmark",
+	"DM": "dominica", "DO": "dominicanrepublic", "DZ": "algeria",
+	"EC": "ecuador", "EE": "estonia", "EG": "egypt", "ER": "eritrea",
+	"ES": "spain", "ET": "ethiopia", "FI": "finland", "FJ": "fiji",
+	"FR": "france", "GA": "gabon", "GB": "uk", "GD": "grenada",
+	"GE": "georgia", "GH": "ghana", "GM": "gambia", "GN": "guinea",
+	"GQ": "equatorialguinea", "GR": "greece", "GT": "guatemala",
+	"GW": "guineabissau", "GY": "guyana", "HK": "hongkong", "HN": "honduras",
+	"HR": "croatia", "HT": "haiti", "HU": "hungary", "ID": "indonesia",
+	"IE": "ireland", "IL": "israel", "IN": "india", "IQ": "iraq",
+	"IR": "iran", "IS": "iceland", "IT": "italy", "JM": "jamaica",
+	"JO": "jordan", "JP": "japan", "KE": "kenya", "KG": "kyrgyzstan",
+	"KH": "cambodia", "KI": "kiribati", "KM": "comoros",
+	"KN": "stkittsnevis", "KP": "northkorea", "KR": "southkorea",
+	"KW": "kuwait", "KZ": "kazakhstan", "LA": "laos", "LB": "lebanon",
+	"LC": "stlucia", "LI": "liechtenstein", "LK": "srilanka",
+	"LR": "liberia", "LS": "lesotho", "LT": "lithuania", "LU": "luxembourg",
+	"LV": "latvia", "LY": "libya", "MA": "morocco", "MC": "monaco",
+	"MD": "moldova", "ME": "montenegro", "MG": "madagascar",
+	"MH": "marshallislands", "MK": "northmacedonia", "ML": "mali",
+	"MM": "myanmar", "MN": "mongolia", "MR": "mauritania", "MT": "malta",
+	"MU": "mauritius", "MV": "maldives", "MW": "malawi", "MX": "mexico",
+	"MY": "malaysia", "MZ": "mozambique", "NA": "namibia", "NE": "niger",
+	"NG": "nigeria", "NI": "nicaragua", "NL": "netherlands", "NO": "norway",
+	"NP": "nepal", "NR": "nauru", "NZ": "newzealand", "OM": "oman",
+	"PA": "panama", "PE": "peru", "PG": "papuanewguinea",
+	"PH": "philippines", "PK": "pakistan", "PL": "poland", "PT": "portugal",
+	"PW": "palau", "PY": "paraguay", "QA": "qatar", "RO": "romania",
+	"RS": "serbia", "RU": "russia", "RW": "rwanda", "SA": "saudiarabia",
+	"SB": "solomonislands", "SC": "seychelles", "SD": "sudan",
+	"SE": "sweden", "SG": "singapore", "SI": "slovenia", "SK": "slovakia",
+	"SL": "sierraleone", "SM": "sanmarino", "SN": "senegal", "SO": "somalia",
+	"SR": "suriname", "SS": "southsudan", "ST": "saotomeprincipe",
+	"SV": "elsalvador", "SY": "syria", "SZ": "eswatini", "TD": "chad",
+	"TG": "togo", "TH": "thailand", "TJ": "tajikistan", "TL": "timorleste",
+	"TM": "turkmenistan", "TN": "tunisia", "TO": "tonga", "TR": "turkey",
+	"TT": "trinidadtobago", "TV": "tuvalu", "TW": "taiwan", "TZ": "tanzania",
+	"UA": "ukraine", "UG": "uganda", "US": "usa", "UY": "uruguay",
+	"UZ": "uzbekistan", "VA": "vatican", "VC": "stvincent",
+	"VE": "venezuela", "VN": "vietnam", "VU": "vanuatu", "WS": "samoa",
+	"YE": "yemen", "ZA": "southafrica", "ZM": "zambia", "ZW": "zimbabwe",
+}
+
+// inferCategoryByCountry returns a "travel/<country>" fallback category
+// derived from a leading country-code prefix in the raw description.
+func inferCategoryByCountry(description string) string {
+	m := countryPrefixRe.FindStringSubmatch(strings.TrimSpace(description))
+	if m == nil {
+		return ""
+	}
+	name, ok := countryNames[m[1]]
+	if !ok {
+		return ""
+	}
+	return "travel/" + name
+}
+
+// mccCategories maps merchant-category-codes actually observed in BOC
+// foreign transaction descriptions to categories. Kept narrow — only codes
+// seen in real statements — rather than the full ISO 18245 range, so an
+// unfamiliar MCC falls through to uncategorized instead of guessing.
+var mccCategories = map[string]string{
+	"5331": "groceries",        // variety stores
+	"5411": "groceries",        // grocery stores, supermarkets
+	"5462": "food/bakery",      // bakeries
+	"5655": "shopping/sport",   // sports & riding apparel stores
+	"5691": "shopping/clothes", // men's/women's clothing stores
+	"5812": "food/restaurant",  // eating places, restaurants
+	"5813": "food/bar",         // bars, taverns, nightclubs (noisy: also used for cafes)
+	"5814": "food/fast_food",   // fast food (noisy: also used for pubs/bars)
+	"5912": "health/pharmacy",  // drug stores & pharmacies
+	"5094": "shopping/gifts",   // precious stones, jewelry, watches
+	"7011": "travel/hotel",     // hotels, motels, resorts (noisy: also used for on-site restaurants)
+	"7523": "transport/parking",
+	"7991": "tickets", // tourist attractions & exhibits
+}
+
+// inferCategoryByMCC returns a category derived from the merchant category
+// code embedded in a foreign card transaction description, e.g.
+// "ME 5411 VOLI 83" -> "groceries". Returns "" if no MCC is found or matched.
+func inferCategoryByMCC(description string) string {
+	m := mccRe.FindStringSubmatch(strings.TrimSpace(description))
+	if m == nil {
+		return ""
+	}
+	return mccCategories[m[1]]
 }
 
 // typeOverrides maps lowercased description keywords to a forced transaction type.
@@ -492,12 +617,23 @@ func InferTypeOverride(description string) string {
 }
 
 // InferCategory infers a category from merchant name and raw description.
+// Resolution order: explicit merchant/keyword rules, then MCC-based
+// inference for foreign card transactions, then broad country catch-alls.
+// Keeping these as separate stages (rather than one combined substring scan)
+// avoids short/generic keywords in a later stage shadowing more specific
+// matches from an earlier one.
 func InferCategory(merchant, description string) string {
 	combined := strings.ToLower(merchant + " " + description)
 	for _, rule := range categoryRules {
 		if strings.Contains(combined, rule.keyword) {
 			return rule.category
 		}
+	}
+	if cat := inferCategoryByMCC(description); cat != "" {
+		return cat
+	}
+	if cat := inferCategoryByCountry(description); cat != "" {
+		return cat
 	}
 	return ""
 }
