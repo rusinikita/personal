@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-This is a Go project that provides a set of personal tools, including Telegram bots and web applications. The main functionality is located in `main.go`, which sets up a `gin` HTTP server and an `mcp` tool server. The project includes a `say_hi` tool as an example.
+This is a Go project that provides a set of personal tools and web applications. The main functionality is located in `main.go`, which sets up a `gin` HTTP server and an `mcp` tool server.
 
 The project is structured with the following layers:
 - **Actions:** Contain the business logic for different features, grouped one Go package per subdomain under `action/{subdomain}/` (see `docs/architecture.md`).
-- **Common:** Contains shared code and utilities.
+- **Util:** Contains shared code and utilities.
 - **Docs:** Contains project documentation.
 - **Domain:** Contains the domain models.
 - **Gateways:** Contains interfaces for external services like databases.
@@ -186,14 +186,14 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 - Uncomment test code from Stage 2
 - Implement missing methods referenced in tests
 - Run `make build-app` to check compilation (NEVER use `go build` directly)
-- Run `make tests` to verify tests pass (NEVER use `go test` directly)
+- Run `make test` to verify tests pass (NEVER use `go test` directly)
 - Fix any build or test failures
 - Follow project architecture from docs/architecture.md
 - Use existing patterns from codebase
 
 **What agent MUST NOT do:**
 - NEVER run `go build` commands directly - always use `make build-app`
-- NEVER run `go test` commands directly - always use `make tests`
+- NEVER run `go test` commands directly - always use `make test`
 
 **What agent CAN do:**
 - Create new files if absolutely necessary
