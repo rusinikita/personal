@@ -1,13 +1,12 @@
 package tests
 
 import (
+	"personal/action/workout"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/create_exercise"
-	"personal/action/list_workouts"
 	"personal/domain"
 )
 
@@ -15,18 +14,18 @@ func (s *IntegrationTestSuite) TestListWorkouts_WithSets() {
 	ctx := s.Context()
 
 	// Arrange: Create 2 exercises
-	exercise1Input := create_exercise.CreateExerciseInput{
+	exercise1Input := workout.CreateExerciseInput{
 		Name:          "Bench Press",
 		EquipmentType: "barbell",
 	}
-	_, exercise1Output, err := create_exercise.CreateExercise(ctx, nil, exercise1Input)
+	_, exercise1Output, err := workout.CreateExercise(ctx, nil, exercise1Input)
 	require.NoError(s.T(), err)
 
-	exercise2Input := create_exercise.CreateExerciseInput{
+	exercise2Input := workout.CreateExerciseInput{
 		Name:          "Squat",
 		EquipmentType: "barbell",
 	}
-	_, exercise2Output, err := create_exercise.CreateExercise(ctx, nil, exercise2Input)
+	_, exercise2Output, err := workout.CreateExercise(ctx, nil, exercise2Input)
 	require.NoError(s.T(), err)
 
 	// Create workout 1 (completed, started 2h ago, completed 1h ago)
@@ -80,10 +79,10 @@ func (s *IntegrationTestSuite) TestListWorkouts_WithSets() {
 	}
 
 	// Act: Call MCP tool list_workouts
-	input := list_workouts.ListWorkoutsInput{
+	input := workout.ListWorkoutsInput{
 		Limit: 10,
 	}
-	_, output, err := list_workouts.ListWorkouts(ctx, nil, input)
+	_, output, err := workout.ListWorkouts(ctx, nil, input)
 	require.NoError(s.T(), err)
 
 	// Assert: Verify 2 workouts returned, sorted by started_at DESC (workout 2 first, workout 1 second)

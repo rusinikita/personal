@@ -2,20 +2,19 @@ package tests
 
 import (
 	"math"
+	"personal/action/workout"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/create_exercise"
-	"personal/action/get_personal_records"
 	"personal/domain"
 )
 
 func (s *IntegrationTestSuite) TestGetPersonalRecords_ReturnsCorrectRecords() {
 	ctx := s.Context()
 
-	_, ex, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Bench Press", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
@@ -49,7 +48,7 @@ func (s *IntegrationTestSuite) TestGetPersonalRecords_ReturnsCorrectRecords() {
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := get_personal_records.GetPersonalRecords(ctx, nil, get_personal_records.GetPersonalRecordsInput{
+	_, output, err := workout.GetPersonalRecords(ctx, nil, workout.GetPersonalRecordsInput{
 		ExerciseID: ex.ID,
 	})
 	require.NoError(s.T(), err)
@@ -72,12 +71,12 @@ func (s *IntegrationTestSuite) TestGetPersonalRecords_ReturnsCorrectRecords() {
 func (s *IntegrationTestSuite) TestGetPersonalRecords_NoSets() {
 	ctx := s.Context()
 
-	_, ex, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Unused Exercise", EquipmentType: "bodyweight",
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := get_personal_records.GetPersonalRecords(ctx, nil, get_personal_records.GetPersonalRecordsInput{
+	_, output, err := workout.GetPersonalRecords(ctx, nil, workout.GetPersonalRecordsInput{
 		ExerciseID: ex.ID,
 	})
 	require.NoError(s.T(), err)
@@ -90,7 +89,7 @@ func (s *IntegrationTestSuite) TestGetPersonalRecords_NoSets() {
 func (s *IntegrationTestSuite) TestGetPersonalRecords_Estimated1RMEpley() {
 	ctx := s.Context()
 
-	_, ex, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Squat", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
@@ -105,7 +104,7 @@ func (s *IntegrationTestSuite) TestGetPersonalRecords_Estimated1RMEpley() {
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := get_personal_records.GetPersonalRecords(ctx, nil, get_personal_records.GetPersonalRecordsInput{
+	_, output, err := workout.GetPersonalRecords(ctx, nil, workout.GetPersonalRecordsInput{
 		ExerciseID: ex.ID,
 	})
 	require.NoError(s.T(), err)

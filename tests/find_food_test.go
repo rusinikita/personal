@@ -3,9 +3,8 @@ package tests
 import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"personal/action/food"
 
-	"personal/action/add_food"
-	"personal/action/find_food"
 	"personal/domain"
 )
 
@@ -14,7 +13,7 @@ func (s *IntegrationTestSuite) addTestFoods() (bananaID, appleID, bananaYogurtID
 	ctx := s.Context()
 
 	// Add banana
-	bananaInput := add_food.AddFoodInput{
+	bananaInput := food.AddFoodInput{
 		Name:        "банан",
 		Description: "Обычный желтый банан",
 		FoodType:    "product",
@@ -26,12 +25,12 @@ func (s *IntegrationTestSuite) addTestFoods() (bananaID, appleID, bananaYogurtID
 			CarbohydratesG: 23.0,
 		},
 	}
-	_, output, err := add_food.AddFood(ctx, nil, bananaInput)
+	_, output, err := food.AddFood(ctx, nil, bananaInput)
 	require.NoError(s.T(), err)
 	bananaID = output.ID
 
 	// Add apple
-	appleInput := add_food.AddFoodInput{
+	appleInput := food.AddFoodInput{
 		Name:        "яблоко красное",
 		Description: "Свежее красное яблоко",
 		FoodType:    "product",
@@ -43,12 +42,12 @@ func (s *IntegrationTestSuite) addTestFoods() (bananaID, appleID, bananaYogurtID
 			CarbohydratesG: 14.0,
 		},
 	}
-	_, output, err = add_food.AddFood(ctx, nil, appleInput)
+	_, output, err = food.AddFood(ctx, nil, appleInput)
 	require.NoError(s.T(), err)
 	appleID = output.ID
 
 	// Add banana yogurt
-	yogurtInput := add_food.AddFoodInput{
+	yogurtInput := food.AddFoodInput{
 		Name:        "банановый йогурт",
 		Description: "Йогурт со вкусом банана",
 		FoodType:    "product",
@@ -60,7 +59,7 @@ func (s *IntegrationTestSuite) addTestFoods() (bananaID, appleID, bananaYogurtID
 			CarbohydratesG: 25.0,
 		},
 	}
-	_, output, err = add_food.AddFood(ctx, nil, yogurtInput)
+	_, output, err = food.AddFood(ctx, nil, yogurtInput)
 	require.NoError(s.T(), err)
 	bananaYogurtID = output.ID
 
@@ -76,10 +75,10 @@ func (s *IntegrationTestSuite) TestResolveFoodIdByName_Success() {
 	// "банан" - найдется в банан (2 раза) и банановый йогурт (2 раза)
 	// "яблоко" - найдется только в яблоко красное (1 раз)
 	// "красное" - найдется только в яблоко красное (1 раз)
-	input := find_food.ResolveFoodIdByNameInput{
+	input := food.ResolveFoodIdByNameInput{
 		NameVariants: []string{"банан", "банановый", "яблоко", "красное"},
 	}
-	_, output, err := find_food.ResolveFoodIdByName(ctx, nil, input)
+	_, output, err := food.ResolveFoodIdByName(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.Empty(s.T(), output.Error)
 	require.Len(s.T(), output.Foods, 3)
@@ -113,28 +112,28 @@ func (s *IntegrationTestSuite) TestResolveFoodIdByName_ValidationErrors() {
 	ctx := s.Context()
 
 	// Test empty name_variants array
-	input := find_food.ResolveFoodIdByNameInput{
+	input := food.ResolveFoodIdByNameInput{
 		NameVariants: []string{},
 	}
-	_, output, err := find_food.ResolveFoodIdByName(ctx, nil, input)
+	_, output, err := food.ResolveFoodIdByName(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotEmpty(s.T(), output.Error)
 	assert.Contains(s.T(), output.Error, "name_variants cannot be empty")
 
 	// Test more than 5 variants
-	input = find_food.ResolveFoodIdByNameInput{
+	input = food.ResolveFoodIdByNameInput{
 		NameVariants: []string{"1", "2", "3", "4", "5", "6"},
 	}
-	_, output, err = find_food.ResolveFoodIdByName(ctx, nil, input)
+	_, output, err = food.ResolveFoodIdByName(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotEmpty(s.T(), output.Error)
 	assert.Contains(s.T(), output.Error, "maximum 5 name variants allowed")
 
 	// Test empty string in variants
-	input = find_food.ResolveFoodIdByNameInput{
+	input = food.ResolveFoodIdByNameInput{
 		NameVariants: []string{"банан", "", "яблоко"},
 	}
-	_, output, err = find_food.ResolveFoodIdByName(ctx, nil, input)
+	_, output, err = food.ResolveFoodIdByName(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotEmpty(s.T(), output.Error)
 	assert.Contains(s.T(), output.Error, "name variants cannot be empty")

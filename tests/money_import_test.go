@@ -7,14 +7,13 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"personal/action/money"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/get_transactions"
-	money_import "personal/action/money_import"
 	"personal/gateways"
 )
 
@@ -32,8 +31,8 @@ func (s *IntegrationTestSuite) importRouter(ctx context.Context) *gin.Engine {
 		c.Request = c.Request.WithContext(reqCtx)
 		c.Next()
 	})
-	r.GET("/money/import", money_import.ImportGETHandler)
-	r.POST("/money/import", money_import.ImportPOSTHandler)
+	r.GET("/money/import", money.ImportGETHandler)
+	r.POST("/money/import", money.ImportPOSTHandler)
 	return r
 }
 
@@ -88,8 +87,8 @@ func (s *IntegrationTestSuite) TestImport_POST_Revolut_Success() {
 	assert.Contains(s.T(), w.Body.String(), "imported 3")
 
 	// Verify via get_transactions
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Limit: 50})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 3, listOut.Total)
 }
@@ -108,13 +107,13 @@ func (s *IntegrationTestSuite) TestImport_POST_Revolut_ExpenseIncomeSplit() {
 	expenseType := "expense"
 	incomeType := "income"
 
-	_, expOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Type: &expenseType, Limit: 50})
+	_, expOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Type: &expenseType, Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 2, expOut.Total)
 
-	_, incOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Type: &incomeType, Limit: 50})
+	_, incOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Type: &incomeType, Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 1, incOut.Total)
 	assert.Equal(s.T(), 3500.00, incOut.Transactions[0].AmountEUR)
@@ -131,8 +130,8 @@ func (s *IntegrationTestSuite) TestImport_POST_Revolut_MerchantRecognized() {
 	r.ServeHTTP(w, req)
 	require.Equal(s.T(), http.StatusOK, w.Code)
 
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Limit: 50})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Limit: 50})
 	require.NoError(s.T(), err)
 
 	merchants := map[string]bool{}
@@ -155,8 +154,8 @@ func (s *IntegrationTestSuite) TestImport_POST_Revolut_CategoryInferred() {
 	require.Equal(s.T(), http.StatusOK, w.Code)
 
 	starbucksMerchant := "Starbucks"
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Merchant: &starbucksMerchant, Limit: 10})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Merchant: &starbucksMerchant, Limit: 10})
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), 1, listOut.Total)
 	assert.Equal(s.T(), "food/cafe", listOut.Transactions[0].Category)
@@ -174,8 +173,8 @@ func (s *IntegrationTestSuite) TestImport_POST_Revolut_OriginalDescriptionPreser
 	require.Equal(s.T(), http.StatusOK, w.Code)
 
 	lidlMerchant := "Lidl"
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Merchant: &lidlMerchant, Limit: 10})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Merchant: &lidlMerchant, Limit: 10})
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), 1, listOut.Total)
 	require.NotNil(s.T(), listOut.Transactions[0].OriginalDescription)
@@ -203,8 +202,8 @@ func (s *IntegrationTestSuite) TestImport_POST_BankOfCyprus_Success() {
 	assert.Equal(s.T(), http.StatusOK, w.Code)
 	assert.Contains(s.T(), w.Body.String(), "imported 3")
 
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Limit: 50})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 3, listOut.Total)
 }
@@ -221,8 +220,8 @@ func (s *IntegrationTestSuite) TestImport_POST_BankOfCyprus_DebitIsExpense() {
 	require.Equal(s.T(), http.StatusOK, w.Code)
 
 	expenseType := "expense"
-	_, out, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Type: &expenseType, Limit: 50})
+	_, out, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Type: &expenseType, Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 2, out.Total)
 }
@@ -239,8 +238,8 @@ func (s *IntegrationTestSuite) TestImport_POST_BankOfCyprus_WoltRecognized() {
 	require.Equal(s.T(), http.StatusOK, w.Code)
 
 	woltMerchant := "Wolt"
-	_, out, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Merchant: &woltMerchant, Limit: 10})
+	_, out, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Merchant: &woltMerchant, Limit: 10})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 1, out.Total)
 	assert.Equal(s.T(), "food/delivery", out.Transactions[0].Category)
@@ -321,8 +320,8 @@ func (s *IntegrationTestSuite) TestImport_POST_Revolut_ReimportSkipsDuplicates()
 	assert.Contains(s.T(), w2.Body.String(), "imported 0")
 	assert.Contains(s.T(), w2.Body.String(), "3 duplicates")
 
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Limit: 50})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 3, listOut.Total, "re-import must not create duplicate rows")
 }
@@ -352,8 +351,8 @@ func (s *IntegrationTestSuite) TestImport_POST_Revolut_ReimportInsertsOnlyNewRow
 	assert.Contains(s.T(), w2.Body.String(), "imported 1")
 	assert.Contains(s.T(), w2.Body.String(), "3 duplicates")
 
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Limit: 50})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 4, listOut.Total)
 }
@@ -382,8 +381,8 @@ func (s *IntegrationTestSuite) TestImport_POST_BankOfCyprus_ReimportSkipsDuplica
 	assert.Contains(s.T(), w2.Body.String(), "imported 0")
 	assert.Contains(s.T(), w2.Body.String(), "3 duplicates")
 
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Limit: 50})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 3, listOut.Total, "re-import must not create duplicate rows")
 }
@@ -415,8 +414,8 @@ func (s *IntegrationTestSuite) TestImport_POST_BankOfCyprus_MissingReferenceNeve
 	assert.Contains(s.T(), w2.Body.String(), "imported 1")
 	assert.Contains(s.T(), w2.Body.String(), "0 duplicates")
 
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil,
-		get_transactions.GetTransactionsInput{Limit: 50})
+	_, listOut, err := money.GetTransactions(ctx, nil,
+		money.GetTransactionsInput{Limit: 50})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 2, listOut.Total)
 }

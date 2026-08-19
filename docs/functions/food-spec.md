@@ -73,10 +73,10 @@ graph TB
     User -->|add_food| MCP
     User -->|resolve_food_id_by_name| MCP
     User -->|log_food_by_id| MCP
-    User -->|log_food_by_name| MCP
     User -->|log_food_by_barcode| MCP
     User -->|log_custom_food| MCP
     User -->|get_nutrition_stats| MCP
+    User -->|get_top_products| MCP
 
     DB -.->|food table| DB
     DB -.->|consumption_log table| DB
@@ -411,9 +411,6 @@ Searches for foods by 1-5 name variants, returns ranked results. Searches databa
 ### log_food_by_id
 Logs food consumption by known food ID. Validates food_id > 0, amount_g > 0 OR serving_count > 0. Fetches food, calculates final amount (if amount_g == 0, uses serving_count × serving_size_g), calculates proportional nutrients: (base_nutrients × amount_g) / 100.
 
-### log_food_by_name
-Searches by name and logs consumption. If exactly 1 match: proceeds like log_food_by_id. If multiple matches: returns error with first 2 suggestions. If no matches: returns "food not found" error.
-
 ### log_food_by_barcode
 Finds food by barcode and logs consumption. Searches by barcode, if found proceeds like log_food_by_id, if not found returns "barcode not found" error.
 
@@ -422,6 +419,9 @@ Logs food with direct nutrient specification (no database food). Validates requi
 
 ### get_nutrition_stats
 Returns nutrition statistics for last meal and last 4 days. Loads timezone (Asia/Nicosia for user display), gets last consumption time. **Last meal**: gets stats for 1 hour before last consumption (inclusive) using AggregationTypeTotal. **Last 4 days**: calculates 4-day window in user timezone using AggregationTypeByDay, returns only days with data (0-4 elements). Repository works in UTC only.
+
+### get_top_products
+Returns the 30 most frequently logged products over the last 3 months. Groups consumption_log by food_id (custom foods with food_id = NULL are excluded), sorts by log count descending then food_id ascending.
 
 ## Configuration
 

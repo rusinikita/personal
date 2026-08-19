@@ -2,12 +2,12 @@ package tests
 
 import (
 	"context"
+	"personal/action/food"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/log_food"
 	"personal/domain"
 	"personal/util"
 )
@@ -26,13 +26,13 @@ func (s *IntegrationTestSuite) TestLogFoodById_Success() {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_food_by_id MCP tool
-	input := log_food.LogFoodByIdInput{
+	input := food.LogFoodByIdInput{
 		FoodID:     apple.ID,
 		AmountG:    150.0, // 1.5 * 100g serving
 		ConsumedAt: now,
 	}
 
-	_, response, err := log_food.LogFoodById(ctx, nil, input)
+	_, response, err := food.LogFoodById(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 150.0g of Apple")
@@ -60,13 +60,13 @@ func (s *IntegrationTestSuite) TestLogFoodById_WithServingCount() {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_food_by_id MCP tool with serving count
-	input := log_food.LogFoodByIdInput{
+	input := food.LogFoodByIdInput{
 		FoodID:       bread.ID,
 		ServingCount: 2.0, // 2 * 30g servings = 60g
 		ConsumedAt:   now,
 	}
 
-	_, response, err := log_food.LogFoodById(ctx, nil, input)
+	_, response, err := food.LogFoodById(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 60.0g of Bread")
@@ -83,12 +83,12 @@ func (s *IntegrationTestSuite) TestLogFoodById_NotFound() {
 	ctx := s.Context()
 
 	// Call log_food_by_id MCP tool with non-existent ID
-	input := log_food.LogFoodByIdInput{
+	input := food.LogFoodByIdInput{
 		FoodID:  99999, // Non-existent ID
 		AmountG: 100.0,
 	}
 
-	_, response, err := log_food.LogFoodById(ctx, nil, input)
+	_, response, err := food.LogFoodById(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "food not found", response.Error)
 	assert.Empty(s.T(), response.Message)
@@ -108,13 +108,13 @@ func (s *IntegrationTestSuite) TestLogFoodByBarcode_Success() {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_food_by_barcode MCP tool
-	input := log_food.LogFoodByBarcodeInput{
+	input := food.LogFoodByBarcodeInput{
 		Barcode:    "999888",
 		AmountG:    120.0,
 		ConsumedAt: now,
 	}
 
-	_, response, err := log_food.LogFoodByBarcode(ctx, nil, input)
+	_, response, err := food.LogFoodByBarcode(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 120.0g of Banana")
@@ -133,12 +133,12 @@ func (s *IntegrationTestSuite) TestLogFoodByBarcode_NotFound() {
 	ctx := s.Context()
 
 	// Call log_food_by_barcode MCP tool with non-existent barcode
-	input := log_food.LogFoodByBarcodeInput{
+	input := food.LogFoodByBarcodeInput{
 		Barcode: "nonexistent",
 		AmountG: 100.0,
 	}
 
-	_, response, err := log_food.LogFoodByBarcode(ctx, nil, input)
+	_, response, err := food.LogFoodByBarcode(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "barcode not found", response.Error)
 	assert.Empty(s.T(), response.Message)
@@ -150,7 +150,7 @@ func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_custom_food MCP tool
-	input := log_food.LogCustomFoodInput{
+	input := food.LogCustomFoodInput{
 		ProductName:    "Homemade Sandwich",
 		AmountG:        180.0,
 		Calories:       250.0,
@@ -162,7 +162,7 @@ func (s *IntegrationTestSuite) TestLogCustomFood_Success() {
 		ConsumedAt:     now,
 	}
 
-	_, response, err := log_food.LogCustomFood(ctx, nil, input)
+	_, response, err := food.LogCustomFood(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 180.0g of Homemade Sandwich")
@@ -186,7 +186,7 @@ func (s *IntegrationTestSuite) TestLogCustomFood_WithOptionalNutrients() {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	// Call log_custom_food MCP tool with optional nutrients
-	input := log_food.LogCustomFoodInput{
+	input := food.LogCustomFoodInput{
 		ProductName:    "Energy Drink",
 		AmountG:        250.0,
 		Calories:       110.0,
@@ -198,7 +198,7 @@ func (s *IntegrationTestSuite) TestLogCustomFood_WithOptionalNutrients() {
 		ConsumedAt:     now,
 	}
 
-	_, response, err := log_food.LogCustomFood(ctx, nil, input)
+	_, response, err := food.LogCustomFood(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), response.Error)
 	assert.Contains(s.T(), response.Message, "Successfully logged 250.0g of Energy Drink")
@@ -214,25 +214,25 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 	ctx := s.Context()
 
 	// Test log_food_by_id with invalid food_id
-	input1 := log_food.LogFoodByIdInput{
+	input1 := food.LogFoodByIdInput{
 		FoodID:  0, // Invalid
 		AmountG: 100.0,
 	}
-	_, response1, err := log_food.LogFoodById(ctx, nil, input1)
+	_, response1, err := food.LogFoodById(ctx, nil, input1)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "food_id must be greater than 0", response1.Error)
 
 	// Test log_food_by_barcode with empty barcode
-	input3 := log_food.LogFoodByBarcodeInput{
+	input3 := food.LogFoodByBarcodeInput{
 		Barcode: "", // Invalid
 		AmountG: 100.0,
 	}
-	_, response3, err := log_food.LogFoodByBarcode(ctx, nil, input3)
+	_, response3, err := food.LogFoodByBarcode(ctx, nil, input3)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "barcode cannot be empty", response3.Error)
 
 	// Test log_custom_food with empty product name
-	input4 := log_food.LogCustomFoodInput{
+	input4 := food.LogCustomFoodInput{
 		ProductName:    "", // Invalid
 		AmountG:        100.0,
 		Calories:       100.0,
@@ -240,17 +240,17 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 		TotalFatG:      3.0,
 		CarbohydratesG: 15.0,
 	}
-	_, response4, err := log_food.LogCustomFood(ctx, nil, input4)
+	_, response4, err := food.LogCustomFood(ctx, nil, input4)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "product_name cannot be empty", response4.Error)
 
 	// Test invalid amounts (no amount_g or serving_count)
-	input5 := log_food.LogFoodByIdInput{
+	input5 := food.LogFoodByIdInput{
 		FoodID:       1,
 		AmountG:      0,
 		ServingCount: 0, // Both zero - invalid
 	}
-	_, response5, err := log_food.LogFoodById(ctx, nil, input5)
+	_, response5, err := food.LogFoodById(ctx, nil, input5)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), "either amount_g or serving_count must be greater than 0", response5.Error)
 }

@@ -3,21 +3,20 @@ package tests
 import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"personal/action/create_exercise"
+	"personal/action/workout"
 )
 
 func (s *IntegrationTestSuite) TestCreateExercise_Success() {
 	ctx := s.Context()
 
 	// Prepare test input with valid exercise data
-	input := create_exercise.CreateExerciseInput{
+	input := workout.CreateExerciseInput{
 		Name:          "Bench Press",
 		EquipmentType: "barbell",
 	}
 
 	// Call MCP create_exercise handler
-	_, output, err := create_exercise.CreateExercise(ctx, nil, input)
+	_, output, err := workout.CreateExercise(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotZero(s.T(), output.ID)
 	assert.Equal(s.T(), "Bench Press", output.Name)
@@ -48,13 +47,13 @@ func (s *IntegrationTestSuite) TestCreateExercise_InvalidEquipmentType() {
 	ctx := s.Context()
 
 	// Prepare test input with invalid equipment type
-	input := create_exercise.CreateExerciseInput{
+	input := workout.CreateExerciseInput{
 		Name:          "Leg Press",
 		EquipmentType: "invalid_type",
 	}
 
 	// Call MCP create_exercise handler
-	_, _, err := create_exercise.CreateExercise(ctx, nil, input)
+	_, _, err := workout.CreateExercise(ctx, nil, input)
 
 	// Verify validation error occurred
 	require.Error(s.T(), err)

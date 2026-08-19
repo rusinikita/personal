@@ -2,13 +2,13 @@ package tests
 
 import (
 	"math/rand"
+	"personal/action/food"
 	"sort"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/top_products"
 	"personal/domain"
 	"personal/util"
 )
@@ -161,7 +161,7 @@ func (s *IntegrationTestSuite) TestGetTopProducts_Success() {
 	}
 
 	// Call MCP get_top_products tool handler
-	_, output, err := top_products.GetTopProducts(ctx, nil, struct{}{})
+	_, output, err := food.GetTopProducts(ctx, nil, struct{}{})
 	require.NoError(s.T(), err)
 
 	// Verify results

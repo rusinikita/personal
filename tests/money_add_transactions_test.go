@@ -1,13 +1,11 @@
 package tests
 
 import (
+	"personal/action/money"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"personal/action/add_transactions"
-	"personal/action/get_transactions"
 )
 
 func (s *IntegrationTestSuite) TestAddTransactions_Success() {
@@ -15,8 +13,8 @@ func (s *IntegrationTestSuite) TestAddTransactions_Success() {
 
 	at := time.Date(2026, 4, 4, 9, 0, 0, 0, time.UTC)
 
-	input := add_transactions.AddTransactionsInput{
-		Transactions: []add_transactions.TransactionInput{
+	input := money.AddTransactionsInput{
+		Transactions: []money.TransactionInput{
 			{
 				Type:           "expense",
 				AmountOriginal: 5.00,
@@ -40,7 +38,7 @@ func (s *IntegrationTestSuite) TestAddTransactions_Success() {
 		},
 	}
 
-	_, out, err := add_transactions.AddTransactions(ctx, nil, input)
+	_, out, err := money.AddTransactions(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 2, out.InsertedCount)
 	require.Len(s.T(), out.Transactions, 2)
@@ -48,11 +46,11 @@ func (s *IntegrationTestSuite) TestAddTransactions_Success() {
 	assert.NotZero(s.T(), out.Transactions[1].ID)
 
 	// Verify via get_transactions
-	listInput := get_transactions.GetTransactionsInput{
+	listInput := money.GetTransactionsInput{
 		From:  &at,
 		Limit: 10,
 	}
-	_, listOut, err := get_transactions.GetTransactions(ctx, nil, listInput)
+	_, listOut, err := money.GetTransactions(ctx, nil, listInput)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 2, listOut.Total)
 }
@@ -62,8 +60,8 @@ func (s *IntegrationTestSuite) TestAddTransactions_SingleIncome() {
 
 	at := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
 
-	input := add_transactions.AddTransactionsInput{
-		Transactions: []add_transactions.TransactionInput{
+	input := money.AddTransactionsInput{
+		Transactions: []money.TransactionInput{
 			{
 				Type:           "income",
 				AmountOriginal: 3500.00,
@@ -77,7 +75,7 @@ func (s *IntegrationTestSuite) TestAddTransactions_SingleIncome() {
 		},
 	}
 
-	_, out, err := add_transactions.AddTransactions(ctx, nil, input)
+	_, out, err := money.AddTransactions(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 1, out.InsertedCount)
 	assert.Equal(s.T(), "income", out.Transactions[0].Type)
@@ -91,8 +89,8 @@ func (s *IntegrationTestSuite) TestAddTransactions_WithNote() {
 	note := "team lunch"
 	origDesc := "ZUMA RESTAURANT 0012 NICOSIA"
 
-	input := add_transactions.AddTransactionsInput{
-		Transactions: []add_transactions.TransactionInput{
+	input := money.AddTransactionsInput{
+		Transactions: []money.TransactionInput{
 			{
 				Type:                "expense",
 				AmountOriginal:      120.00,
@@ -108,7 +106,7 @@ func (s *IntegrationTestSuite) TestAddTransactions_WithNote() {
 		},
 	}
 
-	_, out, err := add_transactions.AddTransactions(ctx, nil, input)
+	_, out, err := money.AddTransactions(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.Len(s.T(), out.Transactions, 1)
 	assert.Equal(s.T(), &note, out.Transactions[0].Note)
@@ -118,8 +116,8 @@ func (s *IntegrationTestSuite) TestAddTransactions_WithNote() {
 func (s *IntegrationTestSuite) TestAddTransactions_ValidationError_InvalidType() {
 	ctx := s.Context()
 
-	input := add_transactions.AddTransactionsInput{
-		Transactions: []add_transactions.TransactionInput{
+	input := money.AddTransactionsInput{
+		Transactions: []money.TransactionInput{
 			{
 				Type:           "refund",
 				AmountOriginal: 10.00,
@@ -131,7 +129,7 @@ func (s *IntegrationTestSuite) TestAddTransactions_ValidationError_InvalidType()
 		},
 	}
 
-	_, out, err := add_transactions.AddTransactions(ctx, nil, input)
+	_, out, err := money.AddTransactions(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.NotEmpty(s.T(), out.Error)
 }
@@ -139,8 +137,8 @@ func (s *IntegrationTestSuite) TestAddTransactions_ValidationError_InvalidType()
 func (s *IntegrationTestSuite) TestAddTransactions_ValidationError_ZeroAmount() {
 	ctx := s.Context()
 
-	input := add_transactions.AddTransactionsInput{
-		Transactions: []add_transactions.TransactionInput{
+	input := money.AddTransactionsInput{
+		Transactions: []money.TransactionInput{
 			{
 				Type:           "expense",
 				AmountOriginal: 0,
@@ -152,7 +150,7 @@ func (s *IntegrationTestSuite) TestAddTransactions_ValidationError_ZeroAmount() 
 		},
 	}
 
-	_, out, err := add_transactions.AddTransactions(ctx, nil, input)
+	_, out, err := money.AddTransactions(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.NotEmpty(s.T(), out.Error)
 }
@@ -160,8 +158,8 @@ func (s *IntegrationTestSuite) TestAddTransactions_ValidationError_ZeroAmount() 
 func (s *IntegrationTestSuite) TestAddTransactions_ValidationError_BadCurrency() {
 	ctx := s.Context()
 
-	input := add_transactions.AddTransactionsInput{
-		Transactions: []add_transactions.TransactionInput{
+	input := money.AddTransactionsInput{
+		Transactions: []money.TransactionInput{
 			{
 				Type:           "expense",
 				AmountOriginal: 10.00,
@@ -173,7 +171,7 @@ func (s *IntegrationTestSuite) TestAddTransactions_ValidationError_BadCurrency()
 		},
 	}
 
-	_, out, err := add_transactions.AddTransactions(ctx, nil, input)
+	_, out, err := money.AddTransactions(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.NotEmpty(s.T(), out.Error)
 }
@@ -183,8 +181,8 @@ func (s *IntegrationTestSuite) TestAddTransactions_MultiCurrency() {
 
 	at := time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)
 
-	input := add_transactions.AddTransactionsInput{
-		Transactions: []add_transactions.TransactionInput{
+	input := money.AddTransactionsInput{
+		Transactions: []money.TransactionInput{
 			{
 				Type:           "expense",
 				AmountOriginal: 10.00,
@@ -198,7 +196,7 @@ func (s *IntegrationTestSuite) TestAddTransactions_MultiCurrency() {
 		},
 	}
 
-	_, out, err := add_transactions.AddTransactions(ctx, nil, input)
+	_, out, err := money.AddTransactions(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.Len(s.T(), out.Transactions, 1)
 	assert.Equal(s.T(), "USD", out.Transactions[0].Currency)

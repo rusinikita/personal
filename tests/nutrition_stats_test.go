@@ -2,12 +2,12 @@ package tests
 
 import (
 	"math/rand"
+	"personal/action/food"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/nutrition_stats"
 	"personal/domain"
 	"personal/util"
 )
@@ -226,7 +226,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_Success() {
 	}
 
 	// Call MCP get_nutrition_stats tool handler
-	_, output, err := nutrition_stats.GetNutritionStats(ctx, nil, struct{}{})
+	_, output, err := food.GetNutritionStats(ctx, nil, struct{}{})
 	require.NoError(s.T(), err)
 
 	// Verify last_meal
@@ -255,7 +255,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_EmptyDatabase() {
 	ctx := s.Context()
 
 	// Call MCP get_nutrition_stats tool handler
-	_, output, err := nutrition_stats.GetNutritionStats(ctx, nil, struct{}{})
+	_, output, err := food.GetNutritionStats(ctx, nil, struct{}{})
 	require.NoError(s.T(), err)
 
 	// Verify empty results
@@ -318,7 +318,7 @@ func (s *IntegrationTestSuite) TestGetNutritionStats_TimezoneBoundaries() {
 	}
 
 	// Call MCP get_nutrition_stats tool handler
-	_, output, err := nutrition_stats.GetNutritionStats(ctx, nil, struct{}{})
+	_, output, err := food.GetNutritionStats(ctx, nil, struct{}{})
 	require.NoError(s.T(), err)
 
 	// Verify that records are in correct day buckets

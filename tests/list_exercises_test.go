@@ -1,64 +1,61 @@
 package tests
 
 import (
+	"personal/action/workout"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"personal/action/create_exercise"
-	"personal/action/list_exercises"
-	"personal/action/log_workout_set"
 )
 
 func (s *IntegrationTestSuite) TestListExercises_SortedByLastUsed() {
 	ctx := s.Context()
 
 	// Create 3 exercises via create_exercise action
-	exercise1Input := create_exercise.CreateExerciseInput{
+	exercise1Input := workout.CreateExerciseInput{
 		Name:          "Bench Press",
 		EquipmentType: "barbell",
 	}
-	_, exercise1Output, err := create_exercise.CreateExercise(ctx, nil, exercise1Input)
+	_, exercise1Output, err := workout.CreateExercise(ctx, nil, exercise1Input)
 	require.NoError(s.T(), err)
 
-	exercise2Input := create_exercise.CreateExerciseInput{
+	exercise2Input := workout.CreateExerciseInput{
 		Name:          "Squat",
 		EquipmentType: "barbell",
 	}
-	_, exercise2Output, err := create_exercise.CreateExercise(ctx, nil, exercise2Input)
+	_, exercise2Output, err := workout.CreateExercise(ctx, nil, exercise2Input)
 	require.NoError(s.T(), err)
 
-	exercise3Input := create_exercise.CreateExerciseInput{
+	exercise3Input := workout.CreateExerciseInput{
 		Name:          "Deadlift",
 		EquipmentType: "barbell",
 	}
-	_, exercise3Output, err := create_exercise.CreateExercise(ctx, nil, exercise3Input)
+	_, exercise3Output, err := workout.CreateExercise(ctx, nil, exercise3Input)
 	require.NoError(s.T(), err)
 
 	// Create set for exercise 2 via log_workout_set action (will have older timestamp)
 	time.Sleep(10 * time.Millisecond) // Ensure different timestamps
-	setInput2 := log_workout_set.LogWorkoutSetInput{
+	setInput2 := workout.LogWorkoutSetInput{
 		ExerciseID: exercise2Output.ID,
 		Reps:       10,
 		WeightKg:   100.0,
 	}
-	_, _, err = log_workout_set.LogWorkoutSet(ctx, nil, setInput2)
+	_, _, err = workout.LogWorkoutSet(ctx, nil, setInput2)
 	require.NoError(s.T(), err)
 
 	// Create set for exercise 1 via log_workout_set action (will have newer timestamp)
 	time.Sleep(10 * time.Millisecond) // Ensure different timestamps
-	setInput1 := log_workout_set.LogWorkoutSetInput{
+	setInput1 := workout.LogWorkoutSetInput{
 		ExerciseID: exercise1Output.ID,
 		Reps:       8,
 		WeightKg:   80.0,
 	}
-	_, _, err = log_workout_set.LogWorkoutSet(ctx, nil, setInput1)
+	_, _, err = workout.LogWorkoutSet(ctx, nil, setInput1)
 	require.NoError(s.T(), err)
 
 	// Call MCP tool list_exercises
-	var listInput list_exercises.ListExercisesInput
-	_, listOutput, err := list_exercises.ListExercises(ctx, nil, listInput)
+	var listInput workout.ListExercisesInput
+	_, listOutput, err := workout.ListExercises(ctx, nil, listInput)
 	require.NoError(s.T(), err)
 	require.Len(s.T(), listOutput.Exercises, 3)
 

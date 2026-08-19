@@ -7,6 +7,12 @@ New code MUST follow existing patterns.
 3. Repository as database client with convenient interface in repository package
 4. Tests in tests package
 
+## Actions
+
+One Go package per subdomain under `action/{subdomain}/`, matching `docs/functions/{subdomain}-spec.md`. Do not create a new package per individual action — add a new file to the existing subdomain package.
+
+Current packages: `action/food`, `action/workout`, `action/money`, `action/progress`, `action/auth`.
+
 ## Repository
 
 Single structure for all database interaction. Actual repository interface in repository/interface.go.

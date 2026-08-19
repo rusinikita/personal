@@ -5,7 +5,7 @@
 This is a Go project that provides a set of personal tools, including Telegram bots and web applications. The main functionality is located in `main.go`, which sets up a `gin` HTTP server and an `mcp` tool server. The project includes a `say_hi` tool as an example.
 
 The project is structured with the following layers:
-- **Actions:** Contain the business logic for different features.
+- **Actions:** Contain the business logic for different features, grouped one Go package per subdomain under `action/{subdomain}/` (see `docs/architecture.md`).
 - **Common:** Contains shared code and utilities.
 - **Docs:** Contains project documentation.
 - **Domain:** Contains the domain models.

@@ -65,9 +65,15 @@ graph TB
     end
     
     User -->|create_exercise| MCP
+    User -->|edit_exercise| MCP
+    User -->|search_exercises| MCP
     User -->|list_exercises| MCP
-    User -->|log_set| MCP
+    User -->|merge_exercises| MCP
+    User -->|log_workout_set| MCP
+    User -->|delete_workout_set| MCP
     User -->|list_workouts| MCP
+    User -->|get_exercise_history| MCP
+    User -->|get_personal_records| MCP
     
     DB -.->|exercises table| DB
     DB -.->|workouts table| DB
@@ -272,7 +278,7 @@ type SetSearch struct {
 
 ```
 
-## DB Repository interface
+### Repository Interface
 
 ```go
 // gateways/workout_repository.go
@@ -280,15 +286,82 @@ type WorkoutRepository interface {
 	// Exercise operations
 	CreateExercise(ctx context.Context, exercise Exercise) (int64, error)
 	ListExercises(ctx context.Context, params ExerciseSearch) ([]Exercise, error)
+	SearchExercises(ctx context.Context, userID int64, query string) ([]Exercise, error)
+	UpdateExercise(ctx context.Context, exercise *Exercise) error
+	GetExercise(ctx context.Context, exerciseID int64, userID int64) (*Exercise, error)
+	MoveSetsBetweenExercises(ctx context.Context, sourceID, targetID, userID int64) (int64, error)
+	DeleteExercise(ctx context.Context, exerciseID int64, userID int64) error
 
 	// Workout operations
 	CreateWorkout(ctx context.Context, workout Workout) (int64, error)
 	CloseWorkout(ctx context.Context, workoutID int64) error
 	ListWorkouts(ctx context.Context, params WorkoutSearch) ([]Workout, error)
+	GetWorkoutsByIDs(ctx context.Context, userID int64, workoutIDs []int64) ([]Workout, error)
 
 	// Set operations
 	CreateSet(ctx context.Context, set *Set) error
 	ListSets(ctx context.Context, params SetSearch) ([]Set, error)
 	GetLastSet(ctx context.Context, userID int64) (WorkoutSet, error)
+	GetSetByID(ctx context.Context, setID int64, userID int64) (*SetWithExercise, error)
+	DeleteSet(ctx context.Context, setID int64, userID int64) error
+	GetExerciseHistory(ctx context.Context, userID int64, exerciseID int64, limit int, offset int) ([]Workout, error)
+	ListSetsByExerciseAndWorkouts(ctx context.Context, userID int64, exerciseID int64, workoutIDs []int64) ([]Set, error)
+	GetPersonalRecords(ctx context.Context, userID int64, exerciseID int64) (*PersonalRecords, error)
+}
+
+// SetWithExercise is a set joined with its exercise name, used by delete_workout_set
+type SetWithExercise struct {
+	Set
+	ExerciseName string `json:"exercise_name"`
+}
+
+// PersonalRecords holds best-ever results for an exercise
+type PersonalRecords struct {
+	MaxWeight *SetRecord
+	MaxReps   *SetRecord
+	MaxVolume *VolumeRecord
+}
+
+type SetRecord struct {
+	WeightKg  float64
+	Reps      int64
+	CreatedAt time.Time
+}
+
+type VolumeRecord struct {
+	Volume    float64
+	StartedAt time.Time
 }
 ```
+
+## MCP Tools
+
+### create_exercise
+Creates a new exercise with name and equipment_type (machine/barbell/dumbbells/bodyweight). Validates equipment_type against allowed values.
+
+### edit_exercise
+Updates name and/or equipment_type of an existing exercise. At least one field required; unspecified fields keep their current value.
+
+### search_exercises
+Searches ALL exercises (not just the 20 most recent) by 1-5 name variants, case-insensitive ILIKE match. Ranks results by match_count (variants matched) DESC, then exercise_id ASC — same pattern as `resolve_food_id_by_name`.
+
+### list_exercises
+Returns the 20 most recently used exercises, sorted by last_used_at DESC NULLS LAST (unused exercises appear last, by name).
+
+### merge_exercises
+Moves all sets from a source exercise to a target exercise, then deletes the source. Used to clean up duplicate exercises without losing set history.
+
+### log_workout_set
+Logs a set (reps and/or duration_seconds, optional weight_kg) for an exercise. Reuses the active workout if one exists and its last set was logged within 2 hours, otherwise creates a new workout. Supports backdating via an optional `date` field.
+
+### delete_workout_set
+Deletes a single set by ID, returning the deleted set's exercise name, weight, and reps for confirmation.
+
+### list_workouts
+Returns the last 30 days of workouts (default limit 10), each with its sets grouped by exercise, sorted by started_at DESC.
+
+### get_exercise_history
+Returns all workout sessions containing a given exercise, newest first, paginated via limit/offset. Lets the assistant answer "how much was last time on X?" without scanning all workouts.
+
+### get_personal_records
+Returns best-ever results for an exercise: max_weight, max_reps, max_volume (single-workout total), and estimated_1rm (Epley formula: weight × (1 + reps/30)). Only sets with reps > 0 and weight_kg > 0 count.

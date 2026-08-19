@@ -1,20 +1,19 @@
 package tests
 
 import (
+	"personal/action/workout"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/create_exercise"
-	"personal/action/get_exercise_history"
 	"personal/domain"
 )
 
 func (s *IntegrationTestSuite) TestGetExerciseHistory_ReturnsMultipleWorkouts() {
 	ctx := s.Context()
 
-	_, ex, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Bench Press", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
@@ -45,7 +44,7 @@ func (s *IntegrationTestSuite) TestGetExerciseHistory_ReturnsMultipleWorkouts() 
 		require.NoError(s.T(), err)
 	}
 
-	_, output, err := get_exercise_history.GetExerciseHistory(ctx, nil, get_exercise_history.GetExerciseHistoryInput{
+	_, output, err := workout.GetExerciseHistory(ctx, nil, workout.GetExerciseHistoryInput{
 		ExerciseID: ex.ID,
 		Limit:      10,
 	})
@@ -60,7 +59,7 @@ func (s *IntegrationTestSuite) TestGetExerciseHistory_ReturnsMultipleWorkouts() 
 func (s *IntegrationTestSuite) TestGetExerciseHistory_Pagination() {
 	ctx := s.Context()
 
-	_, ex, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Squat", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
@@ -77,13 +76,13 @@ func (s *IntegrationTestSuite) TestGetExerciseHistory_Pagination() {
 		require.NoError(s.T(), err)
 	}
 
-	_, page1, err := get_exercise_history.GetExerciseHistory(ctx, nil, get_exercise_history.GetExerciseHistoryInput{
+	_, page1, err := workout.GetExerciseHistory(ctx, nil, workout.GetExerciseHistoryInput{
 		ExerciseID: ex.ID, Limit: 2, Offset: 0,
 	})
 	require.NoError(s.T(), err)
 	assert.Len(s.T(), page1.Sessions, 2)
 
-	_, page2, err := get_exercise_history.GetExerciseHistory(ctx, nil, get_exercise_history.GetExerciseHistoryInput{
+	_, page2, err := workout.GetExerciseHistory(ctx, nil, workout.GetExerciseHistoryInput{
 		ExerciseID: ex.ID, Limit: 2, Offset: 2,
 	})
 	require.NoError(s.T(), err)
@@ -93,12 +92,12 @@ func (s *IntegrationTestSuite) TestGetExerciseHistory_Pagination() {
 func (s *IntegrationTestSuite) TestGetExerciseHistory_NoHistory() {
 	ctx := s.Context()
 
-	_, ex, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Deadlift", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := get_exercise_history.GetExerciseHistory(ctx, nil, get_exercise_history.GetExerciseHistoryInput{
+	_, output, err := workout.GetExerciseHistory(ctx, nil, workout.GetExerciseHistoryInput{
 		ExerciseID: ex.ID,
 	})
 	require.NoError(s.T(), err)

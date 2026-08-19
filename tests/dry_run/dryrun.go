@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"personal/action/money"
 	"sort"
-
-	"personal/action/money_import"
 )
 
 func main() {
@@ -19,7 +18,7 @@ func main() {
 	account := os.Args[1]
 	path := os.Args[2]
 
-	parser := money_import.ParserFor(account)
+	parser := money.ParserFor(account)
 	if parser == nil {
 		fmt.Printf("unknown account %q — supported: Revolut, Bank of Cyprus\n", account)
 		os.Exit(1)
@@ -66,14 +65,14 @@ func main() {
 
 		txType := "expense"
 		amt := math.Abs(raw.Amount)
-		if override := money_import.InferTypeOverride(raw.Description); override != "" {
+		if override := money.InferTypeOverride(raw.Description); override != "" {
 			txType = override
 		} else if raw.Amount > 0 {
 			txType = "income"
 		}
 
-		merchant := money_import.RecognizeMerchant(raw.Description)
-		category := money_import.InferCategory(merchant, raw.Description)
+		merchant := money.RecognizeMerchant(raw.Description)
+		category := money.InferCategory(merchant, raw.Description)
 		if category == "" {
 			category = "(uncategorized)"
 		}

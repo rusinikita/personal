@@ -1,35 +1,34 @@
 package tests
 
 import (
+	"personal/action/workout"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/create_exercise"
-	"personal/action/search_exercises"
 	"personal/domain"
 )
 
 func (s *IntegrationTestSuite) TestSearchExercises_ReturnsMatchingExercises() {
 	ctx := s.Context()
 
-	_, bench, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, bench, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Bench Press", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, incline, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, incline, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Incline Bench Press", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, _, err = create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, _, err = workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Squat", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := search_exercises.SearchExercises(ctx, nil, search_exercises.SearchExercisesInput{
+	_, output, err := workout.SearchExercises(ctx, nil, workout.SearchExercisesInput{
 		NameVariants: []string{"bench"},
 	})
 	require.NoError(s.T(), err)
@@ -43,12 +42,12 @@ func (s *IntegrationTestSuite) TestSearchExercises_ReturnsMatchingExercises() {
 func (s *IntegrationTestSuite) TestSearchExercises_MultipleVariantsIncreaseMatchCount() {
 	ctx := s.Context()
 
-	_, _, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, _, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Overhead Press", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := search_exercises.SearchExercises(ctx, nil, search_exercises.SearchExercisesInput{
+	_, output, err := workout.SearchExercises(ctx, nil, workout.SearchExercisesInput{
 		NameVariants: []string{"overhead", "press"},
 	})
 	require.NoError(s.T(), err)
@@ -59,12 +58,12 @@ func (s *IntegrationTestSuite) TestSearchExercises_MultipleVariantsIncreaseMatch
 func (s *IntegrationTestSuite) TestSearchExercises_CaseInsensitive() {
 	ctx := s.Context()
 
-	_, _, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, _, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Deadlift", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := search_exercises.SearchExercises(ctx, nil, search_exercises.SearchExercisesInput{
+	_, output, err := workout.SearchExercises(ctx, nil, workout.SearchExercisesInput{
 		NameVariants: []string{"DEADLIFT"},
 	})
 	require.NoError(s.T(), err)
@@ -75,7 +74,7 @@ func (s *IntegrationTestSuite) TestSearchExercises_CaseInsensitive() {
 func (s *IntegrationTestSuite) TestSearchExercises_ReturnsEmptyWhenNoMatches() {
 	ctx := s.Context()
 
-	_, output, err := search_exercises.SearchExercises(ctx, nil, search_exercises.SearchExercisesInput{
+	_, output, err := workout.SearchExercises(ctx, nil, workout.SearchExercisesInput{
 		NameVariants: []string{"zzznomatch"},
 	})
 	require.NoError(s.T(), err)
@@ -86,7 +85,7 @@ func (s *IntegrationTestSuite) TestSearchExercises_ReturnsEmptyWhenNoMatches() {
 func (s *IntegrationTestSuite) TestSearchExercises_ReturnsLastUsedAt() {
 	ctx := s.Context()
 
-	_, ex, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Pull-up", EquipmentType: "bodyweight",
 	})
 	require.NoError(s.T(), err)
@@ -101,7 +100,7 @@ func (s *IntegrationTestSuite) TestSearchExercises_ReturnsLastUsedAt() {
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := search_exercises.SearchExercises(ctx, nil, search_exercises.SearchExercisesInput{
+	_, output, err := workout.SearchExercises(ctx, nil, workout.SearchExercisesInput{
 		NameVariants: []string{"pull"},
 	})
 	require.NoError(s.T(), err)
@@ -112,7 +111,7 @@ func (s *IntegrationTestSuite) TestSearchExercises_ReturnsLastUsedAt() {
 func (s *IntegrationTestSuite) TestSearchExercises_ValidationErrorForEmptyVariants() {
 	ctx := s.Context()
 
-	_, output, err := search_exercises.SearchExercises(ctx, nil, search_exercises.SearchExercisesInput{
+	_, output, err := workout.SearchExercises(ctx, nil, workout.SearchExercisesInput{
 		NameVariants: []string{},
 	})
 	require.NoError(s.T(), err)

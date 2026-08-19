@@ -2,43 +2,21 @@
 
 ## Overview
 
-System for tracking progress across life areas, projects, and goals with periodic reflection and statistics. Supports different progress types
-(mood, habit progress, project progress, promise state), enables daily/weekly reflections, and provides detailed statistics on trends and completion
-rates. Activities can represent habits (daily recurring), projects (time-bound with completion), or maintenance goals (ongoing without completion).
+System for tracking progress across life areas, projects, and goals with periodic reflection and statistics. Supports different progress types (mood, habit progress, project progress, promise state), enables daily/weekly reflections, and provides detailed statistics on trends and completion rates. Activities can represent habits (daily recurring), projects (time-bound with completion), or maintenance goals (ongoing without completion).
 
-## Features
+## Best Practices Applied
 
-### Core Entities
+- **Multi-user Support**: user_id extracted from JWT/session context on every table, not passed explicitly
+- **Bounded Value Scale**: every progress point is a single int from -2 to +2, interpreted differently per progress_type (mood/habit_progress/project_progress/promise_state)
+- **Natural Language Mapping**: `get_progress_type_examples` is the canonical source of word/emoji → value mappings, used by the AI to parse free-form user responses instead of hardcoded keyword lists
+- **Flexible Activity Shapes**: frequency_days plus nullable ended_at let the same table represent daily habits, weekly check-ins, and time-bound projects
+- **Optional Life-area Categorization**: life_part_ids is an array (an activity can belong to zero or more life parts); life parts themselves are seeded via repository/script, not exposed as an MCP tool
+- **Multi-variant Search**: `search_progress_notes` follows the same 1-5 variant + match_count ranking pattern as `resolve_food_id_by_name` and `search_exercises`
+- **UTC Timezone**: all timestamps in UTC
 
-**Life Parts** - Categorize activities by life area (discipline, health, fame, professionalism, business, career). Important for organizing
-reflections by theme and understanding life balance.
+## Architecture Diagrams
 
-**Activities** - Represent trackable items like habits, projects, or goals. Important for defining what to track and how frequently to check in.
-
-**Activity Progress Points** - Record progress values at specific times. Important for tracking trends, calculating statistics, and reflecting on
-movement towards goals.
-
-### Key Actions
-
-**Create Activity** - Define new trackable activity with progress scale type and check-in frequency. Important to establish tracking system and
-reflection cadence.
-
-**Edit Activity** - Update mutable fields of an existing activity (name, description, frequency_days, life_part_ids). Important for keeping
-activity metadata accurate over time.
-
-**Create Life Part** - Organize activities into life areas. Important for structured reflection and balanced life review.
-
-**Create Progress Point** - Log progress with value and optional notes. Important for building historical data and trend analysis.
-
-**Get Activity List** - View all active activities ordered by priority. Important for systematic reflection without missing items.
-
-**Get Activity Stats** - View last 3 points, trend averages, and percentiles. Important for understanding current state and progress direction.
-
-**Get New Points** - View recently created points (last 6 hours). Important for summarizing completed reflection sessions.
-
-**Finish Activity** - Mark activity as completed and set end date. Important for project completion and preventing future check-ins.
-
-## Database
+### Entity Relation Diagram
 
 ```mermaid
 erDiagram
@@ -78,468 +56,69 @@ erDiagram
     }
 ```
 
-## Entities
+### C4 Context Diagram
 
-```go
-package progress
+```mermaid
+graph TB
+    User[User/Claude MCP Client]
 
-import "time"
+    subgraph "Progress Tracking System"
+        MCP[MCP Server]
+        DB[(PostgreSQL Database)]
 
-// ProgressType represents the value scale used for tracking
-type ProgressType string
+        MCP -->|SQL queries| DB
+    end
 
-const (
-    ProgressTypeMood           ProgressType = "mood"            // Emotional state scale
-    ProgressTypeHabitProgress  ProgressType = "habit_progress"  // Adherence to habit scale
-    ProgressTypeProjectProgress ProgressType = "project_progress" // Movement towards goal scale
-    ProgressTypePromiseState   ProgressType = "promise_state"   // Commitment tracking scale
-)
+    User -->|create_activity| MCP
+    User -->|edit_activity| MCP
+    User -->|get_activity_list| MCP
+    User -->|get_progress_type_examples| MCP
+    User -->|get_activity_stats| MCP
+    User -->|create_progress_point| MCP
+    User -->|finish_activity| MCP
+    User -->|search_progress_notes| MCP
 
-// ProgressValue scale: -2 to +2
-// For mood: red/hell (-2), black/dark (-1), gray (0), white/bright (+1), green/happy (+2)
-// For habit_progress: missing (-2), mostly not doing (-1), trying (0), mostly doing (+1), doing well (+2)
-// For project_progress: plans changed (-2), rolled back (-1), stuck (0), moving forward (+1), good progress (+2)
-// For promise_state: I forgot (-1), I remember (0), I am trying (+1), [special: done/failed outside scale]
+    DB -.->|life_parts table| DB
+    DB -.->|activities table| DB
+    DB -.->|activity_progress table| DB
 
-// LifePart represents a life area categorization
-type LifePart struct {
-    ID          int64     `json:"id" db:"id"`
-    UserID      int64     `json:"user_id" db:"user_id"`
-    Name        string    `json:"name" db:"name" jsonschema:"Life area name"`
-    Description string    `json:"description,omitempty" db:"description" jsonschema:"Life area description"`
-    CreatedAt   time.Time `json:"created_at" db:"created_at"`
-}
-
-// Activity represents a trackable goal or habit
-type Activity struct {
-    ID            int64        `json:"id" db:"id"`
-    UserID        int64        `json:"user_id" db:"user_id"`
-    LifePartIDs   []int64      `json:"life_part_ids,omitempty" db:"life_part_ids" jsonschema:"Array of life part IDs this activity belongs to"`
-    Name          string       `json:"name" db:"name" jsonschema:"Activity name"`
-    Description   string       `json:"description,omitempty" db:"description" jsonschema:"Activity description"`
-    ProgressType  ProgressType `json:"progress_type" db:"progress_type" jsonschema:"Progress value scale type (mood|habit_progress|project_progress|promise_state)"`
-    FrequencyDays int          `json:"frequency_days" db:"frequency_days" jsonschema:"Check-in frequency in days (1 = daily, 7 = weekly)"`
-    StartedAt     time.Time    `json:"started_at" db:"started_at"`
-    EndedAt       time.Time    `json:"ended_at,omitempty" db:"ended_at"` // Zero value if active
-    CreatedAt     time.Time    `json:"created_at" db:"created_at"`
-}
-
-// ActivityPoint represents a single progress point
-type ActivityPoint struct {
-    ID         int64     `json:"id" db:"id"`
-    ActivityID int64     `json:"activity_id" db:"activity_id" jsonschema:"Activity ID this progress point belongs to"`
-    UserID     int64     `json:"user_id" db:"user_id"`
-    Value      int       `json:"value" db:"value" jsonschema:"Progress value from -2 to +2"`
-    HoursLeft  float64   `json:"hours_left,omitempty" db:"hours_left" jsonschema:"Estimated hours remaining for projects (0 if not tracking)"`
-    Note       string    `json:"note,omitempty" db:"note" jsonschema:"Optional note about this progress point"`
-    ProgressAt  time.Time `json:"progress_at" db:"progress_at" jsonschema:"When progress was made (defaults to now if empty)"`
-    CreatedAt  time.Time `json:"created_at" db:"created_at"`
-}
-
-// ActivityStats represents calculated statistics for an activity
-type ActivityStats struct {
-    ActivityID        int64              `json:"activity_id" jsonschema:"Activity ID"`
-    Last3Points       []ActivityPoint `json:"last_3_points" jsonschema:"Last 3 progress points"`
-    TrendOverall      TrendStats         `json:"trend_overall" jsonschema:"Statistics for all time"`
-    TrendLastMonth    TrendStats         `json:"trend_last_month" jsonschema:"Statistics for last 30 days"`
-    TrendLastWeek     TrendStats         `json:"trend_last_week" jsonschema:"Statistics for last 7 days"`
-}
-
-// TrendStats represents aggregated trend data for a time period
-type TrendStats struct {
-    Count         int     `json:"count" jsonschema:"Number of progress points in this period"`
-    Average       float64 `json:"average,omitempty" jsonschema:"Average progress value (0 if no data)"`
-    Percentile80  float64 `json:"percentile_80,omitempty" jsonschema:"80th percentile value (0 if no data)"`
-}
-
-// ProgressTypeExamples represents all natural language mapping examples
-type ProgressTypeExamples struct {
-    Examples []ProgressTypeMapping `json:"examples" jsonschema:"Mapping examples for each progress type"`
-}
-
-// ProgressTypeMapping represents mapping examples for a single progress type
-type ProgressTypeMapping struct {
-    ProgressType ProgressType `json:"progress_type" jsonschema:"Progress type (mood|habit_progress|project_progress|promise_state)"`
-    Mappings     []MappingSet `json:"mappings" jsonschema:"Different mapping metaphors for this progress type"`
-}
-
-// MappingSet represents a single mapping metaphor with its values
-type MappingSet struct {
-    MappingName string         `json:"mapping_name" jsonschema:"Name of mapping metaphor (e.g. 'mood as weather')"`
-    Values      []MappingValue `json:"values" jsonschema:"Natural language mappings for each value"`
-}
-
-// MappingValue represents a single natural language to numeric value mapping
-type MappingValue struct {
-    Word  string `json:"word" jsonschema:"Natural language word or phrase"`
-    Value int    `json:"value" jsonschema:"Progress value from -2 to +2"`
-    Emoji string `json:"emoji" jsonschema:"Associated emoji"`
-}
-
-// ActivityFilter defines query parameters for listing activities
-type ActivityFilter struct {
-    UserID       int64     `json:"user_id"`
-    ActiveOnly   bool      `json:"active_only" jsonschema:"Only return active activities (not finished)"`
-    LifePartIDs  []int64   `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
-}
-
-// ProgressFilter defines query parameters for listing progress points
-type ProgressFilter struct {
-    UserID     int64     `json:"user_id"`
-    ActivityID int64     `json:"activity_id,omitempty" jsonschema:"Filter by activity ID (0 = all activities)"`
-    From       time.Time `json:"from,omitempty" jsonschema:"Start date filter (empty = no start filter)"`
-    To         time.Time `json:"to,omitempty" jsonschema:"End date filter (empty = no end filter)"`
-	Limit      int64     `json:"limit,omitempty" jsonschema:"Limit of returned progresses sorted by progress_at DESC"`
-}
+    style User fill:#e1f5ff
+    style MCP fill:#ffe1e1
+    style DB fill:#e1ffe1
 ```
 
-## Repository
+### Sequence Diagram: Reflection Check-in
 
-```go
-// gateways/progress_repository.go
-type ProgressRepository interface {
-    // Life Part CRUD
-    CreateLifePart(ctx context.Context, lifePart LifePart) (int64, error)
-    ListLifeParts(ctx context.Context, userID int64) ([]LifePart, error)
+```mermaid
+sequenceDiagram
+    participant User
+    participant MCP
+    participant DB
 
-    // Activity CRUD
-    CreateActivity(ctx context.Context, activity *Activity) (int64, error)
-    GetActivity(ctx context.Context, activityID int64, userID int64) (*Activity, error)
-    ListActivities(ctx context.Context, filter ActivityFilter) ([]Activity, error)
-    UpdateActivity(ctx context.Context, activity *Activity) error
-    FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
+    User->>MCP: get_progress_type_examples()
+    MCP-->>User: natural language mappings per progress_type
 
-    // Progress CRUD
-    CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error)
-    ListProgress(ctx context.Context, filter ProgressFilter) ([]ActivityPoint, error)
+    User->>MCP: get_activity_list()
+    MCP->>DB: SELECT * FROM activities<br/>WHERE user_id=? AND ended_at IS NULL<br/>ORDER BY frequency_days ASC, name
+    DB-->>MCP: active activities
+    MCP-->>User: activities
 
-    // Statistics helpers
-    GetTrendStats(ctx context.Context, activityID int64, from time.Time, to time.Time) (TrendStats, error)
-}
+    loop For each activity
+        User->>MCP: get_activity_stats(activity_id)
+        MCP->>DB: last 3 points + trend aggregates<br/>(overall / 30d / 7d)
+        DB-->>MCP: ActivityStats
+        MCP-->>User: last_3_points, trend_overall, trend_last_month, trend_last_week
+    end
+
+    User->>MCP: create_progress_point(activity_id, value, note)
+    MCP->>DB: INSERT INTO activity_progress (...)
+    DB-->>MCP: point id
+    MCP-->>User: created progress point
 ```
 
+## Database Schema
 
-## MCP Tools
-
-### create_life_part
-**DO NOT IMPLEMENT** - Life parts will be created via repository/script, not through MCP tools.
-
-Creates a new life area category. Validates name is 1-100 characters. Generates ID, sets timestamps, saves to database. Returns created life part
-with ID.
-
-**Input**:
-```json
-{"name": "string", "description": ""}
-```
-
-**Output**:
-```json
-{"life_part": {"id": 123, "name": "...", "description": "...", "created_at": "..."}}
-```
-
-**Errors**: Invalid name length, database error
-
-### create_activity
-
-Creates a new trackable activity. Validates all required fields, sets started_at to current time if not provided, ended_at to NULL. Requires
-progress_type (mood/habit_progress/project_progress/promise_state) and frequency_days (positive integer). Activity can belong to multiple life
-parts via life_part_ids array.
-
-**Input**:
-```json
-{
-  "name": "string",
-  "progress_type": "mood|habit_progress|project_progress|promise_state",
-  "frequency_days": 1,
-  "description": "",
-  "life_part_ids": [123, 456],
-  "started_at": ""
-}
-```
-
-**Output**:
-```json
-{"id": 456, "name": "...", "description": "...", "progress_type": "project_progress", "frequency_days": 1, "life_part_ids": [123, 456], "started_at": "...", "created_at": "..."}
-```
-
-**Logic**:
-- Validate: name non-empty; progress_type is valid enum; frequency_days >= 1
-- Parse started_at or default to time.Now()
-- Call `DB.CreateActivity` → new ID
-- Fetch via `DB.GetActivity` and return
-
-**Errors**: Invalid fields, invalid enums, database error
-
-### edit_activity
-
-Updates mutable fields of an existing activity. At least one optional field must be provided. Fetches current activity, applies only provided
-fields, saves. description can be explicitly cleared to empty string.
-
-**Input**:
-```json
-{
-  "activity_id": 456,
-  "name": "",
-  "description": "",
-  "frequency_days": 0,
-  "life_part_ids": []
-}
-```
-
-At least one of `name`, `description`, `frequency_days`, `life_part_ids` must be provided (use pointer/omitempty semantics: omit field to leave unchanged, pass empty string to clear description).
-
-**Output**:
-```json
-{"id": 456, "name": "...", "description": "...", "progress_type": "project_progress", "frequency_days": 7, "life_part_ids": [], "started_at": "...", "created_at": "..."}
-```
-
-**Logic**:
-- Validate: at least one field provided; frequency_days >= 1 if provided
-- Call `DB.GetActivity(activityID, userID)` — error if not found
-- Apply updates over existing values
-- Call `DB.UpdateActivity(activity)`
-- Fetch via `DB.GetActivity` and return
-
-**Errors**: Activity not found, no fields provided, invalid frequency_days, database error
-
-### get_activity_list
-Lists all active activities (ended_at IS NULL) for authenticated user, ordered by frequency_days ASC (most frequent first), then by name. Returns
-array of activities with basic info.
-
-**Input**:
-```json
-{}
-```
-
-**Output**:
-```json
-{"activities": [{"id": 456, "name": "...", "progress_type": "...", "frequency_days": 1}]}
-```
-
-**Errors**: Database error
-
-### get_progress_type_examples
-Returns natural language mapping examples for all progress types. No input parameters required. Returns structured mapping sets showing how to express
-progress values using natural language with emojis.
-
-**Input**:
-```json
-{}
-```
-
-**Output**:
-```json
-{
-  "examples": [
-    {
-      "progress_type": "mood",
-      "mappings": [
-        {
-          "mapping_name": "mood as weather",
-          "values": [
-            {"word": "sunny", "value": 2, "emoji": "☀️"},
-            {"word": "partly cloudy", "value": 1, "emoji": "⛅"},
-            {"word": "overcast", "value": 0, "emoji": "☁️"},
-            {"word": "rainy", "value": -1, "emoji": "🌧️"},
-            {"word": "stormy", "value": -2, "emoji": "⛈️"}
-          ]
-        },
-        {
-          "mapping_name": "mood as light",
-          "values": [
-            {"word": "bright", "value": 2, "emoji": "✨"},
-            {"word": "light", "value": 1, "emoji": "💡"},
-            {"word": "dim", "value": 0, "emoji": "🕯️"},
-            {"word": "dark", "value": -1, "emoji": "🌑"},
-            {"word": "pitch black", "value": -2, "emoji": "⚫"}
-          ]
-        },
-        {
-          "mapping_name": "mood as colors",
-          "values": [
-            {"word": "green", "value": 2, "emoji": "💚"},
-            {"word": "white", "value": 1, "emoji": "🤍"},
-            {"word": "gray", "value": 0, "emoji": "🩶"},
-            {"word": "black", "value": -1, "emoji": "🖤"},
-            {"word": "red", "value": -2, "emoji": "❤️‍🔥"}
-          ]
-        }
-      ]
-    },
-    {
-      "progress_type": "habit_progress",
-      "mappings": [
-        {
-          "mapping_name": "habit consistency",
-          "values": [
-            {"word": "crushing it", "value": 2, "emoji": "💪"},
-            {"word": "mostly doing", "value": 1, "emoji": "👍"},
-            {"word": "trying", "value": 0, "emoji": "🤔"},
-            {"word": "rarely", "value": -1, "emoji": "😔"},
-            {"word": "not doing", "value": -2, "emoji": "❌"}
-          ]
-        },
-        {
-          "mapping_name": "habit as garden",
-          "values": [
-            {"word": "blooming", "value": 2, "emoji": "🌸"},
-            {"word": "growing", "value": 1, "emoji": "🌱"},
-            {"word": "planted", "value": 0, "emoji": "🌰"},
-            {"word": "wilting", "value": -1, "emoji": "🥀"},
-            {"word": "withered", "value": -2, "emoji": "🍂"}
-          ]
-        }
-      ]
-    },
-    {
-      "progress_type": "project_progress",
-      "mappings": [
-        {
-          "mapping_name": "project momentum",
-          "values": [
-            {"word": "breakthrough", "value": 2, "emoji": "🚀"},
-            {"word": "moving forward", "value": 1, "emoji": "➡️"},
-            {"word": "stuck", "value": 0, "emoji": "⏸️"},
-            {"word": "setback", "value": -1, "emoji": "↩️"},
-            {"word": "changed plans", "value": -2, "emoji": "🔄"}
-          ]
-        },
-        {
-          "mapping_name": "project as journey",
-          "values": [
-            {"word": "sprinting", "value": 2, "emoji": "🏃"},
-            {"word": "walking", "value": 1, "emoji": "🚶"},
-            {"word": "resting", "value": 0, "emoji": "🧘"},
-            {"word": "backtracking", "value": -1, "emoji": "🔙"},
-            {"word": "lost", "value": -2, "emoji": "🗺️"}
-          ]
-        }
-      ]
-    },
-    {
-      "progress_type": "promise_state",
-      "mappings": [
-        {
-          "mapping_name": "promise awareness",
-          "values": [
-            {"word": "did something", "value": 1, "emoji": "✅"},
-            {"word": "remember", "value": 0, "emoji": "💭"},
-            {"word": "forgot", "value": -1, "emoji": "🤷"}
-          ]
-        },
-        {
-          "mapping_name": "promise as flame",
-          "values": [
-            {"word": "burning", "value": 1, "emoji": "🔥"},
-            {"word": "lit", "value": 0, "emoji": "🕯️"},
-            {"word": "extinguished", "value": -1, "emoji": "💨"}
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Errors**: None (hardcoded data)
-
-### get_activity_stats
-Returns comprehensive statistics for a specific activity. Fetches last 3 points, calculates trend averages and 80th percentiles for three time
-windows: overall (from started_at), last 30 days, last 7 days. Returns NULL for periods with no data.
-
-**Input**:
-```json
-{"activity_id": 456}
-```
-
-**Output**:
-```json
-{
-  "stats": {
-    "activity_id": 456,
-    "last_3_points": [],
-    "trend_overall": {"count": 45, "average": 1.2, "percentile_80": 2},
-    "trend_last_month": {"count": 12, "average": 1.5, "percentile_80": 2},
-    "trend_last_week": {"count": 3, "average": 1.8, "percentile_80": 2}
-  }
-}
-```
-
-**Errors**: Activity not found, unauthorized access
-
-### create_progress_point
-Creates a progress point for an activity. Validates activity ownership, validates value is between -2 and +2, sets progress_at to current time (or
-provided time). Optional fields: note, hours_left (for projects tracking remaining work).
-
-**Input**:
-```json
-{
-  "activity_id": 456,
-  "value": 1,
-  "note": "",
-  "hours_left": 0,
-  "progress_at": ""
-}
-```
-
-**Output**:
-```json
-{"progress": {"id": 789, "activity_id": 456, "value": 1, "progress_at": "..."}}
-```
-
-**Errors**: Activity not found, unauthorized, invalid value range
-
-### finish_activity
-Marks an activity as finished by setting ended_at timestamp. Verifies ownership, validates activity is currently active (ended_at IS NULL). Used for
-completing projects or ending habits/maintenance goals.
-
-**Input**:
-```json
-{
-  "activity_id": 456,
-  "ended_at": ""
-}
-```
-
-**Output**:
-```json
-{
-  "success": true,
-  "message": "Activity finished",
-  "activity": {"id": 456, "ended_at": "..."}
-}
-```
-
-**Errors**: Activity not found, unauthorized, already finished
-
-### get_new_points
-Lists recently created progress points (last 6 hours) for authenticated user across all activities. Returns points with activity names, ordered by
-created_at DESC. Useful for summarizing completed reflection sessions.
-
-**Input**:
-```json
-{}
-```
-
-**Output**:
-```json
-{
-  "points": [
-    {
-      "id": 789,
-      "activity_id": 456,
-      "activity_name": "...",
-      "value": 1,
-      "note": "...",
-      "created_at": "..."
-    }
-  ]
-}
-```
-
-**Errors**: Database error
-
-## Database Migration
+### SQL DDL
 
 ```sql
 -- Life parts table
@@ -592,7 +171,200 @@ CREATE INDEX idx_progress_progress_at ON activity_progress(progress_at DESC);
 CREATE INDEX idx_progress_created_at ON activity_progress(created_at DESC);
 ```
 
-## Dialog Instructions for AI
+## Go Code Structure
+
+### Domain Models
+
+```go
+package progress
+
+import "time"
+
+// ProgressType represents the value scale used for tracking
+type ProgressType string
+
+const (
+    ProgressTypeMood            ProgressType = "mood"            // Emotional state scale
+    ProgressTypeHabitProgress   ProgressType = "habit_progress"  // Adherence to habit scale
+    ProgressTypeProjectProgress ProgressType = "project_progress" // Movement towards goal scale
+    ProgressTypePromiseState    ProgressType = "promise_state"   // Commitment tracking scale
+)
+
+// ProgressValue scale: -2 to +2
+// For mood: red/hell (-2), black/dark (-1), gray (0), white/bright (+1), green/happy (+2)
+// For habit_progress: missing (-2), mostly not doing (-1), trying (0), mostly doing (+1), doing well (+2)
+// For project_progress: plans changed (-2), rolled back (-1), stuck (0), moving forward (+1), good progress (+2)
+// For promise_state: I forgot (-1), I remember (0), I am trying (+1), [special: done/failed outside scale]
+
+// LifePart represents a life area categorization
+type LifePart struct {
+    ID          int64     `json:"id" db:"id"`
+    UserID      int64     `json:"user_id" db:"user_id"`
+    Name        string    `json:"name" db:"name" jsonschema:"Life area name"`
+    Description string    `json:"description,omitempty" db:"description" jsonschema:"Life area description"`
+    CreatedAt   time.Time `json:"created_at" db:"created_at"`
+}
+
+// Activity represents a trackable goal or habit
+type Activity struct {
+    ID            int64        `json:"id" db:"id"`
+    UserID        int64        `json:"user_id" db:"user_id"`
+    LifePartIDs   []int64      `json:"life_part_ids,omitempty" db:"life_part_ids" jsonschema:"Array of life part IDs this activity belongs to"`
+    Name          string       `json:"name" db:"name" jsonschema:"Activity name"`
+    Description   string       `json:"description,omitempty" db:"description" jsonschema:"Activity description"`
+    ProgressType  ProgressType `json:"progress_type" db:"progress_type" jsonschema:"Progress value scale type (mood|habit_progress|project_progress|promise_state)"`
+    FrequencyDays int          `json:"frequency_days" db:"frequency_days" jsonschema:"Check-in frequency in days (1 = daily, 7 = weekly)"`
+    StartedAt     time.Time    `json:"started_at" db:"started_at"`
+    EndedAt       time.Time    `json:"ended_at,omitempty" db:"ended_at"` // Zero value if active
+    CreatedAt     time.Time    `json:"created_at" db:"created_at"`
+}
+
+// ActivityPoint represents a single progress point
+type ActivityPoint struct {
+    ID         int64     `json:"id" db:"id"`
+    ActivityID int64     `json:"activity_id" db:"activity_id" jsonschema:"Activity ID this progress point belongs to"`
+    UserID     int64     `json:"user_id" db:"user_id"`
+    Value      int       `json:"value" db:"value" jsonschema:"Progress value from -2 to +2"`
+    HoursLeft  float64   `json:"hours_left,omitempty" db:"hours_left" jsonschema:"Estimated hours remaining for projects (0 if not tracking)"`
+    Note       string    `json:"note,omitempty" db:"note" jsonschema:"Optional note about this progress point"`
+    ProgressAt time.Time `json:"progress_at" db:"progress_at" jsonschema:"When progress was made (defaults to now if empty)"`
+    CreatedAt  time.Time `json:"created_at" db:"created_at"`
+}
+
+// ActivityPointWithActivity is ActivityPoint enriched with activity name, used by search_progress_notes
+type ActivityPointWithActivity struct {
+    ActivityPoint
+    ActivityName string `json:"activity_name" db:"activity_name"`
+}
+
+// ActivityStats represents calculated statistics for an activity
+type ActivityStats struct {
+    ActivityID     int64           `json:"activity_id" jsonschema:"Activity ID"`
+    Last3Points    []ActivityPoint `json:"last_3_points" jsonschema:"Last 3 progress points"`
+    TrendOverall   TrendStats      `json:"trend_overall" jsonschema:"Statistics for all time"`
+    TrendLastMonth TrendStats      `json:"trend_last_month" jsonschema:"Statistics for last 30 days"`
+    TrendLastWeek  TrendStats      `json:"trend_last_week" jsonschema:"Statistics for last 7 days"`
+}
+
+// TrendStats represents aggregated trend data for a time period
+type TrendStats struct {
+    Count        int     `json:"count" jsonschema:"Number of progress points in this period"`
+    Average      float64 `json:"average,omitempty" jsonschema:"Average progress value (0 if no data)"`
+    Percentile80 float64 `json:"percentile_80,omitempty" jsonschema:"80th percentile value (0 if no data)"`
+}
+
+// ProgressTypeExamples represents all natural language mapping examples
+type ProgressTypeExamples struct {
+    Examples []ProgressTypeMapping `json:"examples" jsonschema:"Mapping examples for each progress type"`
+}
+
+// ProgressTypeMapping represents mapping examples for a single progress type
+type ProgressTypeMapping struct {
+    ProgressType ProgressType `json:"progress_type" jsonschema:"Progress type (mood|habit_progress|project_progress|promise_state)"`
+    Mappings     []MappingSet `json:"mappings" jsonschema:"Different mapping metaphors for this progress type"`
+}
+
+// MappingSet represents a single mapping metaphor with its values
+type MappingSet struct {
+    MappingName string         `json:"mapping_name" jsonschema:"Name of mapping metaphor (e.g. 'mood as weather')"`
+    Values      []MappingValue `json:"values" jsonschema:"Natural language mappings for each value"`
+}
+
+// MappingValue represents a single natural language to numeric value mapping
+type MappingValue struct {
+    Word  string `json:"word" jsonschema:"Natural language word or phrase"`
+    Value int    `json:"value" jsonschema:"Progress value from -2 to +2"`
+    Emoji string `json:"emoji" jsonschema:"Associated emoji"`
+}
+
+// ActivityFilter defines query parameters for listing activities
+type ActivityFilter struct {
+    UserID      int64   `json:"user_id"`
+    ActiveOnly  bool    `json:"active_only" jsonschema:"Only return active activities (not finished)"`
+    LifePartIDs []int64 `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
+}
+
+// ProgressFilter defines query parameters for listing progress points
+type ProgressFilter struct {
+    UserID     int64     `json:"user_id"`
+    ActivityID int64     `json:"activity_id,omitempty" jsonschema:"Filter by activity ID (0 = all activities)"`
+    From       time.Time `json:"from,omitempty" jsonschema:"Start date filter (empty = no start filter)"`
+    To         time.Time `json:"to,omitempty" jsonschema:"End date filter (empty = no end filter)"`
+    Limit      int64     `json:"limit,omitempty" jsonschema:"Limit of returned progresses sorted by progress_at DESC"`
+}
+
+// ProgressNoteSearchFilter defines parameters for a single-variant note search
+type ProgressNoteSearchFilter struct {
+    UserID     int64     `json:"user_id"`
+    Query      string    `json:"query"`                 // required, ILIKE substring
+    ActivityID int64     `json:"activity_id,omitempty"` // 0 = all activities
+    From       time.Time `json:"from,omitempty"`
+    To         time.Time `json:"to,omitempty"`
+    ValueMin   *int      `json:"value_min,omitempty"`
+    ValueMax   *int      `json:"value_max,omitempty"`
+}
+```
+
+### Repository Interface
+
+```go
+// gateways/progress_repository.go
+type ProgressRepository interface {
+    // Life Part CRUD (seeded via repository/script, no MCP tool)
+    CreateLifePart(ctx context.Context, lifePart LifePart) (int64, error)
+    ListLifeParts(ctx context.Context, userID int64) ([]LifePart, error)
+
+    // Activity CRUD
+    CreateActivity(ctx context.Context, activity *Activity) (int64, error)
+    GetActivity(ctx context.Context, activityID int64, userID int64) (*Activity, error)
+    ListActivities(ctx context.Context, filter ActivityFilter) ([]Activity, error)
+    UpdateActivity(ctx context.Context, activity *Activity) error
+    FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
+
+    // Progress CRUD
+    CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error)
+    ListProgress(ctx context.Context, filter ProgressFilter) ([]ActivityPoint, error)
+    SearchProgressNotes(ctx context.Context, filter ProgressNoteSearchFilter) ([]ActivityPointWithActivity, error)
+
+    // Statistics helpers
+    GetTrendStats(ctx context.Context, activityID int64, from time.Time, to time.Time) (TrendStats, error)
+}
+```
+
+## MCP Tools
+
+### create_activity
+Creates a new trackable activity (name, progress_type, frequency_days, optional life_part_ids/description/started_at). Validates progress_type enum and frequency_days >= 1.
+
+### edit_activity
+Updates mutable fields (name, description, frequency_days, life_part_ids) of an existing activity. At least one field required; unspecified fields keep their current value.
+
+### get_activity_list
+Lists active activities (ended_at IS NULL) ordered by frequency_days ASC, then name.
+
+### get_progress_type_examples
+Returns hardcoded natural language ↔ numeric value mapping examples (multiple metaphors per progress_type, with emojis) — no input, no DB access. Canonical source for interpreting free-form user responses.
+
+### get_activity_stats
+Returns last 3 progress points plus trend averages and 80th percentiles for three windows: overall, last 30 days, last 7 days.
+
+### create_progress_point
+Logs a progress point for an activity: value (-2 to +2, required), optional note, hours_left, and progress_at (defaults to now).
+
+### finish_activity
+Sets ended_at on an active activity, marking it complete. Errors if the activity is already finished or not owned by the user.
+
+### search_progress_notes
+Searches `activity_progress.note` by 1-5 query variants (ILIKE), with optional activity_id/from/to/value_min/value_max filters. Same match_count ranking pattern as `resolve_food_id_by_name` and `search_exercises`.
+
+> `create_life_part` is intentionally **not** exposed as an MCP tool — life parts are seeded via repository/script.
+
+## HTTP Handlers
+
+### GET /web/progress
+Renders a read-only dashboard of all activities with recent progress, staleness indicators, and trend summaries. Protected by the same auth middleware as other `/web/*` routes.
+
+## Dialog & Conversation Guidelines
 
 ### Using Progress Type Examples
 
@@ -811,7 +583,7 @@ AI: [Detects "finished" - special state]
 
 ### Session Summary
 
-After collecting progress points, call `get_new_points()` to retrieve the session's updates and present a summary with emojis:
+The AI already has a full record of every `create_progress_point` / `finish_activity` call it made during the session — no separate tool call is needed to summarize. Present a recap directly from that record:
 
 ```
 AI: "Great reflection session! Here's what we captured:
@@ -822,6 +594,8 @@ AI: "Great reflection session! Here's what we captured:
 
     Keep up the sprinting pace on the architecture strategy!"
 ```
+
+Use `search_progress_notes` to pull up past reflections on a topic if the user wants to look back further than the current session.
 
 ### Edge Cases
 

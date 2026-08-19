@@ -1,12 +1,12 @@
 package tests
 
 import (
+	"personal/action/food"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/add_food"
 	"personal/domain"
 )
 
@@ -14,7 +14,7 @@ func (s *IntegrationTestSuite) TestAddFood_Success() {
 	ctx := s.Context()
 
 	// Prepare test input with valid food data
-	input := add_food.AddFoodInput{
+	input := food.AddFoodInput{
 		Name:        "Test Apple",
 		Description: "Fresh red apple",
 		FoodType:    "product",
@@ -27,7 +27,7 @@ func (s *IntegrationTestSuite) TestAddFood_Success() {
 	}
 
 	// Call MCP add_food handler
-	_, output, err := add_food.AddFood(ctx, nil, input)
+	_, output, err := food.AddFood(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotZero(s.T(), output.ID)
 	assert.Contains(s.T(), output.Message, "Test Apple")
@@ -61,19 +61,19 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 
 	s.T().Run("duplicate by name", func(t *testing.T) {
 		// First, create a food item
-		input1 := add_food.AddFoodInput{
+		input1 := food.AddFoodInput{
 			Name:     "Duplicate Test Food",
 			FoodType: "product",
 		}
-		_, _, err := add_food.AddFood(ctx, nil, input1)
+		_, _, err := food.AddFood(ctx, nil, input1)
 		require.NoError(t, err)
 
 		// Try to add the same food with same name
-		input2 := add_food.AddFoodInput{
+		input2 := food.AddFoodInput{
 			Name:     "Duplicate Test Food", // Same name
 			FoodType: "product",
 		}
-		_, _, err = add_food.AddFood(ctx, nil, input2)
+		_, _, err = food.AddFood(ctx, nil, input2)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "duplicate food found")
 		assert.Contains(t, err.Error(), "food with name 'Duplicate Test Food' already exists")
@@ -81,21 +81,21 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 
 	s.T().Run("duplicate by barcode", func(t *testing.T) {
 		// First, create a food item with barcode
-		input1 := add_food.AddFoodInput{
+		input1 := food.AddFoodInput{
 			Name:     "Barcode Test Food 1",
 			Barcode:  "1234567890123",
 			FoodType: "product",
 		}
-		_, _, err := add_food.AddFood(ctx, nil, input1)
+		_, _, err := food.AddFood(ctx, nil, input1)
 		require.NoError(t, err)
 
 		// Try to add different food with same barcode
-		input2 := add_food.AddFoodInput{
+		input2 := food.AddFoodInput{
 			Name:     "Barcode Test Food 2", // Different name
 			Barcode:  "1234567890123",       // Same barcode
 			FoodType: "product",
 		}
-		_, _, err = add_food.AddFood(ctx, nil, input2)
+		_, _, err = food.AddFood(ctx, nil, input2)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "duplicate food found")
 		assert.Contains(t, err.Error(), "food with barcode '1234567890123' already exists")
@@ -103,21 +103,21 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 
 	s.T().Run("duplicate by both name and barcode", func(t *testing.T) {
 		// First, create a food item with both name and barcode
-		input1 := add_food.AddFoodInput{
+		input1 := food.AddFoodInput{
 			Name:     "Both Name and Barcode Test",
 			Barcode:  "9876543210987",
 			FoodType: "product",
 		}
-		_, _, err := add_food.AddFood(ctx, nil, input1)
+		_, _, err := food.AddFood(ctx, nil, input1)
 		require.NoError(t, err)
 
 		// Try to add the exact same food
-		input2 := add_food.AddFoodInput{
+		input2 := food.AddFoodInput{
 			Name:     "Both Name and Barcode Test", // Same name
 			Barcode:  "9876543210987",              // Same barcode
 			FoodType: "product",
 		}
-		_, _, err = add_food.AddFood(ctx, nil, input2)
+		_, _, err = food.AddFood(ctx, nil, input2)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "duplicate food found")
 		// With simplified logic, name check comes first, so should mention name
@@ -127,12 +127,12 @@ func (s *IntegrationTestSuite) TestAddFood_DuplicateChecking() {
 
 	s.T().Run("no duplicate when both name and barcode are different", func(t *testing.T) {
 		// This should succeed - different name and barcode
-		input := add_food.AddFoodInput{
+		input := food.AddFoodInput{
 			Name:     "Unique Test Food",
 			Barcode:  "1111111111111",
 			FoodType: "product",
 		}
-		_, output, err := add_food.AddFood(ctx, nil, input)
+		_, output, err := food.AddFood(ctx, nil, input)
 		require.NoError(t, err)
 		assert.NotZero(t, output.ID)
 		assert.Contains(t, output.Message, "added successfully")
@@ -144,12 +144,12 @@ func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
 
 	testCases := []struct {
 		name          string
-		input         add_food.AddFoodInput
+		input         food.AddFoodInput
 		expectedError string
 	}{
 		{
 			name: "empty name",
-			input: add_food.AddFoodInput{
+			input: food.AddFoodInput{
 				Name:     "",
 				FoodType: "product",
 			},
@@ -157,7 +157,7 @@ func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
 		},
 		{
 			name: "invalid food type",
-			input: add_food.AddFoodInput{
+			input: food.AddFoodInput{
 				Name:     "Test Food",
 				FoodType: "invalid_type",
 			},
@@ -165,7 +165,7 @@ func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
 		},
 		{
 			name: "negative serving size",
-			input: add_food.AddFoodInput{
+			input: food.AddFoodInput{
 				Name:         "Test Food",
 				FoodType:     "product",
 				ServingSizeG: -10.0,
@@ -177,7 +177,7 @@ func (s *IntegrationTestSuite) TestAddFood_ValidationErrors() {
 	for _, tc := range testCases {
 		s.T().Run(tc.name, func(t *testing.T) {
 			// Call MCP add_food handler with invalid data
-			_, _, err := add_food.AddFood(ctx, nil, tc.input)
+			_, _, err := food.AddFood(ctx, nil, tc.input)
 
 			// Verify validation error occurred
 			require.Error(t, err)

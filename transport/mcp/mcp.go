@@ -6,32 +6,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"personal/action/add_food"
-	"personal/action/add_transactions"
-	"personal/action/compare_periods"
-	"personal/action/create_exercise"
-	"personal/action/delete_transaction"
-	"personal/action/delete_workout_set"
-	"personal/action/edit_exercise"
-	"personal/action/edit_transactions"
-	"personal/action/find_food"
-	"personal/action/get_balance"
-	"personal/action/get_budget_progress"
-	"personal/action/get_exercise_history"
-	"personal/action/get_personal_records"
-	"personal/action/get_spending_by_category"
-	"personal/action/get_top_merchants"
-	"personal/action/get_transactions"
-	"personal/action/list_exercises"
-	"personal/action/list_workouts"
-	"personal/action/log_food"
-	"personal/action/log_workout_set"
-	"personal/action/merge_exercises"
-	"personal/action/nutrition_stats"
+	"personal/action/food"
+	"personal/action/money"
 	"personal/action/progress"
-	"personal/action/search_exercises"
-	"personal/action/set_budget"
-	"personal/action/top_products"
+	"personal/action/workout"
 	"personal/gateways"
 )
 
@@ -208,23 +186,23 @@ func Server(db gateways.DB) *mcp.Server {
 		Title:       "Add consumed food",
 	}, promptHandler)
 
-	mcp.AddTool(server, &add_food.MCPDefinition, add_food.AddFood)
-	mcp.AddTool(server, &find_food.ResolveFoodIdByNameMCPDefinition, find_food.ResolveFoodIdByName)
-	mcp.AddTool(server, &log_food.LogFoodByIdMCPDefinition, log_food.LogFoodById)
-	mcp.AddTool(server, &log_food.LogFoodByBarcodeMCPDefinition, log_food.LogFoodByBarcode)
-	mcp.AddTool(server, &log_food.LogCustomFoodMCPDefinition, log_food.LogCustomFood)
-	mcp.AddTool(server, &nutrition_stats.GetNutritionStatsMCPDefinition, nutrition_stats.GetNutritionStats)
-	mcp.AddTool(server, &top_products.GetTopProductsMCPDefinition, top_products.GetTopProducts)
-	mcp.AddTool(server, &create_exercise.MCPDefinition, create_exercise.CreateExercise)
-	mcp.AddTool(server, &list_exercises.MCPDefinition, list_exercises.ListExercises)
-	mcp.AddTool(server, &search_exercises.MCPDefinition, search_exercises.SearchExercises)
-	mcp.AddTool(server, &edit_exercise.MCPDefinition, edit_exercise.EditExercise)
-	mcp.AddTool(server, &merge_exercises.MCPDefinition, merge_exercises.MergeExercises)
-	mcp.AddTool(server, &log_workout_set.MCPDefinition, log_workout_set.LogWorkoutSet)
-	mcp.AddTool(server, &delete_workout_set.MCPDefinition, delete_workout_set.DeleteWorkoutSet)
-	mcp.AddTool(server, &get_exercise_history.MCPDefinition, get_exercise_history.GetExerciseHistory)
-	mcp.AddTool(server, &get_personal_records.MCPDefinition, get_personal_records.GetPersonalRecords)
-	mcp.AddTool(server, &list_workouts.MCPDefinition, list_workouts.ListWorkouts)
+	mcp.AddTool(server, &food.MCPDefinition, food.AddFood)
+	mcp.AddTool(server, &food.ResolveFoodIdByNameMCPDefinition, food.ResolveFoodIdByName)
+	mcp.AddTool(server, &food.LogFoodByIdMCPDefinition, food.LogFoodById)
+	mcp.AddTool(server, &food.LogFoodByBarcodeMCPDefinition, food.LogFoodByBarcode)
+	mcp.AddTool(server, &food.LogCustomFoodMCPDefinition, food.LogCustomFood)
+	mcp.AddTool(server, &food.GetNutritionStatsMCPDefinition, food.GetNutritionStats)
+	mcp.AddTool(server, &food.GetTopProductsMCPDefinition, food.GetTopProducts)
+	mcp.AddTool(server, &workout.CreateExerciseMCPDefinition, workout.CreateExercise)
+	mcp.AddTool(server, &workout.ListExercisesMCPDefinition, workout.ListExercises)
+	mcp.AddTool(server, &workout.SearchExercisesMCPDefinition, workout.SearchExercises)
+	mcp.AddTool(server, &workout.EditExerciseMCPDefinition, workout.EditExercise)
+	mcp.AddTool(server, &workout.MergeExercisesMCPDefinition, workout.MergeExercises)
+	mcp.AddTool(server, &workout.LogWorkoutSetMCPDefinition, workout.LogWorkoutSet)
+	mcp.AddTool(server, &workout.DeleteWorkoutSetMCPDefinition, workout.DeleteWorkoutSet)
+	mcp.AddTool(server, &workout.GetExerciseHistoryMCPDefinition, workout.GetExerciseHistory)
+	mcp.AddTool(server, &workout.GetPersonalRecordsMCPDefinition, workout.GetPersonalRecords)
+	mcp.AddTool(server, &workout.ListWorkoutsMCPDefinition, workout.ListWorkouts)
 	mcp.AddTool(server, &progress.CreateActivityMCPDefinition, progress.CreateActivity)
 	mcp.AddTool(server, &progress.EditActivityMCPDefinition, progress.EditActivity)
 	mcp.AddTool(server, &progress.GetActivityListMCPDefinition, progress.GetActivityList)
@@ -235,16 +213,16 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &progress.SearchProgressNotesMCPDefinition, progress.SearchProgressNotes)
 
 	// Money tracking tools
-	mcp.AddTool(server, &add_transactions.MCPDefinition, add_transactions.AddTransactions)
-	mcp.AddTool(server, &edit_transactions.MCPDefinition, edit_transactions.EditTransactions)
-	mcp.AddTool(server, &delete_transaction.MCPDefinition, delete_transaction.DeleteTransaction)
-	mcp.AddTool(server, &set_budget.MCPDefinition, set_budget.SetBudget)
-	mcp.AddTool(server, &get_transactions.MCPDefinition, get_transactions.GetTransactions)
-	mcp.AddTool(server, &get_spending_by_category.MCPDefinition, get_spending_by_category.GetSpendingByCategory)
-	mcp.AddTool(server, &get_top_merchants.MCPDefinition, get_top_merchants.GetTopMerchants)
-	mcp.AddTool(server, &compare_periods.MCPDefinition, compare_periods.ComparePeriods)
-	mcp.AddTool(server, &get_budget_progress.MCPDefinition, get_budget_progress.GetBudgetProgress)
-	mcp.AddTool(server, &get_balance.MCPDefinition, get_balance.GetBalance)
+	mcp.AddTool(server, &money.AddTransactionsMCPDefinition, money.AddTransactions)
+	mcp.AddTool(server, &money.EditTransactionsMCPDefinition, money.EditTransactions)
+	mcp.AddTool(server, &money.DeleteTransactionMCPDefinition, money.DeleteTransaction)
+	mcp.AddTool(server, &money.SetBudgetMCPDefinition, money.SetBudget)
+	mcp.AddTool(server, &money.GetTransactionsMCPDefinition, money.GetTransactions)
+	mcp.AddTool(server, &money.GetSpendingByCategoryMCPDefinition, money.GetSpendingByCategory)
+	mcp.AddTool(server, &money.GetTopMerchantsMCPDefinition, money.GetTopMerchants)
+	mcp.AddTool(server, &money.ComparePeriodsMCPDefinition, money.ComparePeriods)
+	mcp.AddTool(server, &money.GetBudgetProgressMCPDefinition, money.GetBudgetProgress)
+	mcp.AddTool(server, &money.GetBalanceMCPDefinition, money.GetBalance)
 
 	return server
 }
@@ -287,7 +265,7 @@ func completionHandler(ctx context.Context, req *mcp.CompleteRequest) (*mcp.Comp
 			searchTerm = "банан" // Default search term
 		}
 
-		foods, err := find_food.SearchFoodsByName(ctx, db, searchTerm)
+		foods, err := food.SearchFoodsByName(ctx, db, searchTerm)
 		if err != nil {
 			// Fallback to hardcoded values on error
 			return &mcp.CompleteResult{
@@ -301,8 +279,8 @@ func completionHandler(ctx context.Context, req *mcp.CompleteRequest) (*mcp.Comp
 
 		// Extract food names for completion
 		values := make([]string, 0, len(foods))
-		for _, food := range foods {
-			values = append(values, food.Name)
+		for _, f := range foods {
+			values = append(values, f.Name)
 			if len(values) >= 5 { // Limit to 5 suggestions
 				break
 			}

@@ -1,27 +1,24 @@
 package tests
 
 import (
+	"personal/action/workout"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/create_exercise"
-	"personal/action/get_exercise_history"
-	"personal/action/merge_exercises"
-	"personal/action/search_exercises"
 	"personal/domain"
 )
 
 func (s *IntegrationTestSuite) TestMergeExercises_MergesSetsAndDeletesSource() {
 	ctx := s.Context()
 
-	_, src, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, src, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Bench Press Duplicate", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, target, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, target, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Bench Press", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
@@ -38,7 +35,7 @@ func (s *IntegrationTestSuite) TestMergeExercises_MergesSetsAndDeletesSource() {
 		require.NoError(s.T(), err)
 	}
 
-	_, output, err := merge_exercises.MergeExercises(ctx, nil, merge_exercises.MergeExercisesInput{
+	_, output, err := workout.MergeExercises(ctx, nil, workout.MergeExercisesInput{
 		SourceExerciseID: src.ID,
 		TargetExerciseID: target.ID,
 	})
@@ -47,14 +44,14 @@ func (s *IntegrationTestSuite) TestMergeExercises_MergesSetsAndDeletesSource() {
 	assert.Equal(s.T(), "Bench Press Duplicate", output.DeletedExerciseName)
 
 	// Source no longer searchable
-	_, found, err := search_exercises.SearchExercises(ctx, nil, search_exercises.SearchExercisesInput{
+	_, found, err := workout.SearchExercises(ctx, nil, workout.SearchExercisesInput{
 		NameVariants: []string{"Bench Press Duplicate"},
 	})
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), found.Exercises)
 
 	// Sets now belong to target
-	_, history, err := get_exercise_history.GetExerciseHistory(ctx, nil, get_exercise_history.GetExerciseHistoryInput{
+	_, history, err := workout.GetExerciseHistory(ctx, nil, workout.GetExerciseHistoryInput{
 		ExerciseID: target.ID, Limit: 10,
 	})
 	require.NoError(s.T(), err)
@@ -65,24 +62,24 @@ func (s *IntegrationTestSuite) TestMergeExercises_MergesSetsAndDeletesSource() {
 func (s *IntegrationTestSuite) TestMergeExercises_WorksWithZeroSets() {
 	ctx := s.Context()
 
-	_, src, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, src, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Empty Source", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, target, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, target, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Empty Target", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, output, err := merge_exercises.MergeExercises(ctx, nil, merge_exercises.MergeExercisesInput{
+	_, output, err := workout.MergeExercises(ctx, nil, workout.MergeExercisesInput{
 		SourceExerciseID: src.ID,
 		TargetExerciseID: target.ID,
 	})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), int64(0), output.SetsMoved)
 
-	_, found, err := search_exercises.SearchExercises(ctx, nil, search_exercises.SearchExercisesInput{
+	_, found, err := workout.SearchExercises(ctx, nil, workout.SearchExercisesInput{
 		NameVariants: []string{"Empty Source"},
 	})
 	require.NoError(s.T(), err)
@@ -92,12 +89,12 @@ func (s *IntegrationTestSuite) TestMergeExercises_WorksWithZeroSets() {
 func (s *IntegrationTestSuite) TestMergeExercises_ErrorWhenSourceNotFound() {
 	ctx := s.Context()
 
-	_, target, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, target, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Real Exercise", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, _, err = merge_exercises.MergeExercises(ctx, nil, merge_exercises.MergeExercisesInput{
+	_, _, err = workout.MergeExercises(ctx, nil, workout.MergeExercisesInput{
 		SourceExerciseID: 999999999,
 		TargetExerciseID: target.ID,
 	})
@@ -107,12 +104,12 @@ func (s *IntegrationTestSuite) TestMergeExercises_ErrorWhenSourceNotFound() {
 func (s *IntegrationTestSuite) TestMergeExercises_ErrorWhenSameIDs() {
 	ctx := s.Context()
 
-	_, ex, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Same Exercise", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	_, _, err = merge_exercises.MergeExercises(ctx, nil, merge_exercises.MergeExercisesInput{
+	_, _, err = workout.MergeExercises(ctx, nil, workout.MergeExercisesInput{
 		SourceExerciseID: ex.ID,
 		TargetExerciseID: ex.ID,
 	})

@@ -1,13 +1,12 @@
 package tests
 
 import (
+	"personal/action/workout"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/create_exercise"
-	"personal/action/log_workout_set"
 	"personal/domain"
 )
 
@@ -15,21 +14,21 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithRepsCreatesActiveWorkout() 
 	ctx := s.Context()
 
 	// Create exercise via create_exercise action
-	exerciseInput := create_exercise.CreateExerciseInput{
+	exerciseInput := workout.CreateExerciseInput{
 		Name:          "Bench Press",
 		EquipmentType: "barbell",
 	}
-	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, exerciseInput)
+	_, exerciseOutput, err := workout.CreateExercise(ctx, nil, exerciseInput)
 	require.NoError(s.T(), err)
 
 	// Call MCP tool log_workout_set with exercise_id, reps, weight_kg
-	input := log_workout_set.LogWorkoutSetInput{
+	input := workout.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
 		Reps:       10,
 		WeightKg:   80.5,
 	}
 
-	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	_, output, err := workout.LogWorkoutSet(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotZero(s.T(), output.SetID)
 	require.NotZero(s.T(), output.WorkoutID)
@@ -50,20 +49,20 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDuration() {
 	ctx := s.Context()
 
 	// Create exercise via create_exercise action
-	exerciseInput := create_exercise.CreateExerciseInput{
+	exerciseInput := workout.CreateExerciseInput{
 		Name:          "Plank",
 		EquipmentType: "bodyweight",
 	}
-	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, exerciseInput)
+	_, exerciseOutput, err := workout.CreateExercise(ctx, nil, exerciseInput)
 	require.NoError(s.T(), err)
 
 	// Call MCP tool log_workout_set with exercise_id, duration_seconds
-	input := log_workout_set.LogWorkoutSetInput{
+	input := workout.LogWorkoutSetInput{
 		ExerciseID:      exerciseOutput.ID,
 		DurationSeconds: 60,
 	}
 
-	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	_, output, err := workout.LogWorkoutSet(ctx, nil, input)
 	require.NoError(s.T(), err)
 	require.NotZero(s.T(), output.SetID)
 
@@ -77,20 +76,20 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
 	ctx := s.Context()
 
 	// Create exercise via create_exercise action
-	exerciseInput := create_exercise.CreateExerciseInput{
+	exerciseInput := workout.CreateExerciseInput{
 		Name:          "Squat",
 		EquipmentType: "barbell",
 	}
-	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, exerciseInput)
+	_, exerciseOutput, err := workout.CreateExercise(ctx, nil, exerciseInput)
 	require.NoError(s.T(), err)
 
 	// Create active workout
-	workout := domain.Workout{
+	activeWorkout := domain.Workout{
 		UserID:      s.UserID(),
 		StartedAt:   time.Now(),
 		CompletedAt: nil,
 	}
-	workoutID, err := s.Repo().CreateWorkout(ctx, &workout)
+	workoutID, err := s.Repo().CreateWorkout(ctx, &activeWorkout)
 	require.NoError(s.T(), err)
 
 	// Create a set in the active workout (less than 2 hours ago)
@@ -106,13 +105,13 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ReusesActiveWorkout() {
 	require.NoError(s.T(), err)
 
 	// Call MCP tool log_workout_set
-	input := log_workout_set.LogWorkoutSetInput{
+	input := workout.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
 		Reps:       8,
 		WeightKg:   100.0,
 	}
 
-	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	_, output, err := workout.LogWorkoutSet(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.False(s.T(), output.IsNewWorkout)
 	assert.Equal(s.T(), workoutID, output.WorkoutID)
@@ -127,21 +126,21 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ClosesOldWorkoutAndCreatesNew()
 	ctx := s.Context()
 
 	// Create exercise via create_exercise action
-	exerciseInput := create_exercise.CreateExerciseInput{
+	exerciseInput := workout.CreateExerciseInput{
 		Name:          "Deadlift",
 		EquipmentType: "barbell",
 	}
-	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, exerciseInput)
+	_, exerciseOutput, err := workout.CreateExercise(ctx, nil, exerciseInput)
 	require.NoError(s.T(), err)
 
 	// Create active workout started 3 hours ago
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
-	workout := domain.Workout{
+	activeWorkout := domain.Workout{
 		UserID:      s.UserID(),
 		StartedAt:   threeHoursAgo,
 		CompletedAt: nil,
 	}
-	oldWorkoutID, err := s.Repo().CreateWorkout(ctx, &workout)
+	oldWorkoutID, err := s.Repo().CreateWorkout(ctx, &activeWorkout)
 	require.NoError(s.T(), err)
 
 	// Create set in old workout (more than 2 hours ago)
@@ -157,13 +156,13 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_ClosesOldWorkoutAndCreatesNew()
 	require.NoError(s.T(), err)
 
 	// Call MCP tool log_workout_set with exercise_id, reps
-	input := log_workout_set.LogWorkoutSetInput{
+	input := workout.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
 		Reps:       5,
 		WeightKg:   120.0,
 	}
 
-	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	_, output, err := workout.LogWorkoutSet(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.True(s.T(), output.IsNewWorkout)
 	assert.NotEqual(s.T(), oldWorkoutID, output.WorkoutID)
@@ -193,20 +192,20 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_Validation() {
 	ctx := s.Context()
 
 	// Create exercise via create_exercise action
-	exerciseInput := create_exercise.CreateExerciseInput{
+	exerciseInput := workout.CreateExerciseInput{
 		Name:          "Pull-up",
 		EquipmentType: "bodyweight",
 	}
-	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, exerciseInput)
+	_, exerciseOutput, err := workout.CreateExercise(ctx, nil, exerciseInput)
 	require.NoError(s.T(), err)
 
 	// Call MCP tool log_workout_set without reps and duration_seconds
-	input := log_workout_set.LogWorkoutSetInput{
+	input := workout.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
 		// No reps or duration_seconds
 	}
 
-	_, _, err = log_workout_set.LogWorkoutSet(ctx, nil, input)
+	_, _, err = workout.LogWorkoutSet(ctx, nil, input)
 	require.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "reps")
 	assert.Contains(s.T(), err.Error(), "duration_seconds")
@@ -215,18 +214,18 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_Validation() {
 func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDateCreatesBackdatedWorkout() {
 	ctx := s.Context()
 
-	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, exerciseOutput, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Overhead Press", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
 
-	input := log_workout_set.LogWorkoutSetInput{
+	input := workout.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
 		Reps:       5,
 		WeightKg:   60.0,
 		Date:       "2026-01-15",
 	}
-	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	_, output, err := workout.LogWorkoutSet(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.True(s.T(), output.IsNewWorkout)
 
@@ -240,7 +239,7 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDateCreatesBackdatedWorkout
 func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDateReusesExistingWorkout() {
 	ctx := s.Context()
 
-	_, exerciseOutput, err := create_exercise.CreateExercise(ctx, nil, create_exercise.CreateExerciseInput{
+	_, exerciseOutput, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
 		Name: "Incline Press", EquipmentType: "barbell",
 	})
 	require.NoError(s.T(), err)
@@ -255,13 +254,13 @@ func (s *IntegrationTestSuite) TestLogWorkoutSet_WithDateReusesExistingWorkout()
 	})
 	require.NoError(s.T(), err)
 
-	input := log_workout_set.LogWorkoutSetInput{
+	input := workout.LogWorkoutSetInput{
 		ExerciseID: exerciseOutput.ID,
 		Reps:       8,
 		WeightKg:   55.0,
 		Date:       "2026-01-15",
 	}
-	_, output, err := log_workout_set.LogWorkoutSet(ctx, nil, input)
+	_, output, err := workout.LogWorkoutSet(ctx, nil, input)
 	require.NoError(s.T(), err)
 	assert.False(s.T(), output.IsNewWorkout)
 	assert.Equal(s.T(), existingWorkoutID, output.WorkoutID)

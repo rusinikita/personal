@@ -380,259 +380,34 @@ type DB interface {
 ## MCP Tools
 
 ### edit_transactions
-Batch edit transactions. All fields except id are optional per item. Works for a single transaction or many at once — e.g. correcting one note or re-categorizing a hundred imports.
-
-Input:
-```json
-{
-  "updates": [
-    { "id": 42, "category": "food/restaurant", "merchant": "Zuma" },
-    { "id": 43, "note": "team lunch", "category": "work/food" }
-  ]
-}
-```
-
-Output:
-```json
-{ "updated_count": 2 }
-```
-
-Logic: Validate all IDs belong to user_id. Apply partial update per item (only provided fields are changed). Bulk update via EditTransactions.
-
-Errors: any ID not found or not owned by user → return error, no partial updates applied.
-
----
+Batch-edit transactions by ID; all fields except `id` are optional per item, only provided fields change. Any ID not found or not owned by the user aborts the whole batch with no partial updates.
 
 ### delete_transaction
-Delete a transaction by ID.
-
-Input:
-```json
-{ "id": 42 }
-```
-
-Output:
-```json
-{ "deleted": true }
-```
-
-Logic: Verify transaction belongs to user_id. Delete record.
-
-Errors: transaction not found, not owned by user.
-
----
+Deletes a transaction by ID after verifying it belongs to the user.
 
 ### add_transactions
-Add multiple transactions in one call.
-
-Input:
-```json
-{
-  "transactions": [
-    { "type": "expense", "amount_original": 5.00, "currency": "EUR", "amount_eur": 5.00, "account": "Revolut", "category": "food/cafe", "merchant": "Starbucks", "transacted_at": "2026-04-04T09:00:00Z" },
-    { "type": "expense", "amount_original": 45.00, "currency": "EUR", "amount_eur": 45.00, "account": "Bank of Cyprus", "category": "transport/taxi", "merchant": "Bolt", "transacted_at": "2026-04-04T20:00:00Z" }
-  ]
-}
-```
-
-Output:
-```json
-{ "inserted_count": 2, "transactions": [ ... ] }
-```
-
-Logic: Validate each transaction. Bulk insert using AddTransactions. Return all created records.
-
----
+Bulk-inserts multiple transactions in one call after validating each; returns all created records.
 
 ### set_budget
-Create or update a budget for a category over a period.
-
-Input:
-```json
-{
-  "name": "Food - April 2026",
-  "category": "food",
-  "amount_eur": 500.00,
-  "starts_at": "2026-04-01T00:00:00Z",
-  "ends_at": "2026-04-30T23:59:59Z"
-}
-```
-
-Output:
-```json
-{ "id": 7, "budget": { ... } }
-```
-
-Logic: Validate amount > 0, ends_at > starts_at. Upsert budget (match on user_id + name). Return saved budget.
-
----
+Creates or updates a budget for a category over a period (upsert on user_id + name). Validates amount > 0 and ends_at > starts_at.
 
 ### get_transactions
-List transactions with optional filters.
-
-Input:
-```json
-{
-  "from": "2026-04-01T00:00:00Z",
-  "to": "2026-04-30T23:59:59Z",
-  "account": "Revolut",
-  "category": "food",
-  "type": "expense",
-  "merchant": "Lidl",
-  "limit": 50,
-  "offset": 0
-}
-```
-
-Output:
-```json
-{ "transactions": [ ... ], "total": 12 }
-```
-
-Logic: All filters are optional. category filter matches transactions where category starts with the provided prefix (LIKE 'food%'). Default limit 50, max 200.
-
----
+Lists transactions with optional filters (from/to/account/category/type/merchant). `category` matches by prefix (`LIKE 'food%'`). Default limit 50, max 200.
 
 ### get_spending_by_category
-Aggregated spending per category for a period. depth controls grouping level (1 = top-level only, 2 = two levels).
-
-Input:
-```json
-{
-  "from": "2026-04-01T00:00:00Z",
-  "to": "2026-04-30T23:59:59Z",
-  "depth": 1
-}
-```
-
-Output:
-```json
-{
-  "from": "2026-04-01T00:00:00Z",
-  "to": "2026-04-30T23:59:59Z",
-  "categories": [
-    { "category": "food", "total_eur": 320.50, "count": 18 },
-    { "category": "transport", "total_eur": 90.00, "count": 7 }
-  ],
-  "total_eur": 410.50
-}
-```
-
-Logic: Filter transactions by user_id, type=expense, date range. GROUP BY split_part(category, '/', 1..depth). ORDER BY total_eur DESC.
-
----
+Aggregated spending per category for a period, grouped by `split_part(category, '/', 1..depth)`, ordered by total_eur DESC.
 
 ### get_top_merchants
-Top merchants ranked by total spend for a period.
-
-Input:
-```json
-{
-  "from": "2026-04-01T00:00:00Z",
-  "to": "2026-04-30T23:59:59Z",
-  "limit": 10
-}
-```
-
-Output:
-```json
-{
-  "merchants": [
-    { "merchant": "Lidl", "total_eur": 180.00, "count": 8 },
-    { "merchant": "Costa Coffee", "total_eur": 45.00, "count": 9 }
-  ]
-}
-```
-
-Logic: Filter by user_id, type=expense, date range. GROUP BY merchant. ORDER BY total_eur DESC. LIMIT limit (default 10).
-
----
+Top merchants ranked by total spend for a period (type=expense, grouped by merchant, default limit 10).
 
 ### compare_periods
-Side-by-side comparison of spending between two time periods by category.
-
-Input:
-```json
-{
-  "period_a_from": "2026-03-01T00:00:00Z",
-  "period_a_to": "2026-03-31T23:59:59Z",
-  "period_b_from": "2026-04-01T00:00:00Z",
-  "period_b_to": "2026-04-30T23:59:59Z"
-}
-```
-
-Output:
-```json
-{
-  "period_a": { "from": "...", "to": "...", "total_eur": 890.00, "categories": [ ... ] },
-  "period_b": { "from": "...", "to": "...", "total_eur": 1020.00, "categories": [ ... ] },
-  "diff": [
-    { "category": "food", "period_a_eur": 280.00, "period_b_eur": 320.50, "diff_eur": 40.50, "diff_pct": 14.5 }
-  ]
-}
-```
-
-Logic: Run GetSpendingForPeriod for each period at depth=1. Merge results by category. Calculate diff_eur = period_b - period_a, diff_pct = (diff / period_a) * 100. Include categories present in either period (zero-fill missing side).
-
----
+Side-by-side spending comparison between two periods, merged by top-level category with diff_eur and diff_pct computed per category.
 
 ### get_budget_progress
-Active budgets with spent and remaining amounts as of a given date.
-
-Input:
-```json
-{
-  "at": "2026-04-05T00:00:00Z"
-}
-```
-
-Output:
-```json
-{
-  "budgets": [
-    {
-      "id": 7,
-      "name": "Food - April 2026",
-      "category": "food",
-      "amount_eur": 500.00,
-      "spent_eur": 320.50,
-      "remaining_eur": 179.50,
-      "starts_at": "...",
-      "ends_at": "..."
-    }
-  ]
-}
-```
-
-Logic: Find budgets where starts_at <= at AND ends_at >= at. For each budget: SUM(amount_eur) from transactions where category LIKE budget.category || '%' AND transacted_at BETWEEN starts_at AND ends_at AND type = 'expense'. remaining_eur = amount_eur - spent_eur.
-
----
+Returns budgets active as of a given date with spent_eur (transactions matching category prefix within the budget period) and remaining_eur.
 
 ### get_balance
-Income minus expenses for a period, optionally broken down by account.
-
-Input:
-```json
-{
-  "from": "2026-04-01T00:00:00Z",
-  "to": "2026-04-30T23:59:59Z"
-}
-```
-
-Output:
-```json
-{
-  "from": "2026-04-01T00:00:00Z",
-  "to": "2026-04-30T23:59:59Z",
-  "income_eur": 3500.00,
-  "expense_eur": 1020.00,
-  "balance_eur": 2480.00
-}
-```
-
-Logic: Two aggregations in one query — SUM(amount_eur) WHERE type='income' and SUM(amount_eur) WHERE type='expense' for the period. balance_eur = income_eur - expense_eur. Transfer transactions are excluded from balance calculation.
-
----
+Income minus expenses for a period in one aggregation query; transfer transactions are excluded from the balance.
 
 ## Web UI
 

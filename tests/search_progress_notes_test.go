@@ -1,12 +1,12 @@
 package tests
 
 import (
+	"personal/action/progress"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"personal/action/progress"
 	"personal/domain"
 )
 
