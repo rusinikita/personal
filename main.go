@@ -65,8 +65,9 @@ func main() {
 			return server
 		},
 		&mcp.StreamableHTTPOptions{
-			Stateless:    true,
-			JSONResponse: true,
+			Stateless:                    true,
+			JSONResponse:                 true,
+			PropagateRequestCancellation: true,
 		},
 	)
 
