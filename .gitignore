@@ -30,8 +30,7 @@ go.work.sum
 .env.local
 
 # Editor/IDE
- .idea/*
- .idea/
+.idea/
 # .vscode/
 
 # Temp files
