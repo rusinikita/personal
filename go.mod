@@ -12,6 +12,7 @@ require (
 	github.com/samber/slog-gin v1.21.1
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.41.0
+	gopkg.in/telebot.v3 v3.3.8
 )
 
 require (

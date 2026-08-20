@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"personal/action/money"
 	"sort"
+
+	"personal/action/money"
 )
 
 func main() {

@@ -9,6 +9,7 @@ import (
 	"personal/action/food"
 	"personal/action/money"
 	"personal/action/progress"
+	"personal/action/telegram"
 	"personal/action/workout"
 	"personal/gateways"
 )
@@ -147,7 +148,7 @@ This MCP server provides tools for managing food database, nutrition tracking, w
 
 All logs include timestamps and comprehensive details for accurate tracking.`
 
-func Server(db gateways.DB) *mcp.Server {
+func Server(db gateways.DB, tg gateways.Telegram) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "personal", Title: "Nikita personal food and activities logging", Version: "v1.0.0"},
 		&mcp.ServerOptions{
@@ -160,8 +161,9 @@ func Server(db gateways.DB) *mcp.Server {
 
 	server.AddReceivingMiddleware(func(handler mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (result mcp.Result, err error) {
-			// Add database to context
+			// Add database and Telegram gateway to context
 			ctx = gateways.WithDB(ctx, db)
+			ctx = gateways.WithTelegram(ctx, tg)
 
 			return handler(ctx, method, req)
 		}
@@ -223,6 +225,9 @@ func Server(db gateways.DB) *mcp.Server {
 	mcp.AddTool(server, &money.ComparePeriodsMCPDefinition, money.ComparePeriods)
 	mcp.AddTool(server, &money.GetBudgetProgressMCPDefinition, money.GetBudgetProgress)
 	mcp.AddTool(server, &money.GetBalanceMCPDefinition, money.GetBalance)
+
+	// Telegram notifications
+	mcp.AddTool(server, &telegram.SendTelegramMessageMCPDefinition, telegram.SendTelegramMessage)
 
 	return server
 }

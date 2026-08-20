@@ -2,11 +2,12 @@ package tests
 
 import (
 	"context"
-	"personal/action/money"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"personal/action/money"
 )
 
 // insertTestTransaction inserts a single expense via add_transactions and

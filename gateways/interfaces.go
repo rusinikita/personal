@@ -83,3 +83,10 @@ type DBMaintainer interface {
 	ApplyMigrations(ctx context.Context) error
 	TruncateUserData(ctx context.Context, userID int64) error
 }
+
+// Telegram wraps the Telegram Bot API for outbound notifications.
+type Telegram interface {
+	// SendMessage sends text to the configured chat. parseMode is "" (plain text),
+	// "Markdown", "MarkdownV2", or "HTML" per the Telegram Bot API parse_mode param.
+	SendMessage(ctx context.Context, text string, parseMode string) (messageID int64, err error)
+}

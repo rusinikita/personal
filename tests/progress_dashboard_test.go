@@ -3,13 +3,13 @@ package tests
 import (
 	"net/http"
 	"net/http/httptest"
-	"personal/action/progress"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"personal/action/progress"
 	"personal/domain"
 	"personal/gateways"
 )

@@ -7,13 +7,13 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"personal/action/money"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"personal/action/money"
 	"personal/gateways"
 )
 

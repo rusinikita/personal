@@ -2,13 +2,13 @@ package tests
 
 import (
 	"math/rand"
-	"personal/action/food"
 	"sort"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"personal/action/food"
 	"personal/domain"
 	"personal/util"
 )

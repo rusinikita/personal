@@ -16,7 +16,7 @@ func (s *IntegrationTestSuite) TestClient() {
 	t1, t2 := mcp.NewInMemoryTransports()
 
 	go func() {
-		server := mcp2.Server(s.repo)
+		server := mcp2.Server(s.repo, &fakeTelegramClient{})
 		s.Require().NoError(server.Run(ctx, t1))
 	}()
 

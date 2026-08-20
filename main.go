@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +19,7 @@ import (
 	"personal/action/progress"
 	"personal/gateways"
 	"personal/gateways/db"
+	"personal/gateways/telegram"
 	mcp2 "personal/transport/mcp"
 )
 
@@ -57,7 +59,25 @@ func main() {
 		log.Printf("Warning: Failed to apply migrations: %v", err)
 	}
 
-	server := mcp2.Server(repo)
+	// Initialize Telegram gateway
+	telegramBotToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	if telegramBotToken == "" {
+		log.Fatal("TELEGRAM_BOT_TOKEN environment variable not set")
+	}
+	telegramChatIDStr := os.Getenv("TELEGRAM_CHAT_ID")
+	if telegramChatIDStr == "" {
+		log.Fatal("TELEGRAM_CHAT_ID environment variable not set")
+	}
+	telegramChatID, err := strconv.ParseInt(telegramChatIDStr, 10, 64)
+	if err != nil {
+		log.Fatal("TELEGRAM_CHAT_ID format err", err)
+	}
+	telegramClient, err := telegram.NewClient(telegramBotToken, telegramChatID)
+	if err != nil {
+		log.Fatalf("Failed to create telegram client: %v", err)
+	}
+
+	server := mcp2.Server(repo, telegramClient)
 
 	// Create the streamable HTTP handler.
 	handler := mcp.NewStreamableHTTPHandler(

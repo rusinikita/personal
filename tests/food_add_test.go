@@ -1,12 +1,12 @@
 package tests
 
 import (
-	"personal/action/food"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"personal/action/food"
 	"personal/domain"
 )
 

@@ -1,11 +1,12 @@
 package tests
 
 import (
-	"personal/action/money"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"personal/action/money"
 )
 
 func (s *IntegrationTestSuite) TestAddTransactions_Success() {

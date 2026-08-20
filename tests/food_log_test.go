@@ -2,12 +2,12 @@ package tests
 
 import (
 	"context"
-	"personal/action/food"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"personal/action/food"
 	"personal/domain"
 	"personal/util"
 )
