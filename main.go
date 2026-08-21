@@ -17,6 +17,7 @@ import (
 	"personal/action/auth"
 	"personal/action/money"
 	"personal/action/progress"
+	"personal/action/webui"
 	"personal/gateways"
 	"personal/gateways/db"
 	"personal/gateways/telegram"
@@ -136,6 +137,7 @@ func main() {
 	}
 
 	router.GET("/web/progress", dbMiddleware(repo), progress.DashboardWebHandler)
+	router.GET("/web/design-system", webui.DesignSystemHandler)
 
 	// Money CSV import — protected by HTTP Basic Auth
 	importUser := os.Getenv("IMPORT_USERNAME")

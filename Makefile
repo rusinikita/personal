@@ -36,6 +36,9 @@ format:
 build-app:
 	GOOS=linux GOARCH=amd64 go build -a -o ./build/app main.go
 
+preview-webui:
+	go run ./cmd/webui-preview
+
 test:
 	go test ./...
 
