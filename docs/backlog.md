@@ -4,21 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title.
 
-## 20-08-26 — Design system for web dashboards
-
-A shared visual language and set of reusable page components for the *new* `/web/*` pages (Money, Progress, Workouts, Navigation home page below) plus `/money/import`, replacing `/money/import`'s hand-rolled inline `<style>` block and standalone `html/template` constant (`action/money/import_web.go`) with something the new pages can share too.
-
-**Out of scope:** `action/progress/dashboard_web.go` (`/web/progress`) is explicitly excluded from this design system — its fixed-size, black-and-white layout is intentional (built for screenshot/e-ink display), not a defect to fix. Do not modify its markup, styling, or templates; the new Progress web page is a separate page, not a reskin of this one.
-
-**Why:** Money, Progress, and Workouts dashboards all need the same building blocks — a table, summary/stat numbers, a drill-down detail view — inside a consistent page shell. Building that once now avoids three more copy-pasted, inconsistent-looking pages.
-
-**Use cases:**
-- New dashboards should share one visual language (typography, colors, spacing) defined in a single place instead of per-page inline styles
-- Design system should provide components reused across new dashboards: a page shell (header/nav/footer), data tables, summary/stat tiles, and a drill-down/detail layout
-- Design system should support both light and dark viewing, TODO: confirm, or explicitly commit to one
-- Design system should be usable from Go's `html/template` as a shared layout template that each new page's content template plugs into, rather than each page owning a full standalone HTML document
-- Layout should be responsive to normal browser window resizing
-
 ## 20-08-26 — Authorization for web dashboards
 
 A shared, cookie-based login for human browser access to the *new* `/web/*` pages (Money, Progress, Workouts, Navigation home page below) plus `/money/import`, replacing the inconsistent per-page auth that exists today: `/money/import` uses HTTP Basic Auth with its own `IMPORT_USERNAME`/`IMPORT_PASSWORD` env creds. MCP/agent access keeps using the existing full OAuth 2.1 flow (`action/auth/oauth.go`) — that's built for machine clients exchanging a bearer token, not a human logging in once in a browser.
@@ -49,11 +34,11 @@ One entry-point page listing and linking to each web dashboard section.
 - New web routes should follow one consistent URL namespace, e.g. `/web/money`, `/web/workouts`, `/web/import` — TODO: confirm naming, since `/money/import` currently lives outside the `/web` prefix. Note `/web/progress` is already taken by the existing untouched screenshot dashboard, so the new Progress page needs a different path, e.g. `/web/progress/browse`
 - Home page should rely on the shared login rather than being separately gated
 
-**Depends on:** 20-08-26 Design system for web dashboards, 20-08-26 Authorization for web dashboards.
+**Depends on:** 20-08-26 Authorization for web dashboards.
 
 ## 19-08-26 — Web interface for Money
 
-**Depends on:** 20-08-26 Design system for web dashboards, 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
+**Depends on:** 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
 
 A **read-only** web interface on top of the existing money functionality for reviewing balance, income/spending trends, and category breakdowns. Adding/editing/deleting transactions stays out of scope — bulk import already exists at `/money/import` (`action/money/import_web.go`), and this UI should link out to it rather than duplicate it.
 
@@ -72,7 +57,7 @@ A **read-only** web interface on top of the existing money functionality for rev
 
 ## 19-08-26 — Web interface for Progress
 
-**Depends on:** 20-08-26 Design system for web dashboards, 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
+**Depends on:** 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
 
 A **new, separate, read-only** web page for browsing progress data, built in the new design system. It sits alongside — not instead of — the existing `/web/progress` dashboard (`action/progress/dashboard_web.go`), which is purpose-built for black-and-white screenshot/e-ink display and stays completely untouched: same route, same fixed 100vw/100vh layout, same top-5-only, same code. Do not edit `dashboard_web.go` as part of this item.
 
@@ -86,7 +71,7 @@ A **new, separate, read-only** web page for browsing progress data, built in the
 
 ## 19-08-26 — Web interface for Workouts
 
-**Depends on:** 20-08-26 Design system for web dashboards, 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
+**Depends on:** 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
 
 A **read-only** web interface on top of the workout functionality for reviewing personal records and per-exercise trends. Logging/editing workouts stays in the Telegram bot — this is view-only.
 
