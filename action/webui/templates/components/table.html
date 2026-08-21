@@ -1,0 +1,13 @@
+{{define "components/table"}}
+<table>
+<thead><tr>
+{{range .Columns}}<th{{if eq .Align "right"}} style="text-align:right"{{end}}>{{.Label}}</th>
+{{end}}</tr></thead>
+<tbody>
+{{range .Rows}}<tr>
+{{$link := .LinkURL}}
+{{range $i, $cell := .Cells}}<td>{{if and (eq $i 0) $link}}<a href="{{$link}}">{{$cell}}</a>{{else}}{{$cell}}{{end}}</td>
+{{end}}</tr>
+{{end}}</tbody>
+</table>
+{{end}}

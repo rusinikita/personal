@@ -60,6 +60,7 @@ type LineChartPoint struct {
 // LineChartData is a single-series line chart (e.g. exercise weight/reps over
 // time, or a Progress activity's value-over-time drill-down).
 type LineChartData struct {
+	ID         string // unique DOM id for this chart's <canvas>, e.g. "chart-bench-press"
 	Title      string
 	SeriesName string // legend label, e.g. "Weight (kg)"
 	Points     []LineChartPoint
@@ -74,6 +75,7 @@ type BarChartBar struct {
 // BarChartData is a single-series categorical bar chart (e.g. Money
 // spend-by-category).
 type BarChartData struct {
+	ID         string // unique DOM id for this chart's <canvas>, e.g. "chart-spend-by-category"
 	Title      string
 	SeriesName string // legend label, e.g. "Avg monthly spend (EUR)"
 	Bars       []BarChartBar

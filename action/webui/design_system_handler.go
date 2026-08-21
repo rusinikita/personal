@@ -3,10 +3,22 @@ package webui
 import (
 	"html/template"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+// designSystemPageData is what templates/pages/design_system.html renders —
+// each field is an already-rendered component fragment (template.HTML, so
+// it's inserted verbatim rather than re-escaped), so the page template just
+// lays sections around them declaratively.
+type designSystemPageData struct {
+	StatsHTML       template.HTML
+	TableHTML       template.HTML
+	WeightChartHTML template.HTML
+	MoodChartHTML   template.HTML
+	SpendChartHTML  template.HTML
+	DetailHTML      template.HTML
+}
 
 // DesignSystemHandler renders the /web/design-system demo/style-guide page:
 // every shared component (nav, stat tiles, table, line charts, bar chart,
@@ -41,6 +53,7 @@ func DesignSystemHandler(c *gin.Context) {
 	}
 
 	weightChart := LineChartData{
+		ID:         "chart-weight-demo",
 		Title:      "Bench press — weight over time",
 		SeriesName: "Weight (kg)",
 		Points: []LineChartPoint{
@@ -52,6 +65,7 @@ func DesignSystemHandler(c *gin.Context) {
 	}
 
 	moodChart := LineChartData{
+		ID:         "chart-mood-demo",
 		Title:      "Mood — value over time",
 		SeriesName: "Mood value",
 		Points: []LineChartPoint{
@@ -64,6 +78,7 @@ func DesignSystemHandler(c *gin.Context) {
 	}
 
 	spendChart := BarChartData{
+		ID:         "chart-spend-demo",
 		Title:      "Spend by category (avg/month)",
 		SeriesName: "EUR",
 		Bars: []BarChartBar{
@@ -94,34 +109,21 @@ func DesignSystemHandler(c *gin.Context) {
 		},
 	}
 
-	var body strings.Builder
-	body.WriteString("<section><h2>Stat tiles</h2>")
-	body.WriteString(string(RenderStatTiles(stats)))
-	body.WriteString("</section>")
-
-	body.WriteString("<section><h2>Table</h2>")
-	body.WriteString(string(RenderTable(table)))
-	body.WriteString("</section>")
-
-	body.WriteString("<section><h2>Line charts</h2>")
-	body.WriteString(string(RenderLineChart(weightChart)))
-	body.WriteString(string(RenderLineChart(moodChart)))
-	body.WriteString("</section>")
-
-	body.WriteString("<section><h2>Bar chart</h2>")
-	body.WriteString(string(RenderBarChart(spendChart)))
-	body.WriteString("</section>")
-
-	body.WriteString("<section><h2>Drill-down / detail view</h2>")
-	body.WriteString(string(RenderDetailView(detail)))
-	body.WriteString("</section>")
+	content := execToHTML("pages/design_system", designSystemPageData{
+		StatsHTML:       RenderStatTiles(stats),
+		TableHTML:       RenderTable(table),
+		WeightChartHTML: RenderLineChart(weightChart),
+		MoodChartHTML:   RenderLineChart(moodChart),
+		SpendChartHTML:  RenderBarChart(spendChart),
+		DetailHTML:      RenderDetailView(detail),
+	})
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
 	if err := RenderPage(c.Writer, PageData{
 		Title:   "Design System",
 		Nav:     nav,
-		Content: template.HTML(body.String()),
+		Content: content,
 	}); err != nil {
 		c.String(http.StatusInternalServerError, "render error: %v", err)
 		return

@@ -1,0 +1,28 @@
+{{define "components/chart"}}
+<div class="webui-chart-container">
+<canvas id="{{.ID}}"></canvas>
+<script>
+(function() {
+  var ctx = document.getElementById({{.ID | toJS}});
+  var style = getComputedStyle(document.documentElement);
+  new Chart(ctx, {
+    type: {{.Type | toJS}},
+    data: {
+      labels: {{.Labels | toJS}},
+      datasets: [{
+        label: {{.SeriesName | toJS}},
+        data: {{.Values | toJS}},
+        borderColor: style.getPropertyValue('--webui-chart-line').trim(),
+        backgroundColor: style.getPropertyValue('--webui-chart-line').trim(),
+        tension: 0.25
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { title: { display: true, text: {{.Title | toJS}} } }
+    }
+  });
+})();
+</script>
+</div>
+{{end}}

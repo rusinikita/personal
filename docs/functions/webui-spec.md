@@ -17,7 +17,8 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Pico CSS for the heavy lifting**: base typography, spacing, form controls, and light/dark come from Pico CSS (CDN `<link>`, no build step) instead of hand-writing them — minimizes custom CSS surface area to maintain
 - **Minimal custom CSS on top**: only what Pico doesn't provide — nav active-link state, stat tile emphasis styling, table drill-down link affordance, chart container sizing — kept in one small stylesheet, not per-page
 - **No CSS build step, no JS framework**: Pico CSS and Chart.js are both plain CDN `<script>`/`<link>` tags, matching the existing codebase style (no bundler, no npm) — consistent with `dashboard_web.go` and `import_web.go`
-- **Composition via named templates**: one base "shell" template defines `<head>`, nav, and content slot; each page's content template is parsed together with the shell and invoked into it (`{{template "content" .}}` pattern), so pages don't each own a full standalone HTML document
+- **Real `.html` template files, not Go string constants**: every template — shell, each component, each page — is its own file under `action/webui/templates/`, embedded via `go:embed` and parsed with `html/template`'s named `{{define "..."}}` blocks, instead of large HTML strings living inside `.go` files
+- **Composition via named templates, not Go-side string concatenation**: a page's content is its own `templates/pages/{name}.html` file that lays out `{{.SomeComponentHTML}}` fields declaratively; the handler's only job is building the data (calling `RenderTable`/`RenderStatTiles`/etc. to produce each fragment) and executing the page template once — no handler manually writes `<section>` markup or concatenates HTML strings
 - **Design tokens as CSS custom properties**: custom (non-Pico) colors/spacing defined once as `:root` CSS variables; component CSS never hardcodes a color, so swapping the palette or adding a new theme touches one place
 - **Automatic light/dark via `prefers-color-scheme`**: no theme toggle or stored preference — both Pico CSS and the custom layer (and Chart.js, via a small init script reading the resolved CSS variables) follow the OS/browser setting
 - **Chart.js for two chart types**: server builds the data series as JSON, a thin inline script initializes a Chart.js chart from it — no server-side chart image/SVG generation to maintain. Two shapes cover every known future use: a **line chart** (single series over time — Workouts weight/reps trend, Progress activity value-over-time drill-down) and a **bar chart** (categorical comparison — Money spend-by-category)
@@ -210,6 +211,7 @@ type LineChartPoint struct {
 // LineChartData is a single-series line chart (e.g. exercise weight/reps over time,
 // or a Progress activity's value-over-time drill-down).
 type LineChartData struct {
+    ID         string // unique DOM id for this chart's <canvas>, caller-supplied
     Title      string
     SeriesName string // legend label, e.g. "Weight (kg)"
     Points     []LineChartPoint
@@ -223,6 +225,7 @@ type BarChartBar struct {
 
 // BarChartData is a single-series categorical bar chart (e.g. Money spend-by-category).
 type BarChartData struct {
+    ID         string // unique DOM id for this chart's <canvas>, caller-supplied
     Title      string
     SeriesName string // legend label, e.g. "Avg monthly spend (EUR)"
     Bars       []BarChartBar
@@ -232,6 +235,24 @@ type BarChartData struct {
 ### Repository Interface
 
 None — this package performs no database access. Consuming handlers fetch their own data and pass it in as the structs above.
+
+### Template File Layout
+
+Every template is a real `.html` file, embedded at compile time and parsed once into a single named-template set:
+
+```
+action/webui/templates/
+  layout.html                    {{define "layout"}}      — shell: head/nav/footer, design tokens
+  components/
+    table.html                   {{define "components/table"}}
+    stat_tiles.html               {{define "components/stat_tiles"}}
+    chart.html                    {{define "components/chart"}}       — shared by line + bar (differ by .Type)
+    detail_view.html               {{define "components/detail_view"}}
+  pages/
+    design_system.html             {{define "pages/design_system"}}   — demo page's own composition
+```
+
+A page's `.html` file (e.g. `pages/design_system.html`) never calls a component template directly — the Go handler renders each component to a `template.HTML` fragment first (via `RenderTable`, `RenderStatTiles`, ...), then the page template just places those fragments into `<section>`s declaratively. This keeps every `.html` file focused on markup/layout only, and keeps the small data-shaping (e.g. splitting `LineChartData.Points` into parallel label/value slices) in Go where it belongs.
 
 ## HTTP Handlers
 
@@ -245,6 +266,8 @@ The one real route this package owns. Renders a single page built entirely from 
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 
 Not behind auth yet — the "Authorization for web dashboards" backlog item gates the real `/web/*` pages, but this route only ever renders static fixture data, never real user data, so leaving it open until that item lands is acceptable.
+
+The handler itself only builds fixture data and calls the render functions below; the actual page layout lives in `templates/pages/design_system.html` (see Template File Layout). Future dashboard handlers (Money, Progress, Workouts) follow the same shape: build data, call `RenderTable`/`RenderStatTiles`/etc. for each fragment, put the fragments into their own `PageData`/content template — never assembling HTML by hand in Go.
 
 ### Render functions
 Everything else is a Go function, not a route — called from other subdomains' handlers to build their pages:
