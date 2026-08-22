@@ -17,6 +17,15 @@ type ExerciseSearch struct {
 	Limit  int64
 }
 
+// ExercisePersonalRecords pairs an exercise with how many sets have ever
+// been logged for it and its personal records, used by the workouts web
+// dashboard's list view (sorted by SetCount).
+type ExercisePersonalRecords struct {
+	Exercise Exercise
+	SetCount int64
+	Records  PersonalRecords
+}
+
 type EquipmentType string
 
 const (

@@ -1447,6 +1447,49 @@ func (r *repository) GetPersonalRecords(ctx context.Context, userID int64, exerc
 	return records, nil
 }
 
+// ListPersonalRecords returns every exercise the user has ever logged a set
+// for, paired with its total set count and personal records, sorted by set
+// count descending (most-performed first). Used by the workouts web
+// dashboard's list view.
+func (r *repository) ListPersonalRecords(ctx context.Context, userID int64) ([]domain.ExercisePersonalRecords, error) {
+	query := `
+		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at, COUNT(s.id) AS set_count
+		FROM exercises e
+		JOIN sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
+		WHERE e.user_id = $1
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at
+		ORDER BY set_count DESC, e.name ASC`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query exercise usage: %w", err)
+	}
+	defer rows.Close()
+
+	var results []domain.ExercisePersonalRecords
+	for rows.Next() {
+		var ex domain.Exercise
+		var setCount int64
+		if err := rows.Scan(&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.CreatedAt, &setCount); err != nil {
+			return nil, fmt.Errorf("failed to scan exercise usage: %w", err)
+		}
+		results = append(results, domain.ExercisePersonalRecords{Exercise: ex, SetCount: setCount})
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	for i := range results {
+		records, err := r.GetPersonalRecords(ctx, userID, results[i].Exercise.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get personal records for exercise %d: %w", results[i].Exercise.ID, err)
+		}
+		results[i].Records = *records
+	}
+
+	return results, nil
+}
+
 func (r *repository) ListSetsByExerciseAndWorkouts(ctx context.Context, userID int64, exerciseID int64, workoutIDs []int64) ([]domain.Set, error) {
 	if len(workoutIDs) == 0 {
 		return []domain.Set{}, nil

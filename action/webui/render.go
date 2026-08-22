@@ -96,18 +96,22 @@ type detailViewRenderData struct {
 }
 
 // RenderDetailView renders the drill-down/detail layout: back link, optional
-// stat tiles, then a table.
+// stat tiles, then an optional table.
 func RenderDetailView(data DetailViewData) template.HTML {
 	var statsHTML template.HTML
 	if len(data.Stats) > 0 {
 		statsHTML = RenderStatTiles(data.Stats)
+	}
+	var tableHTML template.HTML
+	if len(data.Table.Columns) > 0 {
+		tableHTML = RenderTable(data.Table)
 	}
 	return execToHTML("components/detail_view", detailViewRenderData{
 		Title:     data.Title,
 		BackURL:   data.BackURL,
 		BackText:  data.BackText,
 		StatsHTML: statsHTML,
-		TableHTML: RenderTable(data.Table),
+		TableHTML: tableHTML,
 	})
 }
 

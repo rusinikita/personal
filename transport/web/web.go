@@ -14,6 +14,7 @@ import (
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/webui"
+	"personal/action/workout"
 	"personal/gateways"
 )
 
@@ -46,6 +47,11 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/progress/browse/finished", webAuth, dbMiddleware(db), progress.BrowseFinishedWebHandler)
 	router.GET("/web/progress/browse/future", webAuth, dbMiddleware(db), progress.BrowseFutureWebHandler)
 	router.GET("/web/progress/browse/:id", webAuth, dbMiddleware(db), progress.BrowseDetailWebHandler)
+
+	// Workouts dashboard — read-only personal records list + per-exercise
+	// drill-down, built on the webui design system.
+	router.GET("/web/workouts", webAuth, dbMiddleware(db), workout.PersonalRecordsWebHandler)
+	router.GET("/web/workouts/:id", webAuth, dbMiddleware(db), workout.ExerciseDetailWebHandler)
 
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))
