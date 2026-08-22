@@ -29,9 +29,12 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 		webAuth = auth.WebMiddleware()
 	}
 
-	router.GET("/", func(c *gin.Context) {
+	redirectToDesignSystem := func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/web/design-system")
-	})
+	}
+	router.GET("/", redirectToDesignSystem)
+	router.GET("/web", redirectToDesignSystem)
+	router.GET("/web/", redirectToDesignSystem)
 
 	router.GET("/web/login", auth.WebLoginPageHandler)
 	router.POST("/web/login", auth.WebLoginHandler)
