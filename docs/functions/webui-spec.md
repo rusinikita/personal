@@ -25,7 +25,9 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Typed Go structs, not raw HTML, as the component API**: pages build a `Table`, `StatTile`, `LineChart`, `BarChart`, or `DetailView` struct and hand it to the shell; the shell owns the markup
 - **Responsive by default**: flexbox/grid + relative units (`rem`, `%`, `minmax()`), no fixed `100vw`/`100vh` sizing (that pattern stays confined to the untouched screenshot dashboard)
 - **Single shared Go package (`action/webui`)**: matches `action/{subdomain}` convention; the package exposes one real route (the demo page below) plus render functions other subdomains' handlers call directly
-- **Demo page doubles as living documentation**: `GET /web/design-system` renders every component (nav, stat tiles, table, line chart, bar chart, drill-down/detail layout) against fixture data, so visual regressions are caught by looking at one page instead of hunting through whichever real dashboard happens to use a given component
+- **Demo page doubles as living documentation**: `GET /web/design-system` renders every component (nav, stat tiles, table, line chart, bar chart, drill-down/detail layout, user menu) against fixture data, so visual regressions are caught by looking at one page instead of hunting through whichever real dashboard happens to use a given component
+- **User menu is a Pico dropdown, no custom JS**: the shell header shows `PageData.UserName` as a `<details class="dropdown"><summary>` element (Pico CSS v2's built-in disclosure pattern); clicking it opens a one-item menu with a "Logout" link — no click-outside/open-state JS to write or maintain
+- **Every shell-rendered page carries a username**: `action/auth`'s `WebMiddleware` (see `auth-spec.md`) puts the logged-in username on the gin context; every `/web/*` handler (including this package's own `GET /web/design-system`) reads it and sets `PageData.UserName` before calling `RenderPage`
 
 ## Architecture Diagrams
 
@@ -94,13 +96,15 @@ sequenceDiagram
     participant Demo as action/webui demo handler
     participant Webui as action/webui render funcs
 
-    Browser->>Demo: GET /web/design-system
+    Browser->>Demo: GET /web/design-system (WebMiddleware already validated session)
+    Demo->>Demo: read username set on gin context by WebMiddleware
     Demo->>Demo: build fixture data:<br/>NavItems, TableData, []StatTileData,<br/>LineChartData (x2: line style variants),<br/>BarChartData, DetailViewData
     Demo->>Webui: RenderTable / RenderStatTiles /<br/>RenderLineChart / RenderBarChart / RenderDetailView
     Webui-->>Demo: template.HTML fragments
-    Demo->>Webui: RenderPage(w, PageData{Content: <concatenated fragments>})
+    Demo->>Webui: RenderPage(w, PageData{UserName: ..., Content: <concatenated fragments>})
+    Webui->>Webui: render header with UserName dropdown (Logout link)
     Webui-->>Demo: HTML string
-    Demo-->>Browser: 200 text/html — every component visible on one page
+    Demo-->>Browser: 200 text/html — every component visible on one page, including the user menu
 ```
 
 ### Sequence Diagram: Page render flow
@@ -162,9 +166,10 @@ type NavItem struct {
 
 // PageData is the top-level data passed to the shell template.
 type PageData struct {
-    Title   string
-    Nav     []NavItem
-    Content template.HTML // pre-rendered content template output
+    Title    string
+    Nav      []NavItem
+    UserName string        // logged-in user's name, shown in the header dropdown; empty hides it
+    Content  template.HTML // pre-rendered content template output
 }
 
 // StatTileData is one summary number (e.g. "Current balance: €4,231").
@@ -265,7 +270,7 @@ The one real route this package owns. Renders a single page built entirely from 
 - A bar chart with sample categorical data (previewing a Money-style "spend by category" use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 
-Not behind auth yet — the "Authorization for web dashboards" backlog item gates the real `/web/*` pages, but this route only ever renders static fixture data, never real user data, so leaving it open until that item lands is acceptable.
+Behind `WebMiddleware` (see `auth-spec.md`'s "Authorization for web dashboards" flow) like every other `/web/*` dashboard — it renders through the same shell, and the shell now shows the logged-in username, so it needs a real session to demo that correctly.
 
 The handler itself only builds fixture data and calls the render functions below; the actual page layout lives in `templates/pages/design_system.html` (see Template File Layout). Future dashboard handlers (Money, Progress, Workouts) follow the same shape: build data, call `RenderTable`/`RenderStatTiles`/etc. for each fragment, put the fragments into their own `PageData`/content template — never assembling HTML by hand in Go.
 
@@ -273,7 +278,7 @@ The handler itself only builds fixture data and calls the render functions below
 Everything else is a Go function, not a route — called from other subdomains' handlers to build their pages:
 
 ### `webui.RenderPage(w io.Writer, data PageData) error`
-Executes the shared shell template (head/nav/footer + design tokens, light/dark via `prefers-color-scheme`) with `data.Content` dropped into the content slot. Used by every `/web/*` handler, including the demo page above.
+Executes the shared shell template (head/nav/footer + design tokens, light/dark via `prefers-color-scheme`) with `data.Content` dropped into the content slot. When `data.UserName` is set, the header also renders it as a `<details class="dropdown">` menu (Pico CSS's built-in disclosure pattern, no custom JS) containing one item: a "Logout" link to `GET /web/logout` (see `auth-spec.md`). Used by every `/web/*` handler, including the demo page above.
 
 ### `webui.RenderTable(data TableData) template.HTML`
 Renders a `TableData` into the shared table component markup, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template).

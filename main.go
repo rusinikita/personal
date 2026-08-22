@@ -112,6 +112,12 @@ func main() {
 
 	authRequired := router.Group("/app")
 
+	// webAuth gates human browser access to the new /web/* dashboards plus
+	// /money/import via a cookie session (see action/auth's WebMiddleware),
+	// same as Middleware() gates /app/mcp via a bearer token — both are
+	// no-ops when AUTH_DISABLED is set.
+	webAuth := func(c *gin.Context) { c.Next() }
+
 	if os.Getenv("AUTH_DISABLED") == "" {
 		router.GET("/.well-known/oauth-authorization-server", auth.WellKnownHandler)
 		router.GET("/.well-known/oauth-authorization-server/*path", auth.WellKnownHandler)
@@ -121,7 +127,12 @@ func main() {
 		router.POST("/oauth/register", auth.RegisterClientHandler)
 
 		authRequired.Use(auth.Middleware())
+		webAuth = auth.WebMiddleware()
 	}
+
+	router.GET("/web/login", auth.WebLoginPageHandler)
+	router.POST("/web/login", auth.WebLoginHandler)
+	router.GET("/web/logout", auth.WebLogoutHandler)
 
 	authRequired.Any("/mcp", func(ctx *gin.Context) {
 		handler.ServeHTTP(ctx.Writer, ctx.Request)
@@ -137,18 +148,10 @@ func main() {
 	}
 
 	router.GET("/web/progress", dbMiddleware(repo), progress.DashboardWebHandler)
-	router.GET("/web/design-system", webui.DesignSystemHandler)
+	router.GET("/web/design-system", webAuth, webui.DesignSystemHandler)
 
-	// Money CSV import — protected by HTTP Basic Auth
-	importUser := os.Getenv("IMPORT_USERNAME")
-	importPass := os.Getenv("IMPORT_PASSWORD")
-	if importUser == "" {
-		importUser = "admin"
-	}
-	if importPass == "" {
-		importPass = "admin"
-	}
-	moneyImport := router.Group("/money", money.BasicAuthMiddleware(importUser, importPass), dbMiddleware(repo))
+	// Money CSV import — protected by the shared web session cookie.
+	moneyImport := router.Group("/money", webAuth, dbMiddleware(repo))
 	moneyImport.GET("/import", money.ImportGETHandler)
 	moneyImport.POST("/import", money.ImportPOSTHandler)
 

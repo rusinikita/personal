@@ -121,9 +121,10 @@ func DesignSystemHandler(c *gin.Context) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
 	if err := RenderPage(c.Writer, PageData{
-		Title:   "Design System",
-		Nav:     nav,
-		Content: content,
+		Title:    "Design System",
+		Nav:      nav,
+		UserName: c.GetString("user_name"),
+		Content:  content,
 	}); err != nil {
 		c.String(http.StatusInternalServerError, "render error: %v", err)
 		return

@@ -11,9 +11,10 @@ type NavItem struct {
 
 // PageData is the top-level data passed to the shell template.
 type PageData struct {
-	Title   string
-	Nav     []NavItem
-	Content template.HTML // pre-rendered content template output
+	Title    string
+	Nav      []NavItem
+	UserName string        // logged-in user's name, shown in the header dropdown; empty hides it
+	Content  template.HTML // pre-rendered content template output
 }
 
 // StatTileData is one summary number (e.g. "Current balance: €4,231").

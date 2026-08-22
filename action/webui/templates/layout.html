@@ -42,6 +42,14 @@ nav a[aria-current="page"] { color: var(--webui-accent); font-weight: 700; }
 <ul>
 {{range .Nav}}<li><a href="{{.URL}}"{{if .Active}} aria-current="page"{{end}}>{{.Label}}</a></li>
 {{end}}
+{{if .UserName}}<li>
+<details class="dropdown">
+<summary>{{.UserName}}</summary>
+<ul dir="rtl">
+<li><a href="/web/logout">Logout</a></li>
+</ul>
+</details>
+</li>{{end}}
 </ul>
 </nav>
 </header>

@@ -17,12 +17,6 @@ import (
 
 const defaultUserID int64 = 1
 
-// BasicAuthMiddleware checks HTTP Basic Auth credentials from env.
-// Expected env vars: IMPORT_USERNAME, IMPORT_PASSWORD.
-func BasicAuthMiddleware(username, password string) gin.HandlerFunc {
-	return gin.BasicAuth(gin.Accounts{username: password})
-}
-
 // importFormContentSrc is embedded into the shared webui.RenderPage shell —
 // it owns no <html>/<head>/<style> of its own, just the form and result
 // message. Layout/typography come from Pico CSS via the shell.
@@ -233,8 +227,9 @@ func renderImportPage(c *gin.Context, data importPageData) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
 	if err := webui.RenderPage(c.Writer, webui.PageData{
-		Title:   "Money Import",
-		Content: template.HTML(content.String()),
+		Title:    "Money Import",
+		UserName: c.GetString("user_name"),
+		Content:  template.HTML(content.String()),
 	}); err != nil {
 		c.String(http.StatusInternalServerError, "render error: %v", err)
 	}

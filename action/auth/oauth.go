@@ -78,9 +78,12 @@ func parseUsers(usersEnv string) ([]User, error) {
 	return users, nil
 }
 
-// Claims represents the JWT claims.
+// Claims represents the JWT claims. UserName is only consumed by the web
+// session flow (rendered into the shell's user menu) but is set on every
+// token, OAuth included, since both flows share this one struct.
 type Claims struct {
-	UserID int64 `json:"user_id"`
+	UserID   int64  `json:"user_id"`
+	UserName string `json:"username"`
 	jwt.RegisteredClaims
 }
 
@@ -231,14 +234,8 @@ func AuthorizeHandler(c *gin.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
 
-	var userID int64
-	for _, user := range users {
-		if user.UserName == username && user.Password == password {
-			userID = user.ID
-		}
-	}
-
-	if userID == 0 {
+	user := authenticateUser(username, password)
+	if user == nil {
 		c.String(http.StatusUnauthorized, "Invalid username or password")
 		return
 	}
@@ -247,7 +244,7 @@ func AuthorizeHandler(c *gin.Context) {
 	AuthCodes[code] = &AuthorizationCode{
 		Code:        code,
 		ClientID:    clientID,
-		UserID:      strconv.Itoa(int(userID)),
+		UserID:      strconv.Itoa(int(user.ID)),
 		RedirectURI: redirectURI,
 		State:       state,
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
@@ -265,6 +262,28 @@ func generateAuthorizationCode() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
+}
+
+// authenticateUser returns the matching User for a username/password pair
+// from the USERS-env-loaded store, or nil if none match. Shared by the
+// OAuth authorization-code flow and the web session login flow.
+func authenticateUser(username, password string) *User {
+	for i := range users {
+		if users[i].UserName == username && users[i].Password == password {
+			return &users[i]
+		}
+	}
+	return nil
+}
+
+// findUserByID looks up a user by ID, or nil if none match.
+func findUserByID(id int64) *User {
+	for i := range users {
+		if users[i].ID == id {
+			return &users[i]
+		}
+	}
+	return nil
 }
 
 // TokenHandler handles the `/oauth/token` endpoint.
@@ -301,8 +320,14 @@ func TokenHandler(c *gin.Context) {
 
 	expiresIn := 14 * 24 * time.Hour
 
+	var userName string
+	if u := findUserByID(int64(userID)); u != nil {
+		userName = u.UserName
+	}
+
 	claims := &Claims{
-		UserID: int64(userID),
+		UserID:   int64(userID),
+		UserName: userName,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: &jwt.NumericDate{
 				Time: time.Now().Add(expiresIn),
