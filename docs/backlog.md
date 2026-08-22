@@ -4,24 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title.
 
-## 20-08-26 — Authorization for web dashboards
-
-A shared, cookie-based login for human browser access to the *new* `/web/*` pages (Money, Progress, Workouts, Navigation home page below) plus `/money/import`, replacing the inconsistent per-page auth that exists today: `/money/import` uses HTTP Basic Auth with its own `IMPORT_USERNAME`/`IMPORT_PASSWORD` env creds. MCP/agent access keeps using the existing full OAuth 2.1 flow (`action/auth/oauth.go`) — that's built for machine clients exchanging a bearer token, not a human logging in once in a browser.
-
-**Out of scope:** `action/progress/dashboard_web.go` (served at `/web/progress`) is explicitly excluded — it's purpose-built for black-and-white screenshot/e-ink display and stays exactly as it is today, unauthenticated included. Do not add login to it, do not route it through the new middleware.
-
-**Why:** The Money, Progress, and Workouts dashboards below all need a logged-in user to scope their data and gate access. Building one shared login now avoids inventing a fourth one-off auth scheme, and lets `/money/import` drop its current inconsistent handling.
-
-**Use cases:**
-- User should be able to log in via a login page — reusing the existing username/password credential model from `action/auth`'s `USERS` env var and login page style — and receive a signed JWT stored as an httpOnly cookie, instead of doing the full OAuth authorization-code exchange MCP clients use
-- User should stay logged in across all *new* web dashboard pages (Money, Progress, Workouts) via that single cookie, without logging in separately per page
-- User should be able to log out, clearing the session cookie
-- Unauthenticated visitors to any *new* `/web/*` page should be redirected to the login page — this excludes the existing `/web/progress` screenshot dashboard, which stays unauthenticated and untouched
-- The login form (a state-changing POST) should be protected against CSRF, since cookie-based auth is vulnerable to it in a way the existing header-based bearer token isn't
-- `/money/import` should be migrated from its own Basic Auth onto this shared cookie-based auth, and `IMPORT_USERNAME`/`IMPORT_PASSWORD` retired
-- Dashboards should read the logged-in user's ID from the authenticated session (the same way MCP already does via `gateways.WithUserID`) instead of hardcoded defaults like money's `defaultUserID = 1`
-- The existing MCP OAuth flow (`action/auth/oauth.go`) stays as-is for agent/API clients — the cookie-based flow is additive for human browser access, sharing the same user store and JWT secret
-
 ## 20-08-26 — Navigation home page for web dashboards
 
 One entry-point page listing and linking to each web dashboard section.
@@ -34,11 +16,9 @@ One entry-point page listing and linking to each web dashboard section.
 - New web routes should follow one consistent URL namespace, e.g. `/web/money`, `/web/workouts`, `/web/import` — TODO: confirm naming, since `/money/import` currently lives outside the `/web` prefix. Note `/web/progress` is already taken by the existing untouched screenshot dashboard, so the new Progress page needs a different path, e.g. `/web/progress/browse`
 - Home page should rely on the shared login rather than being separately gated
 
-**Depends on:** 20-08-26 Authorization for web dashboards.
-
 ## 19-08-26 — Web interface for Money
 
-**Depends on:** 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
+**Depends on:** 20-08-26 Navigation home page for web dashboards.
 
 A **read-only** web interface on top of the existing money functionality for reviewing balance, income/spending trends, and category breakdowns. Adding/editing/deleting transactions stays out of scope — bulk import already exists at `/money/import` (`action/money/import_web.go`), and this UI should link out to it rather than duplicate it.
 
@@ -57,7 +37,7 @@ A **read-only** web interface on top of the existing money functionality for rev
 
 ## 19-08-26 — Web interface for Progress
 
-**Depends on:** 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
+**Depends on:** 20-08-26 Navigation home page for web dashboards.
 
 A **new, separate, read-only** web page for browsing progress data, built in the new design system. It sits alongside — not instead of — the existing `/web/progress` dashboard (`action/progress/dashboard_web.go`), which is purpose-built for black-and-white screenshot/e-ink display and stays completely untouched: same route, same fixed 100vw/100vh layout, same top-5-only, same code. Do not edit `dashboard_web.go` as part of this item.
 
@@ -71,7 +51,7 @@ A **new, separate, read-only** web page for browsing progress data, built in the
 
 ## 19-08-26 — Web interface for Workouts
 
-**Depends on:** 20-08-26 Authorization for web dashboards, 20-08-26 Navigation home page for web dashboards.
+**Depends on:** 20-08-26 Navigation home page for web dashboards.
 
 A **read-only** web interface on top of the workout functionality for reviewing personal records and per-exercise trends. Logging/editing workouts stays in the Telegram bot — this is view-only.
 
