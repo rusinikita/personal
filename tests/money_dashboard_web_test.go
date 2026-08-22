@@ -172,14 +172,14 @@ func (s *IntegrationTestSuite) TestMoneyDashboard_BalanceTrendChart_PastActualFu
 	assert.Equal(s.T(), http.StatusOK, w.Code)
 	body := w.Body.String()
 
-	assert.Contains(s.T(), body, `labels: ["-12m","-6m","-3m","Now","+3m","+6m","+12m"]`)
-	// -12m predates the account's first transaction (8 months ago) -> 0 (no
-	// data yet, not an error). -6m/-3m are the actual cumulative balance as
-	// of that past date (1000 before the second income, 1500 after).
-	// Now = current balance (1500). +3m/+6m/+12m = current + avg monthly
-	// savings (1500/8 = 187.5) x N — the same figures the old Projected
-	// tiles used to show, now plotted as a trend instead.
-	assert.Contains(s.T(), body, `data: [0,1000,1500,1500,2062.5,2625,3750]`)
+	assert.Contains(s.T(), body, `labels: ["-12m","-9m","-6m","-3m","Now","+3m","+6m","+9m","+12m"]`)
+	// -12m/-9m predate the account's first transaction (8 months ago) -> 0
+	// (no data yet, not an error). -6m/-3m are the actual cumulative balance
+	// as of that past date (1000 before the second income, 1500 after).
+	// Now = current balance (1500). +3m/+6m/+9m/+12m = current + avg
+	// monthly savings (1500/8 = 187.5) x N — the same figures the old
+	// Projected tiles used to show, now plotted as a trend instead.
+	assert.Contains(s.T(), body, `data: [0,0,1000,1500,1500,2062.5,2625,3187.5,3750]`)
 	assert.NotContains(s.T(), body, "Projected", "the old separate Projected tiles must be gone")
 }
 

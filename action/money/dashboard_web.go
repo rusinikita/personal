@@ -121,10 +121,11 @@ func buildDashboardStats(summary domain.MoneySummary, allTime, lastMonth domain.
 }
 
 // balanceTrendOffsets are the months-from-now offsets the balance trend
-// chart plots: three actual past points, the current balance, and three
-// projected future points, all spaced the same way for a symmetric trend
-// line.
-var balanceTrendOffsets = []int{-12, -6, -3, 0, 3, 6, 12}
+// chart plots: four actual past points, the current balance, and four
+// projected future points, all spaced 3 months apart so the line renders
+// on an evenly-spaced axis instead of looking bent at the -6/-3 and 6/12
+// gaps.
+var balanceTrendOffsets = []int{-12, -9, -6, -3, 0, 3, 6, 9, 12}
 
 // balanceTrendLabel renders a months-from-now offset as "-12m", "Now", or
 // "+3m".
