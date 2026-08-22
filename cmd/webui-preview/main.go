@@ -1,7 +1,9 @@
-// Command webui-preview runs a bare HTTP server exposing only
-// /web/design-system, so the shared design system (action/webui) can be
-// eyeballed in a browser without standing up Postgres or Telegram
-// credentials the way the full app (main.go) requires.
+// Command webui-preview runs all /web/* routes (via transport/web) against a
+// mock repository instead of Postgres, so new web handlers can be eyeballed
+// in a browser without standing up a database or Telegram credentials the
+// way the full app (main.go) requires. Auth still runs for real: set USERS
+// and JWT_SECRET (e.g. in .env.local) the same way main.go requires, unless
+// AUTH_DISABLED is set.
 package main
 
 import (
@@ -10,15 +12,28 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 
-	"personal/action/webui"
+	"personal/action/auth"
+	"personal/gateways/db"
+	"personal/transport/web"
 )
 
 func main() {
+	if err := godotenv.Overload(".env.local"); err != nil {
+		log.Println("Error loading .env.local file", err)
+	}
+
+	authDisabled := os.Getenv("AUTH_DISABLED") != ""
+	if !authDisabled {
+		auth.InitializeAuth()
+	}
+
 	gin.SetMode(gin.DebugMode)
 	router := gin.Default()
 
-	router.GET("/web/design-system", webui.DesignSystemHandler)
+	web.Register(router, db.NewMockRepository(), authDisabled)
+
 	router.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/web/design-system")
 	})

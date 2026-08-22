@@ -15,13 +15,10 @@ import (
 	sloggin "github.com/samber/slog-gin"
 
 	"personal/action/auth"
-	"personal/action/money"
-	"personal/action/progress"
-	"personal/action/webui"
-	"personal/gateways"
 	"personal/gateways/db"
 	"personal/gateways/telegram"
 	mcp2 "personal/transport/mcp"
+	"personal/transport/web"
 )
 
 func main() {
@@ -112,13 +109,9 @@ func main() {
 
 	authRequired := router.Group("/app")
 
-	// webAuth gates human browser access to the new /web/* dashboards plus
-	// /money/import via a cookie session (see action/auth's WebMiddleware),
-	// same as Middleware() gates /app/mcp via a bearer token — both are
-	// no-ops when AUTH_DISABLED is set.
-	webAuth := func(c *gin.Context) { c.Next() }
+	authDisabled := os.Getenv("AUTH_DISABLED") != ""
 
-	if os.Getenv("AUTH_DISABLED") == "" {
+	if !authDisabled {
 		router.GET("/.well-known/oauth-authorization-server", auth.WellKnownHandler)
 		router.GET("/.well-known/oauth-authorization-server/*path", auth.WellKnownHandler)
 		router.GET("/.well-known/oauth-protected-resource/*path", auth.WellKnownHandler)
@@ -127,33 +120,15 @@ func main() {
 		router.POST("/oauth/register", auth.RegisterClientHandler)
 
 		authRequired.Use(auth.Middleware())
-		webAuth = auth.WebMiddleware()
 	}
-
-	router.GET("/web/login", auth.WebLoginPageHandler)
-	router.POST("/web/login", auth.WebLoginHandler)
-	router.GET("/web/logout", auth.WebLogoutHandler)
 
 	authRequired.Any("/mcp", func(ctx *gin.Context) {
 		handler.ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
-	// Middleware to inject DB into context for HTTP handlers
-	dbMiddleware := func(db gateways.DB) gin.HandlerFunc {
-		return func(c *gin.Context) {
-			ctx := gateways.WithDB(c.Request.Context(), db)
-			c.Request = c.Request.WithContext(ctx)
-			c.Next()
-		}
-	}
-
-	router.GET("/web/progress", dbMiddleware(repo), progress.DashboardWebHandler)
-	router.GET("/web/design-system", webAuth, webui.DesignSystemHandler)
-
-	// Money CSV import — protected by the shared web session cookie.
-	moneyImport := router.Group("/money", webAuth, dbMiddleware(repo))
-	moneyImport.GET("/import", money.ImportGETHandler)
-	moneyImport.POST("/import", money.ImportPOSTHandler)
+	// All /web/* dashboards, web session login, and /money/import — see
+	// transport/web.
+	web.Register(router, repo, authDisabled)
 
 	port := os.Getenv("PORT")
 	if port == "" {
