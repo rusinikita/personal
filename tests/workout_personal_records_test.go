@@ -68,6 +68,39 @@ func (s *IntegrationTestSuite) TestGetPersonalRecords_ReturnsCorrectRecords() {
 	assert.InDelta(s.T(), 110.0, output.Estimated1RM, 0.01)
 }
 
+func (s *IntegrationTestSuite) TestGetPersonalRecords_BodyweightExercise_MaxRepsWithNullWeight() {
+	ctx := s.Context()
+
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
+		Name: "Pull Up", EquipmentType: "bodyweight",
+	})
+	require.NoError(s.T(), err)
+
+	wID, err := s.Repo().CreateWorkout(ctx, &domain.Workout{
+		UserID: s.UserID(), StartedAt: time.Now(),
+	})
+	require.NoError(s.T(), err)
+	// WeightKg intentionally left at zero, which is stored as NULL in the DB
+	// for bodyweight exercises.
+	_, err = s.Repo().CreateSet(ctx, &domain.Set{
+		UserID: s.UserID(), WorkoutID: wID, ExerciseID: ex.ID,
+		Reps: 12, CreatedAt: time.Now(),
+	})
+	require.NoError(s.T(), err)
+
+	_, output, err := workout.GetPersonalRecords(ctx, nil, workout.GetPersonalRecordsInput{
+		ExerciseID: ex.ID,
+	})
+	require.NoError(s.T(), err)
+
+	require.NotNil(s.T(), output.MaxReps)
+	assert.Equal(s.T(), int64(12), output.MaxReps.Reps)
+	assert.Equal(s.T(), 0.0, output.MaxReps.WeightKg)
+
+	assert.Nil(s.T(), output.MaxWeight)
+	assert.Nil(s.T(), output.MaxVolume)
+}
+
 func (s *IntegrationTestSuite) TestGetPersonalRecords_NoSets() {
 	ctx := s.Context()
 

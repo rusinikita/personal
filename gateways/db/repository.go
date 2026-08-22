@@ -1470,7 +1470,7 @@ func (r *repository) GetPersonalRecords(ctx context.Context, userID int64, exerc
 	}
 
 	records.MaxReps, err = scanSetRecord(
-		`SELECT weight_kg, reps, created_at FROM sets
+		`SELECT COALESCE(weight_kg, 0), reps, created_at FROM sets
 		 WHERE exercise_id=$1 AND user_id=$2 AND reps>0
 		 ORDER BY reps DESC, weight_kg DESC LIMIT 1`)
 	if err != nil {
