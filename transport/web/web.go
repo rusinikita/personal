@@ -6,6 +6,8 @@
 package web
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"personal/action/auth"
@@ -25,6 +27,10 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	if !authDisabled {
 		webAuth = auth.WebMiddleware()
 	}
+
+	router.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/web/design-system")
+	})
 
 	router.GET("/web/login", auth.WebLoginPageHandler)
 	router.POST("/web/login", auth.WebLoginHandler)

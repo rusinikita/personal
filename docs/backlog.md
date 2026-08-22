@@ -4,21 +4,7 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title.
 
-## 20-08-26 — Navigation home page for web dashboards
-
-One entry-point page listing and linking to each web dashboard section.
-
-**Why:** There's currently no single place to land — `/web/progress` and `/money/import` are pages you have to already know the URL for. Adding Money and Workouts dashboards without a shared entry point repeats that problem two more times.
-
-**Use cases:**
-- User should be able to open one home page listing/linking to each dashboard section (Money, Progress, Workouts)
-- User should be able to get back to the home page from within any dashboard section, via the shared nav from the design system item
-- New web routes should follow one consistent URL namespace, e.g. `/web/money`, `/web/workouts`, `/web/import` — TODO: confirm naming, since `/money/import` currently lives outside the `/web` prefix. Note `/web/progress` is already taken by the existing untouched screenshot dashboard, so the new Progress page needs a different path, e.g. `/web/progress/browse`
-- Home page should rely on the shared login rather than being separately gated
-
 ## 19-08-26 — Web interface for Money
-
-**Depends on:** 20-08-26 Navigation home page for web dashboards.
 
 A **read-only** web interface on top of the existing money functionality for reviewing balance, income/spending trends, and category breakdowns. Adding/editing/deleting transactions stays out of scope — bulk import already exists at `/money/import` (`action/money/import_web.go`), and this UI should link out to it rather than duplicate it.
 
@@ -37,8 +23,6 @@ A **read-only** web interface on top of the existing money functionality for rev
 
 ## 19-08-26 — Web interface for Progress
 
-**Depends on:** 20-08-26 Navigation home page for web dashboards.
-
 A **new, separate, read-only** web page for browsing progress data, built in the new design system. It sits alongside — not instead of — the existing `/web/progress` dashboard (`action/progress/dashboard_web.go`), which is purpose-built for black-and-white screenshot/e-ink display and stays completely untouched: same route, same fixed 100vw/100vh layout, same top-5-only, same code. Do not edit `dashboard_web.go` as part of this item.
 
 **Why:** The existing dashboard is intentionally optimized for a screenshot (fixed viewport, B&W, top-5-only) and must keep working that way for its purpose — but that also means it can't show every active activity, has no drill-down into a single project's history, and has no way to browse finished or not-yet-started projects. A separate, free-scrolling, color, full-list page adds a real browsing surface without compromising the screenshot dashboard.
@@ -50,8 +34,6 @@ A **new, separate, read-only** web page for browsing progress data, built in the
 - User should be able to drill into a specific project and see its history of progress points, each with its note
 
 ## 19-08-26 — Web interface for Workouts
-
-**Depends on:** 20-08-26 Navigation home page for web dashboards.
 
 A **read-only** web interface on top of the workout functionality for reviewing personal records and per-exercise trends. Logging/editing workouts stays in the Telegram bot — this is view-only.
 

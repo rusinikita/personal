@@ -8,7 +8,6 @@ package main
 
 import (
 	"log"
-	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -33,10 +32,6 @@ func main() {
 	router := gin.Default()
 
 	web.Register(router, db.NewMockRepository(), authDisabled)
-
-	router.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusFound, "/web/design-system")
-	})
 
 	port := os.Getenv("PORT")
 	if port == "" {
