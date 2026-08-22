@@ -2,12 +2,12 @@
 <article>
 <table>
 <thead><tr>
-{{range .Columns}}<th{{if eq .Align "right"}} style="text-align:right"{{end}}>{{.Label}}</th>
+{{range .Columns}}<th style="text-align:{{if eq .Align "right"}}right{{else}}left{{end}}">{{.Label}}</th>
 {{end}}</tr></thead>
 <tbody>
 {{range .Rows}}<tr>
 {{$link := .LinkURL}}
-{{range $i, $cell := .Cells}}<td>{{if and (eq $i 0) $link}}<a href="{{$link}}">{{$cell}}</a>{{else}}{{$cell}}{{end}}</td>
+{{range $i, $cell := .Cells}}<td style="text-align:{{$cell.Align}}">{{if and (eq $i 0) $link}}<a href="{{$link}}">{{$cell.Text}}</a>{{else}}{{$cell.Text}}{{end}}</td>
 {{end}}</tr>
 {{end}}</tbody>
 </table>

@@ -31,9 +31,49 @@ func RenderPage(w io.Writer, data PageData) error {
 	return tmpl.ExecuteTemplate(w, "layout", data)
 }
 
+// tableCellRenderData is one <td>'s text plus its resolved alignment — cells
+// don't carry an Align field themselves (TableRow.Cells is just []string),
+// so RenderTable resolves each cell's alignment from its column position
+// before handing the template a shape it can render without doing that
+// lookup itself.
+type tableCellRenderData struct {
+	Text  string
+	Align string // "left" | "right", always set (never empty)
+}
+
+type tableRowRenderData struct {
+	Cells   []tableCellRenderData
+	LinkURL string
+}
+
+type tableRenderData struct {
+	Columns    []TableColumn
+	Rows       []tableRowRenderData
+	Pagination *PaginationData
+}
+
 // RenderTable renders a TableData into the shared table component markup.
+// Each column's Align applies to both its header and every cell in that
+// column, so numeric ("right") columns line up between the header and the
+// rows instead of the header alone being right-aligned.
 func RenderTable(data TableData) template.HTML {
-	return execToHTML("components/table", data)
+	rows := make([]tableRowRenderData, len(data.Rows))
+	for i, row := range data.Rows {
+		cells := make([]tableCellRenderData, len(row.Cells))
+		for j, cell := range row.Cells {
+			align := "left"
+			if j < len(data.Columns) && data.Columns[j].Align == "right" {
+				align = "right"
+			}
+			cells[j] = tableCellRenderData{Text: cell, Align: align}
+		}
+		rows[i] = tableRowRenderData{Cells: cells, LinkURL: row.LinkURL}
+	}
+	return execToHTML("components/table", tableRenderData{
+		Columns:    data.Columns,
+		Rows:       rows,
+		Pagination: data.Pagination,
+	})
 }
 
 // RenderStatTiles renders a row of summary/stat tiles.
