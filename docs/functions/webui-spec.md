@@ -2,7 +2,7 @@
 
 ## Overview
 
-Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Navigation home page) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart and a bar chart, a month-grid calendar, and a drill-down/detail layout, all themed consistently (light + dark) from a single place.
+Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart and a bar chart, a month-grid calendar, and a drill-down/detail layout, all themed consistently (light + dark) from a single place.
 
 Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain.
 

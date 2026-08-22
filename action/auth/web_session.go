@@ -163,9 +163,8 @@ func WebLoginHandler(c *gin.Context) {
 }
 
 // safeRedirectTarget only allows same-site relative paths, guarding against
-// open redirects. Anything else falls back to /web/design-system — the only
-// WebMiddleware-protected page that exists as of this backlog item; revisit
-// this fallback to the nav home page once that backlog item ships.
+// open redirects. Anything else falls back to /web/design-system, which
+// doubles as the site's landing page (there is no separate nav home page).
 func safeRedirectTarget(target string) string {
 	if strings.HasPrefix(target, "/") && !strings.HasPrefix(target, "//") {
 		return target
