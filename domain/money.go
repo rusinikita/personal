@@ -99,3 +99,20 @@ type BalanceResult struct {
 	ExpenseEUR float64
 	BalanceEUR float64
 }
+
+// MoneySummary is the user's transaction history bounds — the web
+// dashboard's only source for the "all time" query range and the
+// months-span used by every average-monthly figure it shows.
+type MoneySummary struct {
+	FirstTransactionAt *time.Time // MIN(transacted_at); nil when the user has no transactions yet
+	LastSyncedAt       *time.Time // MAX(created_at) — import freshness, not transaction age
+}
+
+// DailySummary is one calendar day's activity — powers the transaction
+// calendar. Only days with at least one transaction are returned by the
+// repository; the handler zero-fills the rest of the displayed month.
+type DailySummary struct {
+	Date     time.Time // day, truncated to midnight in the display timezone
+	Count    int       // all transaction types
+	SpendEUR float64   // sum of amount_eur where type = 'expense' only
+}

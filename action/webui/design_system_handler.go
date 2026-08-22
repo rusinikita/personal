@@ -3,6 +3,7 @@ package webui
 import (
 	"html/template"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,14 +18,52 @@ type designSystemPageData struct {
 	WeightChartHTML template.HTML
 	MoodChartHTML   template.HTML
 	SpendChartHTML  template.HTML
+	CalendarHTML    template.HTML
 	DetailHTML      template.HTML
+}
+
+// fixtureCalendarWeeks builds a real, correctly-computed August 2026 month
+// grid (Go-computed weeks, not template date math — see the Best Practices
+// in webui-spec.md) with a few sample linked/unlinked days, so the demo
+// page shows the same leading/trailing-day padding a real caller would
+// produce. This is fixture-only logic local to the demo page — real
+// callers (e.g. action/money) build their own grid from live data.
+func fixtureCalendarWeeks() [][]CalendarDay {
+	first := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	mondayOffset := (int(first.Weekday()) + 6) % 7
+	start := first.AddDate(0, 0, -mondayOffset)
+
+	last := first.AddDate(0, 1, -1)
+	endOffset := 6 - (int(last.Weekday())+6)%7
+	end := last.AddDate(0, 0, endOffset)
+
+	sample := map[string]CalendarDay{
+		"2026-08-05": {Total: "€42.10 (3)", LinkURL: "/web/design-system"},
+		"2026-08-14": {Total: "€128.90 (5)", LinkURL: "/web/design-system"},
+		"2026-08-22": {Total: "€18.00 (1)", LinkURL: "/web/design-system"},
+	}
+
+	var weeks [][]CalendarDay
+	var week []CalendarDay
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		day := CalendarDay{Day: d.Day(), InMonth: d.Month() == time.August}
+		if s, ok := sample[d.Format("2006-01-02")]; ok {
+			day.Total, day.LinkURL = s.Total, s.LinkURL
+		}
+		week = append(week, day)
+		if len(week) == 7 {
+			weeks = append(weeks, week)
+			week = nil
+		}
+	}
+	return weeks
 }
 
 // DesignSystemHandler renders the /web/design-system demo/style-guide page:
 // every shared component (nav, stat tiles, table, line charts, bar chart,
-// drill-down/detail view) against fixture data, so the visual language can
-// be reviewed before any real dashboard is wired up. It touches no
-// database — every value below is a fixture.
+// calendar, drill-down/detail view) against fixture data, so the visual
+// language can be reviewed before any real dashboard is wired up. It
+// touches no database — every value below is a fixture.
 func DesignSystemHandler(c *gin.Context) {
 	nav := []NavItem{
 		{Label: "Home", URL: "/web"},
@@ -89,6 +128,14 @@ func DesignSystemHandler(c *gin.Context) {
 		},
 	}
 
+	calendar := CalendarData{
+		Title:    "August 2026",
+		PrevURL:  "/web/design-system",
+		NextURL:  "/web/design-system",
+		Weekdays: []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"},
+		Weeks:    fixtureCalendarWeeks(),
+	}
+
 	detail := DetailViewData{
 		Title:    "Groceries — transaction history",
 		BackURL:  "/web/design-system",
@@ -115,6 +162,7 @@ func DesignSystemHandler(c *gin.Context) {
 		WeightChartHTML: RenderLineChart(weightChart),
 		MoodChartHTML:   RenderLineChart(moodChart),
 		SpendChartHTML:  RenderBarChart(spendChart),
+		CalendarHTML:    RenderCalendar(calendar),
 		DetailHTML:      RenderDetailView(detail),
 	})
 

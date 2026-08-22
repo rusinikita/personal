@@ -2,7 +2,7 @@
 
 ## Overview
 
-Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Navigation home page) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart and a bar chart, and a drill-down/detail layout, all themed consistently (light + dark) from a single place.
+Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Navigation home page) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart and a bar chart, a month-grid calendar, and a drill-down/detail layout, all themed consistently (light + dark) from a single place.
 
 Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain.
 
@@ -27,9 +27,11 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Pagination lives on `TableData`, not as a separate component call**: a table and its pagination controls are one visual unit, so `TableData.Pagination *PaginationData` is enough for any caller (list page or drill-down history table) to get consistent prev/next + "page X of Y" controls without composing an extra fragment
 - **Pico's card is a bare `<article>`**: table, stat tile, and chart components render as `<article>` (Pico styles it as a card automatically — background, border-radius, shadow — no extra class needed); `<header>`/`<footer>` are used only where content actually maps to them (chart title in `<header>`, table pagination in `<footer>`) rather than on every card
 - **Single shared Go package (`action/webui`)**: matches `action/{subdomain}` convention; the package exposes one real route (the demo page below) plus render functions other subdomains' handlers call directly
-- **Demo page doubles as living documentation**: `GET /web/design-system` renders every component (nav, stat tiles, table, line chart, bar chart, drill-down/detail layout, user menu) against fixture data, so visual regressions are caught by looking at one page instead of hunting through whichever real dashboard happens to use a given component
+- **Demo page doubles as living documentation**: `GET /web/design-system` renders every component (nav, stat tiles, table, line chart, bar chart, calendar, drill-down/detail layout, user menu) against fixture data, so visual regressions are caught by looking at one page instead of hunting through whichever real dashboard happens to use a given component
 - **User menu is a Pico dropdown, no custom JS**: the shell header shows `PageData.UserName` as a `<details class="dropdown"><summary>` element (Pico CSS v2's built-in disclosure pattern); clicking it opens a one-item menu with a "Logout" link — no click-outside/open-state JS to write or maintain
 - **Every shell-rendered page carries a username**: `action/auth`'s `WebMiddleware` (see `auth-spec.md`) puts the logged-in username on the gin context; every `/web/*` handler (including this package's own `GET /web/design-system`) reads it and sets `PageData.UserName` before calling `RenderPage`
+- **Calendar is Go-computed weeks, not template date math**: `CalendarData.Weeks` is a pre-built `[][]CalendarDay` (7 columns per week, including the leading/trailing days of adjacent months needed to fill the grid) — the template just ranges over rows and cells, it never computes a weekday or month boundary itself (`html/template` has no date arithmetic to do that safely anyway)
+- **Calendar cells link like table rows do**: `CalendarDay.LinkURL` is empty for a day with nothing to show (mirrors `TableRow.LinkURL`'s "empty = not clickable" convention) instead of a separate boolean flag
 
 ## Architecture Diagrams
 
@@ -249,6 +251,24 @@ type BarChartData struct {
     SeriesName string // legend label, e.g. "Avg monthly spend (EUR)"
     Bars       []BarChartBar
 }
+
+// CalendarDay is one cell in a month-grid calendar.
+type CalendarDay struct {
+    Day      int    // day-of-month number shown in the cell, e.g. 5
+    InMonth  bool   // false for the leading/trailing days of adjacent months
+    Count    string // e.g. "3 transactions" — empty hides the count line
+    Total    string // e.g. "€42.10" — empty hides the total line
+    LinkURL  string // empty = not clickable, same convention as TableRow.LinkURL
+}
+
+// CalendarData is a month-grid calendar (e.g. Money's transaction calendar).
+type CalendarData struct {
+    Title    string        // e.g. "August 2026"
+    PrevURL  string        // previous month link; empty hides it (and the whole nav row when NextURL is also empty)
+    NextURL  string        // next month link; empty hides it (and the whole nav row when PrevURL is also empty)
+    Weekdays []string      // 7 column headers, e.g. ["Mon", ..., "Sun"]
+    Weeks    [][]CalendarDay // each inner slice has exactly 7 CalendarDay entries
+}
 ```
 
 ### Repository Interface
@@ -267,6 +287,7 @@ action/webui/templates/
     pagination.html               {{define "components/pagination"}} — prev/next + "page X of Y", included by table.html
     stat_tiles.html               {{define "components/stat_tiles"}}
     chart.html                    {{define "components/chart"}}       — shared by line + bar (differ by .Type)
+    calendar.html                  {{define "components/calendar"}}
     detail_view.html               {{define "components/detail_view"}}
   pages/
     design_system.html             {{define "pages/design_system"}}   — demo page's own composition
@@ -283,6 +304,7 @@ The one real route this package owns. Renders a single page built entirely from 
 - A table (with at least one clickable/drill-down row)
 - A line chart with sample time-series data (styled to preview both a Workouts-style "weight over time" and a Progress-style "value over time" use)
 - A bar chart with sample categorical data (previewing a Money-style "spend by category" use)
+- A month-grid calendar with real, correctly-computed leading/trailing days and a few sample linked/unlinked days (previewing the Money transaction calendar use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 
 Behind `WebMiddleware` (see `auth-spec.md`'s "Authorization for web dashboards" flow) like every other `/web/*` dashboard — it renders through the same shell, and the shell now shows the logged-in username, so it needs a real session to demo that correctly.
@@ -306,6 +328,9 @@ Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>
 
 ### `webui.RenderBarChart(data BarChartData) template.HTML`
 Same as `RenderLineChart`, but initializes a Chart.js bar chart from `BarChartData`.
+
+### `webui.RenderCalendar(data CalendarData) template.HTML`
+Renders a Pico card (`<article>`) with a `<header>` holding the month title, and a 7-column grid below (`<table>`, one `<tr>` per `Weeks` entry) — each cell shows the day number plus, when set, `Count` and `Total`. When `PrevURL`/`NextURL` are set, the header also shows a prev/next nav — but a caller stacking several months on one page (e.g. Money's calendar) typically leaves both empty per grid and renders a single page-level Prev/Next control of its own instead, so the header falls back to just the title. A day with `InMonth == false` renders muted/de-emphasized; a day with `LinkURL` set is a clickable link, matching `RenderTable`'s row-link convention. Used by the Money transaction calendar (`money-spec.md`).
 
 ### `webui.RenderDetailView(data DetailViewData) template.HTML`
 Renders the drill-down/detail layout: back link, optional stat tiles, then an optional table. When `data.Table.Columns` is empty, the table section is skipped entirely (mirrors the existing "skip stat tiles when `Stats` is empty" behavior) — used by the Workouts exercise drill-down (`workout-spec.md`), which has stat tiles and two charts but no table.

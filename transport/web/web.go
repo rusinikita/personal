@@ -53,6 +53,13 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/workouts", webAuth, dbMiddleware(db), workout.PersonalRecordsWebHandler)
 	router.GET("/web/workouts/:id", webAuth, dbMiddleware(db), workout.ExerciseDetailWebHandler)
 
+	// Money dashboard — read-only overview, transaction list, and calendar,
+	// built on the webui design system. Adding/editing transactions stays
+	// out of scope; see the CSV import routes below.
+	router.GET("/web/money", webAuth, dbMiddleware(db), money.MoneyDashboardWebHandler)
+	router.GET("/web/money/transactions", webAuth, dbMiddleware(db), money.TransactionsWebHandler)
+	router.GET("/web/money/calendar", webAuth, dbMiddleware(db), money.CalendarWebHandler)
+
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))
 	moneyImport.GET("/import", money.ImportGETHandler)

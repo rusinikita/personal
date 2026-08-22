@@ -68,6 +68,16 @@ type DB interface {
 	GetBudgetProgress(ctx context.Context, userID int64, at time.Time) ([]domain.BudgetProgress, error)
 	GetBalance(ctx context.Context, userID int64, from, to time.Time) (domain.BalanceResult, error)
 
+	// GetMoneySummary returns the user's first transaction date and last
+	// sync/import timestamp — powers the web dashboard's sync-freshness
+	// stat tile and the months-span used for every "average monthly" figure.
+	GetMoneySummary(ctx context.Context, userID int64) (domain.MoneySummary, error)
+
+	// GetDailyTransactionSummary returns one DailySummary per day in
+	// [from, to] that has at least one transaction, day boundaries computed
+	// in the display timezone — powers the transaction calendar.
+	GetDailyTransactionSummary(ctx context.Context, userID int64, from, to time.Time) ([]domain.DailySummary, error)
+
 	// Progress tracking methods
 	CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error)
 	ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error)

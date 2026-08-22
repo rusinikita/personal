@@ -94,3 +94,21 @@ type BarChartData struct {
 	SeriesName string // legend label, e.g. "Avg monthly spend (EUR)"
 	Bars       []BarChartBar
 }
+
+// CalendarDay is one cell in a month-grid calendar.
+type CalendarDay struct {
+	Day     int    // day-of-month number shown in the cell, e.g. 5
+	InMonth bool   // false for the leading/trailing days of adjacent months
+	Count   string // e.g. "3 transactions" — empty hides the count line
+	Total   string // e.g. "€42.10" — empty hides the total line
+	LinkURL string // empty = not clickable, same convention as TableRow.LinkURL
+}
+
+// CalendarData is a month-grid calendar (e.g. Money's transaction calendar).
+type CalendarData struct {
+	Title    string          // e.g. "August 2026"
+	PrevURL  string          // previous month link; empty hides it (and the whole nav row when NextURL is also empty)
+	NextURL  string          // next month link; empty hides it (and the whole nav row when PrevURL is also empty)
+	Weekdays []string        // 7 column headers, e.g. ["Mon", ..., "Sun"]
+	Weeks    [][]CalendarDay // each inner slice has exactly 7 CalendarDay entries
+}

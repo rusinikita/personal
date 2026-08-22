@@ -1,0 +1,31 @@
+{{define "components/calendar"}}
+<article>
+<header>
+{{if or .PrevURL .NextURL}}
+<nav>
+<ul><li>{{if .PrevURL}}<a href="{{.PrevURL}}">← Prev</a>{{end}}</li></ul>
+<ul><li><strong>{{.Title}}</strong></li></ul>
+<ul><li>{{if .NextURL}}<a href="{{.NextURL}}">Next →</a>{{end}}</li></ul>
+</nav>
+{{else}}
+<strong>{{.Title}}</strong>
+{{end}}
+</header>
+<table class="webui-calendar">
+<thead><tr>
+{{range .Weekdays}}<th>{{.}}</th>
+{{end}}</tr></thead>
+<tbody>
+{{range .Weeks}}<tr>
+{{range .}}<td class="webui-calendar-day{{if not .InMonth}} webui-calendar-day-muted{{end}}">
+{{if .LinkURL}}<a href="{{.LinkURL}}">{{end}}
+<div class="webui-calendar-day-num">{{.Day}}</div>
+{{if .Count}}<div class="webui-calendar-count">{{.Count}}</div>{{end}}
+{{if .Total}}<div class="webui-calendar-total">{{.Total}}</div>{{end}}
+{{if .LinkURL}}</a>{{end}}
+</td>
+{{end}}</tr>
+{{end}}</tbody>
+</table>
+</article>
+{{end}}

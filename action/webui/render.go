@@ -124,6 +124,12 @@ func RenderBarChart(data BarChartData) template.HTML {
 	})
 }
 
+// RenderCalendar renders a CalendarData into the shared month-grid calendar
+// component markup.
+func RenderCalendar(data CalendarData) template.HTML {
+	return execToHTML("components/calendar", data)
+}
+
 // detailViewRenderData is the shape components/detail_view.html renders —
 // StatsHTML/TableHTML are already-rendered fragments so the component
 // template doesn't need to know how to build a table or stat tile itself.

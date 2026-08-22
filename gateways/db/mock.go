@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"time"
 
 	"personal/domain"
@@ -197,4 +199,154 @@ func (m *MockRepository) AddTransactions(_ context.Context, txs []*domain.Transa
 		tx.CreatedAt = now
 	}
 	return txs, nil
+}
+
+// mockTransactions is fixture data for the money web dashboard preview
+// pages, spanning the last few months across a handful of categories.
+func mockTransactions(userID int64) []domain.Transaction {
+	now := time.Now()
+	day := func(n int) time.Time { return now.AddDate(0, 0, -n) }
+	return []domain.Transaction{
+		{ID: 1, UserID: userID, Type: domain.TransactionTypeIncome, AmountEUR: 3500, Currency: "EUR", Account: "Revolut", Category: "salary", Merchant: "Employer", TransactedAt: day(95), CreatedAt: day(95)},
+		{ID: 2, UserID: userID, Type: domain.TransactionTypeExpense, AmountEUR: 700, Currency: "EUR", Account: "Revolut", Category: "rent", Merchant: "Landlord", TransactedAt: day(90), CreatedAt: day(90)},
+		{ID: 3, UserID: userID, Type: domain.TransactionTypeExpense, AmountEUR: 320, Currency: "EUR", Account: "Revolut", Category: "groceries", Merchant: "Lidl", TransactedAt: day(60), CreatedAt: day(60)},
+		{ID: 4, UserID: userID, Type: domain.TransactionTypeIncome, AmountEUR: 3500, Currency: "EUR", Account: "Revolut", Category: "salary", Merchant: "Employer", TransactedAt: day(65), CreatedAt: day(65)},
+		{ID: 5, UserID: userID, Type: domain.TransactionTypeExpense, AmountEUR: 45, Currency: "EUR", Account: "Revolut", Category: "transport", Merchant: "Bolt", TransactedAt: day(40), CreatedAt: day(40)},
+		{ID: 6, UserID: userID, Type: domain.TransactionTypeExpense, AmountEUR: 280, Currency: "EUR", Account: "Revolut", Category: "groceries", Merchant: "Lidl", TransactedAt: day(15), CreatedAt: day(15)},
+		{ID: 7, UserID: userID, Type: domain.TransactionTypeIncome, AmountEUR: 3500, Currency: "EUR", Account: "Revolut", Category: "salary", Merchant: "Employer", TransactedAt: day(35), CreatedAt: day(35)},
+		{ID: 8, UserID: userID, Type: domain.TransactionTypeExpense, AmountEUR: 32, Currency: "EUR", Account: "Revolut", Category: "food/cafe", Merchant: "Costa Coffee", TransactedAt: day(3), CreatedAt: day(1)},
+		{ID: 9, UserID: userID, Type: domain.TransactionTypeExpense, AmountEUR: 18, Currency: "EUR", Account: "Revolut", Category: "transport", Merchant: "Bolt", TransactedAt: day(1), CreatedAt: day(1)},
+	}
+}
+
+func (m *MockRepository) GetMoneySummary(_ context.Context, userID int64) (domain.MoneySummary, error) {
+	txs := mockTransactions(userID)
+	if len(txs) == 0 {
+		return domain.MoneySummary{}, nil
+	}
+	first, last := txs[0].TransactedAt, txs[0].CreatedAt
+	for _, tx := range txs[1:] {
+		if tx.TransactedAt.Before(first) {
+			first = tx.TransactedAt
+		}
+		if tx.CreatedAt.After(last) {
+			last = tx.CreatedAt
+		}
+	}
+	return domain.MoneySummary{FirstTransactionAt: &first, LastSyncedAt: &last}, nil
+}
+
+func (m *MockRepository) GetBalance(_ context.Context, userID int64, from, to time.Time) (domain.BalanceResult, error) {
+	var income, expense float64
+	for _, tx := range mockTransactions(userID) {
+		if tx.TransactedAt.Before(from) || tx.TransactedAt.After(to) {
+			continue
+		}
+		switch tx.Type {
+		case domain.TransactionTypeIncome:
+			income += tx.AmountEUR
+		case domain.TransactionTypeExpense:
+			expense += tx.AmountEUR
+		}
+	}
+	return domain.BalanceResult{From: from, To: to, IncomeEUR: income, ExpenseEUR: expense, BalanceEUR: income - expense}, nil
+}
+
+func (m *MockRepository) GetSpendingByCategory(_ context.Context, userID int64, from, to time.Time, depth int) ([]domain.SpendingByCategory, error) {
+	if depth < 1 {
+		depth = 1
+	}
+	totals := map[string]*domain.SpendingByCategory{}
+	var order []string
+	for _, tx := range mockTransactions(userID) {
+		if tx.Type != domain.TransactionTypeExpense {
+			continue
+		}
+		if tx.TransactedAt.Before(from) || tx.TransactedAt.After(to) {
+			continue
+		}
+		parts := strings.Split(tx.Category, "/")
+		if len(parts) > depth {
+			parts = parts[:depth]
+		}
+		cat := strings.Join(parts, "/")
+		if totals[cat] == nil {
+			totals[cat] = &domain.SpendingByCategory{Category: cat}
+			order = append(order, cat)
+		}
+		totals[cat].TotalEUR += tx.AmountEUR
+		totals[cat].Count++
+	}
+	result := make([]domain.SpendingByCategory, 0, len(order))
+	for _, cat := range order {
+		result = append(result, *totals[cat])
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].TotalEUR > result[j].TotalEUR })
+	return result, nil
+}
+
+func (m *MockRepository) GetTransactions(_ context.Context, filter domain.TransactionFilter) ([]*domain.Transaction, int, error) {
+	all := mockTransactions(filter.UserID)
+	var filtered []*domain.Transaction
+	for i := range all {
+		tx := all[i]
+		if filter.From != nil && tx.TransactedAt.Before(*filter.From) {
+			continue
+		}
+		if filter.To != nil && tx.TransactedAt.After(*filter.To) {
+			continue
+		}
+		if filter.Category != nil && !strings.HasPrefix(tx.Category, *filter.Category) {
+			continue
+		}
+		filtered = append(filtered, &tx)
+	}
+	sort.Slice(filtered, func(i, j int) bool { return filtered[i].TransactedAt.After(filtered[j].TransactedAt) })
+
+	total := len(filtered)
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset > len(filtered) {
+		offset = len(filtered)
+	}
+	end := offset + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[offset:end], total, nil
+}
+
+// GetDailyTransactionSummary mirrors the real repository's grouping by
+// calendar day in the display timezone (Asia/Nicosia).
+func (m *MockRepository) GetDailyTransactionSummary(_ context.Context, userID int64, from, to time.Time) ([]domain.DailySummary, error) {
+	loc, err := time.LoadLocation("Asia/Nicosia")
+	if err != nil {
+		return nil, err
+	}
+	totals := map[string]*domain.DailySummary{}
+	var order []string
+	for _, tx := range mockTransactions(userID) {
+		if tx.TransactedAt.Before(from) || tx.TransactedAt.After(to) {
+			continue
+		}
+		local := tx.TransactedAt.In(loc)
+		key := local.Format("2006-01-02")
+		if totals[key] == nil {
+			totals[key] = &domain.DailySummary{Date: time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)}
+			order = append(order, key)
+		}
+		totals[key].Count++
+		if tx.Type == domain.TransactionTypeExpense {
+			totals[key].SpendEUR += tx.AmountEUR
+		}
+	}
+	sort.Strings(order)
+	result := make([]domain.DailySummary, 0, len(order))
+	for _, key := range order {
+		result = append(result, *totals[key])
+	}
+	return result, nil
 }

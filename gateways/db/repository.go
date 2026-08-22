@@ -546,6 +546,55 @@ func (r *repository) GetBalance(ctx context.Context, userID int64, from, to time
 	}, nil
 }
 
+func (r *repository) GetMoneySummary(ctx context.Context, userID int64) (domain.MoneySummary, error) {
+	var summary domain.MoneySummary
+	err := r.db.QueryRow(ctx, `
+		SELECT MIN(transacted_at), MAX(created_at)
+		FROM transactions
+		WHERE user_id = $1`, userID,
+	).Scan(&summary.FirstTransactionAt, &summary.LastSyncedAt)
+	if err != nil {
+		return domain.MoneySummary{}, err
+	}
+	return summary, nil
+}
+
+// GetDailyTransactionSummary groups transactions by calendar day in the
+// display timezone (Asia/Nicosia) — the same day boundaries the web
+// dashboard's ?date= transaction filter uses — so a calendar day cell and
+// its drill-down link always mean the same 24h window.
+func (r *repository) GetDailyTransactionSummary(ctx context.Context, userID int64, from, to time.Time) ([]domain.DailySummary, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			(transacted_at AT TIME ZONE 'Asia/Nicosia')::date AS day,
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN type = 'expense' THEN amount_eur ELSE 0 END), 0)
+		FROM transactions
+		WHERE user_id = $1
+		  AND transacted_at >= $2
+		  AND transacted_at <= $3
+		GROUP BY day
+		ORDER BY day`, userID, from, to,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []domain.DailySummary
+	for rows.Next() {
+		var s domain.DailySummary
+		if err := rows.Scan(&s.Date, &s.Count, &s.SpendEUR); err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+	return result, nil
+}
+
 // join is a local helper because strings.Join is not in scope here.
 func join(parts []string, sep string) string {
 	result := ""
