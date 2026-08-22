@@ -65,13 +65,7 @@ func fixtureCalendarWeeks() [][]CalendarDay {
 // language can be reviewed before any real dashboard is wired up. It
 // touches no database — every value below is a fixture.
 func DesignSystemHandler(c *gin.Context) {
-	nav := []NavItem{
-		{Label: "Home", URL: "/web"},
-		{Label: "Money", URL: "/web/money"},
-		{Label: "Progress", URL: "/web/progress/browse"},
-		{Label: "Workouts", URL: "/web/workouts"},
-		{Label: "Design System", URL: "/web/design-system", Active: true},
-	}
+	nav := BuildNav(NavDesignSystem)
 
 	stats := []StatTileData{
 		{Label: "Current balance", Value: "€4,231", SubLabel: "vs last month: +€120"},

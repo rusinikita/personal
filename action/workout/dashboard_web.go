@@ -23,24 +23,7 @@ import (
 // param (a literal 0 would mean "return zero rows", not "no limit").
 const historyLimit = 10000
 
-var workoutsNav = []webui.NavItem{
-	{Label: "Home", URL: "/web"},
-	{Label: "Money", URL: "/web/money"},
-	{Label: "Progress", URL: "/web/progress/browse"},
-	{Label: "Workouts", URL: "/web/workouts", Active: true},
-	{Label: "Design System", URL: "/web/design-system"},
-}
-
-// currentUserID reads the session user id set by auth.WebMiddleware,
-// falling back to 1 the same way action/progress's browse view does for
-// AUTH_DISABLED / webui-preview use without a real session.
-func currentUserID(c *gin.Context) int64 {
-	userID := gateways.UserIDFromContext(c.Request.Context())
-	if userID == 0 {
-		userID = 1
-	}
-	return userID
-}
+var workoutsNav = webui.BuildNav(webui.NavWorkouts)
 
 // formatWeight renders a nullable weight record as "82.5" or "—".
 func formatWeight(rec *domain.SetRecord) string {
@@ -77,7 +60,7 @@ func PersonalRecordsWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Database not available")
 		return
 	}
-	userID := currentUserID(c)
+	userID := webui.CurrentUserID(c)
 
 	records, err := db.ListPersonalRecords(ctx, userID)
 	if err != nil {
@@ -134,7 +117,7 @@ func ExerciseDetailWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Database not available")
 		return
 	}
-	userID := currentUserID(c)
+	userID := webui.CurrentUserID(c)
 
 	exerciseID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

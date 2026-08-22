@@ -37,29 +37,12 @@ var TransactionsPageSize = 100
 // ?from/?to are absent.
 const calendarDefaultMonths = 3
 
-var moneyNav = []webui.NavItem{
-	{Label: "Home", URL: "/web"},
-	{Label: "Money", URL: "/web/money", Active: true},
-	{Label: "Progress", URL: "/web/progress/browse"},
-	{Label: "Workouts", URL: "/web/workouts"},
-	{Label: "Design System", URL: "/web/design-system"},
-}
+var moneyNav = webui.BuildNav(webui.NavMoney)
 
 // moneyDashboardLinks is the small nav line under the dashboard's stat
 // tiles. The URLs are fixed route constants, not user data, so embedding
 // them as template.HTML directly (no templating) is safe.
 const moneyDashboardLinks template.HTML = `<p><a href="/web/money/transactions">View all transactions</a> · <a href="/web/money/calendar">Calendar</a> · <a href="/money/import">Import transactions</a></p>`
-
-// currentUserID reads the session user id set by auth.WebMiddleware,
-// falling back to defaultUserID the same way import_web.go does for
-// AUTH_DISABLED / webui-preview use without a real session.
-func currentUserID(c *gin.Context) int64 {
-	userID := gateways.UserIDFromContext(c.Request.Context())
-	if userID == 0 {
-		userID = defaultUserID
-	}
-	return userID
-}
 
 // formatEUR renders a EUR amount the way CalendarDay.Total's own doc
 // example does, e.g. "€42.10".
@@ -118,16 +101,6 @@ func dayLinkURL(date string) string {
 	v.Set("from", date)
 	v.Set("to", date)
 	return "/web/money/transactions?" + v.Encode()
-}
-
-// parseMoneyPage reads the 1-indexed ?page= query param, defaulting to (and
-// floor-clamping at) 1.
-func parseMoneyPage(c *gin.Context) int {
-	page, err := strconv.Atoi(c.Query("page"))
-	if err != nil || page < 1 {
-		return 1
-	}
-	return page
 }
 
 // buildDashboardStats builds the dashboard's stat tile row: sync freshness,
@@ -251,7 +224,7 @@ func MoneyDashboardWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Database not available")
 		return
 	}
-	userID := currentUserID(c)
+	userID := webui.CurrentUserID(c)
 
 	summary, err := db.GetMoneySummary(ctx, userID)
 	if err != nil {
@@ -365,15 +338,7 @@ func renderTransactionsFilterForm(category, from, to string) (template.HTML, err
 // but also carries the category/from/to filters on every prev/next link so
 // paginating doesn't drop the active filter.
 func buildTransactionsPagination(page, totalCount int, category, from, to string) *webui.PaginationData {
-	totalPages := (totalCount + TransactionsPageSize - 1) / TransactionsPageSize
-	if totalPages < 1 {
-		totalPages = 1
-	}
-	if totalPages <= 1 {
-		return nil
-	}
-
-	link := func(p int) string {
+	return webui.BuildPagination(page, totalCount, TransactionsPageSize, func(p int) string {
 		v := url.Values{}
 		if category != "" {
 			v.Set("category", category)
@@ -386,16 +351,7 @@ func buildTransactionsPagination(page, totalCount int, category, from, to string
 		}
 		v.Set("page", strconv.Itoa(p))
 		return "/web/money/transactions?" + v.Encode()
-	}
-
-	data := &webui.PaginationData{Page: page, TotalPages: totalPages}
-	if page > 1 {
-		data.PrevURL = link(page - 1)
-	}
-	if page < totalPages {
-		data.NextURL = link(page + 1)
-	}
-	return data
+	})
 }
 
 // parseDayBound parses a "2006-01-02" query param in the display timezone.
@@ -425,7 +381,7 @@ func TransactionsWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Database not available")
 		return
 	}
-	userID := currentUserID(c)
+	userID := webui.CurrentUserID(c)
 
 	category := strings.TrimSpace(c.Query("category"))
 	fromParam := strings.TrimSpace(c.Query("from"))
@@ -459,7 +415,7 @@ func TransactionsWebHandler(c *gin.Context) {
 		}
 	}
 
-	page := parseMoneyPage(c)
+	page := webui.ParsePage(c)
 	filter.Limit = TransactionsPageSize
 	filter.Offset = (page - 1) * TransactionsPageSize
 
@@ -626,7 +582,7 @@ func CalendarWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Database not available")
 		return
 	}
-	userID := currentUserID(c)
+	userID := webui.CurrentUserID(c)
 
 	loc, err := time.LoadLocation(displayTimezone)
 	if err != nil {

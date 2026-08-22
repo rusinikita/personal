@@ -25,61 +25,21 @@ import (
 // rows to exercise pagination.
 var BrowsePageSize = 20
 
-var browseNav = []webui.NavItem{
-	{Label: "Home", URL: "/web"},
-	{Label: "Money", URL: "/web/money"},
-	{Label: "Progress", URL: "/web/progress/browse", Active: true},
-	{Label: "Workouts", URL: "/web/workouts"},
-	{Label: "Design System", URL: "/web/design-system"},
-}
+var browseNav = webui.BuildNav(webui.NavProgress)
 
 // browseCrossLinks is the small nav bar between the three activity lists.
 // The URLs are fixed route constants, not user data, so embedding them as
 // template.HTML directly (no templating) is safe.
 const browseCrossLinks template.HTML = `<p><a href="/web/progress/browse">Active</a> · <a href="/web/progress/browse/finished">Finished</a> · <a href="/web/progress/browse/future">Future</a></p>`
 
-// currentUserID reads the session user id set by auth.WebMiddleware,
-// falling back to 1 the same way dashboard_web.go does for AUTH_DISABLED /
-// webui-preview use without a real session.
-func currentUserID(c *gin.Context) int64 {
-	userID := gateways.UserIDFromContext(c.Request.Context())
-	if userID == 0 {
-		userID = 1
-	}
-	return userID
-}
-
-// parsePage reads the 1-indexed ?page= query param, defaulting to (and
-// floor-clamping at) 1.
-func parsePage(c *gin.Context) int {
-	page, err := strconv.Atoi(c.Query("page"))
-	if err != nil || page < 1 {
-		return 1
-	}
-	return page
-}
-
 // buildPagination computes prev/next links (each carrying ?page=N against
 // baseURL) from the current page and total row count. Returns nil when
 // everything fits on one page, so callers can assign it straight to
 // TableData.Pagination without an extra nil check.
 func buildPagination(page, totalCount int, baseURL string) *webui.PaginationData {
-	totalPages := (totalCount + BrowsePageSize - 1) / BrowsePageSize
-	if totalPages < 1 {
-		totalPages = 1
-	}
-	if totalPages <= 1 {
-		return nil
-	}
-
-	data := &webui.PaginationData{Page: page, TotalPages: totalPages}
-	if page > 1 {
-		data.PrevURL = fmt.Sprintf("%s?page=%d", baseURL, page-1)
-	}
-	if page < totalPages {
-		data.NextURL = fmt.Sprintf("%s?page=%d", baseURL, page+1)
-	}
-	return data
+	return webui.BuildPagination(page, totalCount, BrowsePageSize, func(p int) string {
+		return fmt.Sprintf("%s?page=%d", baseURL, p)
+	})
 }
 
 // activityExtraColumn produces the value for each list's one differing
@@ -132,7 +92,7 @@ func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, bas
 		return
 	}
 
-	filter.UserID = currentUserID(c)
+	filter.UserID = webui.CurrentUserID(c)
 
 	total, err := db.CountActivities(ctx, filter)
 	if err != nil {
@@ -140,7 +100,7 @@ func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, bas
 		return
 	}
 
-	page := parsePage(c)
+	page := webui.ParsePage(c)
 	filter.Limit = int64(BrowsePageSize)
 	filter.Offset = int64((page - 1) * BrowsePageSize)
 
@@ -196,7 +156,7 @@ func BrowseDetailWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Database not available")
 		return
 	}
-	userID := currentUserID(c)
+	userID := webui.CurrentUserID(c)
 
 	activityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -251,7 +211,7 @@ func BrowseDetailWebHandler(c *gin.Context) {
 		return
 	}
 
-	page := parsePage(c)
+	page := webui.ParsePage(c)
 	baseURL := fmt.Sprintf("/web/progress/browse/%d", activityID)
 	pagePoints, err := db.ListProgress(ctx, domain.ProgressFilter{
 		UserID: userID, ActivityID: activityID,
