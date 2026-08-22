@@ -4,6 +4,8 @@
 
 System for tracking workout exercises, sets, and training history with MCP (Model Context Protocol) interface. Supports different equipment types (machine, barbell, dumbbells, bodyweight) and tracks both rep-based and time-based exercises.
 
+A **read-only** web dashboard (`GET /web/workouts`, `GET /web/workouts/:id`) sits on top of this same data for reviewing personal records and per-exercise trends in a browser. Logging/editing workouts stays MCP/Telegram-bot-only — the dashboard has no write routes. Built on the shared `action/webui` design system (see `webui-spec.md`), the same way `action/progress`'s browse view is.
+
 ## Best Practices Applied
 
 - **Multi-user Support**: All tables have user_id for data isolation
@@ -14,6 +16,11 @@ System for tracking workout exercises, sets, and training history with MCP (Mode
 - **Progress Tracking**: Weight and time metrics for monitoring improvements
 - **Nullable Fields**: reps, duration_seconds, weight_kg are nullable but at least one must be set
 - **User Context**: user_id extracted from authentication context (JWT/session), not passed explicitly
+- **Web dashboard reuses existing repository methods**: the drill-down page's trend charts are built from `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, the exact same two calls `get_exercise_history_mcp.go` already makes — no new query needed for chart data, only for the list view's per-exercise usage count
+- **"Times performed" counts sets, not workout sessions**: each logged set is one performance of the lift, so the list view's `ListPersonalRecords` sorts by `COUNT(sets)` per exercise, not `COUNT(DISTINCT workout_id)`
+- **List view reuses `GetPersonalRecords` per row**: `ListPersonalRecords` first ranks exercises by set count, then calls the existing single-exercise `GetPersonalRecords` for each — N+1 queries, acceptable for a single-user personal tool with a handful of exercises (same trade-off `BrowseDetailWebHandler` already makes calling `GetTrendStats` three times)
+- **Est. 1RM computed in the handler, not stored**: same Epley formula (`weight × (1 + reps/30)`) `get_personal_records_mcp.go` already computes from `MaxWeight`, kept out of `domain.PersonalRecords` so the DB layer stays formula-agnostic
+- **Drill-down page has no table, only charts**: unlike the Progress browse drill-down (which pairs a chart with a paginated point-history table), the exercise drill-down is stat tiles + two line charts only — `webui.RenderDetailView` is adjusted to skip rendering the table section when `DetailViewData.Table.Columns` is empty (mirrors its existing "skip stat tiles when `Stats` is empty" behavior), instead of showing an empty table box
 
 ## Architecture Diagrams
 
@@ -157,6 +164,37 @@ sequenceDiagram
     MCP-->>User: [{workout, sets: [{set, exercise}, ...]}, ...]
 ```
 
+### Sequence Diagram: Web Dashboard — List + Drill-down
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Handler as action/workout web handler
+    participant DB
+    participant Webui as action/webui
+
+    Browser->>Handler: GET /web/workouts
+    Handler->>DB: ListPersonalRecords(userID)
+    DB-->>Handler: []ExercisePersonalRecords, sorted by SetCount DESC
+    Handler->>Handler: build TableData (Name, Equipment, Times performed, Max weight, Max reps, Est. 1RM)<br/>each row links to /web/workouts/{exercise_id}
+    Handler->>Webui: RenderTable, RenderPage
+    Webui-->>Browser: 200 text/html
+
+    Browser->>Handler: GET /web/workouts/{id}
+    Handler->>DB: GetExercise(id, userID)
+    DB-->>Handler: Exercise
+    Handler->>DB: GetExerciseHistory(userID, id, limit, 0)
+    DB-->>Handler: []Workout (sessions containing this exercise)
+    Handler->>DB: ListSetsByExerciseAndWorkouts(userID, id, workoutIDs)
+    DB-->>Handler: []Set, ordered by created_at ASC
+    Handler->>Handler: build weight-over-time + reps-over-time LineChartData from sets
+    Handler->>DB: GetPersonalRecords(userID, id)
+    DB-->>Handler: PersonalRecords
+    Handler->>Handler: build stat tiles (max weight, max reps, est. 1RM, times performed)
+    Handler->>Webui: RenderStatTiles, RenderLineChart (x2), RenderDetailView (no table), RenderPage
+    Webui-->>Browser: 200 text/html
+```
+
 ## Database Schema
 
 ### SQL DDL
@@ -270,6 +308,15 @@ type WorkoutSearch struct {
 	IDS     []int64
 }
 
+// ExercisePersonalRecords pairs an exercise with how many sets have ever
+// been logged for it and its personal records. Used only by the web
+// dashboard's list view (sorted by SetCount).
+type ExercisePersonalRecords struct {
+	Exercise Exercise
+	SetCount int64
+	Records  PersonalRecords
+}
+
 type SetSearch struct {
 	UserID  int64
 	From    time.Time
@@ -307,6 +354,10 @@ type WorkoutRepository interface {
 	GetExerciseHistory(ctx context.Context, userID int64, exerciseID int64, limit int, offset int) ([]Workout, error)
 	ListSetsByExerciseAndWorkouts(ctx context.Context, userID int64, exerciseID int64, workoutIDs []int64) ([]Set, error)
 	GetPersonalRecords(ctx context.Context, userID int64, exerciseID int64) (*PersonalRecords, error)
+	// ListPersonalRecords returns every exercise the user has ever logged a
+	// set for, paired with its total set count and personal records, sorted
+	// by set count descending. Powers the web dashboard's list view.
+	ListPersonalRecords(ctx context.Context, userID int64) ([]ExercisePersonalRecords, error)
 }
 
 // SetWithExercise is a set joined with its exercise name, used by delete_workout_set
@@ -365,3 +416,11 @@ Returns all workout sessions containing a given exercise, newest first, paginate
 
 ### get_personal_records
 Returns best-ever results for an exercise: max_weight, max_reps, max_volume (single-workout total), and estimated_1rm (Epley formula: weight × (1 + reps/30)). Only sets with reps > 0 and weight_kg > 0 count.
+
+## HTTP Handlers
+
+### GET /web/workouts
+Read-only list view: every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
+
+### GET /web/workouts/:id
+Drill-down for a single exercise: stat tiles (max weight, max reps, est. 1RM, times performed) plus two line charts — weight over time and reps over time — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.

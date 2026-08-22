@@ -308,4 +308,4 @@ Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>
 Same as `RenderLineChart`, but initializes a Chart.js bar chart from `BarChartData`.
 
 ### `webui.RenderDetailView(data DetailViewData) template.HTML`
-Renders the drill-down/detail layout: back link, optional stat tiles, then a table.
+Renders the drill-down/detail layout: back link, optional stat tiles, then an optional table. When `data.Table.Columns` is empty, the table section is skipped entirely (mirrors the existing "skip stat tiles when `Stats` is empty" behavior) — used by the Workouts exercise drill-down (`workout-spec.md`), which has stat tiles and two charts but no table.
