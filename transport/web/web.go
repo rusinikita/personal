@@ -39,6 +39,14 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/progress", dbMiddleware(db), progress.DashboardWebHandler)
 	router.GET("/web/design-system", webAuth, webui.DesignSystemHandler)
 
+	// Progress browse view — new, free-scrolling, full-color pages built on
+	// the webui design system. Separate from /web/progress above, which
+	// stays a purpose-built black-and-white screenshot dashboard.
+	router.GET("/web/progress/browse", webAuth, dbMiddleware(db), progress.BrowseWebHandler)
+	router.GET("/web/progress/browse/finished", webAuth, dbMiddleware(db), progress.BrowseFinishedWebHandler)
+	router.GET("/web/progress/browse/future", webAuth, dbMiddleware(db), progress.BrowseFutureWebHandler)
+	router.GET("/web/progress/browse/:id", webAuth, dbMiddleware(db), progress.BrowseDetailWebHandler)
+
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))
 	moneyImport.GET("/import", money.ImportGETHandler)

@@ -68,7 +68,10 @@ type TrendStats struct {
 type ActivityFilter struct {
 	UserID      int64   `json:"user_id"`
 	ActiveOnly  bool    `json:"active_only" jsonschema:"Only return active activities (not finished)"`
+	FutureOnly  bool    `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future); overrides ActiveOnly's started_at<=NOW() clause"`
 	LifePartIDs []int64 `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
+	Limit       int64   `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit)"`
+	Offset      int64   `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
 }
 
 // ProgressFilter defines query parameters for listing progress points
@@ -78,6 +81,7 @@ type ProgressFilter struct {
 	From       time.Time `json:"from,omitempty" jsonschema:"Start date filter (empty = no start filter)"`
 	To         time.Time `json:"to,omitempty" jsonschema:"End date filter (empty = no end filter)"`
 	Limit      int64     `json:"limit,omitempty" jsonschema:"Limit of returned progresses sorted by progress_at DESC"`
+	Offset     int64     `json:"offset,omitempty" jsonschema:"Row offset for browse-view drill-down pagination"`
 }
 
 // ActivityPointWithActivity is ActivityPoint enriched with the parent activity name

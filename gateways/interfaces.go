@@ -70,11 +70,13 @@ type DB interface {
 	// Progress tracking methods
 	CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error)
 	ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error)
+	CountActivities(ctx context.Context, filter domain.ActivityFilter) (int, error)
 	GetActivity(ctx context.Context, activityID int64, userID int64) (*domain.Activity, error)
 	UpdateActivity(ctx context.Context, activity *domain.Activity) error
 	FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
 	CreateProgress(ctx context.Context, progress *domain.ActivityPoint) (int64, error)
 	ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error)
+	CountProgress(ctx context.Context, filter domain.ProgressFilter) (int, error)
 	GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error)
 	SearchProgressNotes(ctx context.Context, filter domain.ProgressNoteSearchFilter) ([]domain.ActivityPointWithActivity, error)
 }

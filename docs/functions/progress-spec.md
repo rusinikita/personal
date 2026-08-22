@@ -13,6 +13,10 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **Optional Life-area Categorization**: life_part_ids is an array (an activity can belong to zero or more life parts); life parts themselves are seeded via repository/script, not exposed as an MCP tool
 - **Multi-variant Search**: `search_progress_notes` follows the same 1-5 variant + match_count ranking pattern as `resolve_food_id_by_name` and `search_exercises`
 - **UTC Timezone**: all timestamps in UTC
+- **Browse view reuses the shared design system**: `/web/progress/browse` is built entirely from `action/webui` components (table, stat tiles, line chart, detail view — see `webui-spec.md`); it owns no CSS/JS of its own and adds no database tables
+- **Screenshot dashboard stays untouched**: `dashboard_web.go` (`GET /web/progress`) keeps its separate fixed-viewport, black-and-white, top-5-only implementation; the browse view is new, additional code, not a replacement
+- **Filter extended, not replaced**: `ActivityFilter` gains new fields (`FutureOnly`, `Limit`, `Offset`) instead of new query methods — `ListActivities` already branches on `ActiveOnly`, so the not-yet-started case is one more branch in the same query builder, and `LIMIT`/`OFFSET` are one more clause
+- **Every browse list and the drill-down history are paginated**: fixed page size, `?page=N` query param (1-indexed, defaults to 1); each list handler calls a `Count*` repository method alongside the paginated `List*` call to build `webui.PaginationData` (see `webui-spec.md`)
 
 ## Architecture Diagrams
 
@@ -114,6 +118,42 @@ sequenceDiagram
     MCP->>DB: INSERT INTO activity_progress (...)
     DB-->>MCP: point id
     MCP-->>User: created progress point
+```
+
+### Sequence Diagram: Browse View Drill-down
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Handler as action/progress browse handlers
+    participant DB
+    participant Webui as action/webui
+
+    Browser->>Handler: GET /web/progress/browse?page=2
+    Handler->>DB: CountActivities(ActiveOnly: true)
+    DB-->>Handler: total count
+    Handler->>DB: ListActivities(ActiveOnly: true, Limit, Offset)
+    DB-->>Handler: one page of active projects + habits
+    Handler->>Webui: RenderTable(Rows, Pagination) + RenderPage
+    Webui-->>Browser: HTML, rows link to /web/progress/browse/{id}, prev/next links carry ?page=
+
+    Browser->>Handler: GET /web/progress/browse/finished?page=1
+    Handler->>DB: CountActivities(ActiveOnly: false) + ListActivities(ActiveOnly: false, Limit, Offset)
+    DB-->>Handler: total count + one page of finished activities
+    Handler-->>Browser: HTML paginated table
+
+    Browser->>Handler: GET /web/progress/browse/future?page=1
+    Handler->>DB: CountActivities(FutureOnly: true) + ListActivities(FutureOnly: true, Limit, Offset)
+    DB-->>Handler: total count + one page of not-yet-started activities
+    Handler-->>Browser: HTML paginated table
+
+    Browser->>Handler: GET /web/progress/browse/{id}?page=1
+    Handler->>DB: GetActivity(id)
+    DB-->>Handler: activity
+    Handler->>DB: CountProgress(ActivityID: id) + ListProgress(ActivityID: id, Limit, Offset)
+    DB-->>Handler: total count + one page of progress point history (value, note, progress_at)
+    Handler->>Webui: RenderLineChart(full value-over-time series, unpaginated) + RenderTable(history page, Pagination) + RenderDetailView
+    Webui-->>Browser: HTML detail page with back link and prev/next
 ```
 
 ## Database Schema
@@ -281,7 +321,10 @@ type MappingValue struct {
 type ActivityFilter struct {
     UserID      int64   `json:"user_id"`
     ActiveOnly  bool    `json:"active_only" jsonschema:"Only return active activities (not finished)"`
+    FutureOnly  bool    `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future); overrides ActiveOnly's started_at<=NOW() clause"`
     LifePartIDs []int64 `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
+    Limit       int64   `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit, existing MCP callers unaffected)"`
+    Offset      int64   `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
 }
 
 // ProgressFilter defines query parameters for listing progress points
@@ -291,6 +334,7 @@ type ProgressFilter struct {
     From       time.Time `json:"from,omitempty" jsonschema:"Start date filter (empty = no start filter)"`
     To         time.Time `json:"to,omitempty" jsonschema:"End date filter (empty = no end filter)"`
     Limit      int64     `json:"limit,omitempty" jsonschema:"Limit of returned progresses sorted by progress_at DESC"`
+    Offset     int64     `json:"offset,omitempty" jsonschema:"Row offset for browse-view drill-down pagination"`
 }
 
 // ProgressNoteSearchFilter defines parameters for a single-variant note search
@@ -318,12 +362,14 @@ type ProgressRepository interface {
     CreateActivity(ctx context.Context, activity *Activity) (int64, error)
     GetActivity(ctx context.Context, activityID int64, userID int64) (*Activity, error)
     ListActivities(ctx context.Context, filter ActivityFilter) ([]Activity, error)
+    CountActivities(ctx context.Context, filter ActivityFilter) (int, error) // same WHERE clauses as ListActivities, ignores Limit/Offset — for browse-view pagination
     UpdateActivity(ctx context.Context, activity *Activity) error
     FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
 
     // Progress CRUD
     CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error)
     ListProgress(ctx context.Context, filter ProgressFilter) ([]ActivityPoint, error)
+    CountProgress(ctx context.Context, filter ProgressFilter) (int, error) // same WHERE clauses as ListProgress, ignores Limit/Offset — for drill-down pagination
     SearchProgressNotes(ctx context.Context, filter ProgressNoteSearchFilter) ([]ActivityPointWithActivity, error)
 
     // Statistics helpers
@@ -362,7 +408,19 @@ Searches `activity_progress.note` by 1-5 query variants (ILIKE), with optional a
 ## HTTP Handlers
 
 ### GET /web/progress
-Renders a read-only dashboard of all activities with recent progress, staleness indicators, and trend summaries. Protected by the same auth middleware as other `/web/*` routes.
+Renders a read-only dashboard of all activities with recent progress, staleness indicators, and trend summaries. Protected by the same auth middleware as other `/web/*` routes. Purpose-built fixed-viewport/B&W/top-5-only screenshot page (`dashboard_web.go`) — untouched by the browse view below.
+
+### GET /web/progress/browse
+New free-scrolling, full-color browse page built on the `action/webui` design system. Lists **all** active projects and habits (no top-5 limit, no viewport/B&W restriction) in a table, split or labeled by progress type; links to the finished/future lists and to each activity's drill-down. Paginated: fixed page size, `?page=N` (default 1), `webui.PaginationData` built from `CountActivities` + `ListActivities(Limit, Offset)`. Protected by `WebMiddleware` like every other `/web/*` route.
+
+### GET /web/progress/browse/finished
+Lists activities where `ended_at` is set (`ListActivities(ActiveOnly: false)`), same table shape and pagination as the main browse view, with a back link.
+
+### GET /web/progress/browse/future
+Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true)`), same table shape and pagination, with a back link.
+
+### GET /web/progress/browse/{id}
+Drill-down for one activity: a `DetailView` with stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), and a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1). Back link returns to wherever the user came from (main/finished/future list).
 
 ## Dialog & Conversation Guidelines
 

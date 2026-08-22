@@ -21,18 +21,6 @@ A **read-only** web interface on top of the existing money functionality for rev
 - User should be able to see a projected balance 3 months, 6 months, and 1 year out, based on the average monthly savings rate
 - User should be able to navigate from the money dashboard to the existing transaction import page (`/money/import`)
 
-## 19-08-26 — Web interface for Progress
-
-A **new, separate, read-only** web page for browsing progress data, built in the new design system. It sits alongside — not instead of — the existing `/web/progress` dashboard (`action/progress/dashboard_web.go`), which is purpose-built for black-and-white screenshot/e-ink display and stays completely untouched: same route, same fixed 100vw/100vh layout, same top-5-only, same code. Do not edit `dashboard_web.go` as part of this item.
-
-**Why:** The existing dashboard is intentionally optimized for a screenshot (fixed viewport, B&W, top-5-only) and must keep working that way for its purpose — but that also means it can't show every active activity, has no drill-down into a single project's history, and has no way to browse finished or not-yet-started projects. A separate, free-scrolling, color, full-list page adds a real browsing surface without compromising the screenshot dashboard.
-
-**Use cases:**
-- User should be able to view all active projects and habits, not just a top-5 subset (no fixed viewport/size limit, no black-and-white restriction)
-- User should be able to navigate from the main view to a list of finished projects
-- User should be able to navigate from the main view to a list of future (not-yet-started) projects
-- User should be able to drill into a specific project and see its history of progress points, each with its note
-
 ## 19-08-26 — Web interface for Workouts
 
 A **read-only** web interface on top of the workout functionality for reviewing personal records and per-exercise trends. Logging/editing workouts stays in the Telegram bot — this is view-only.

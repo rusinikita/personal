@@ -1507,29 +1507,49 @@ func (r *repository) CreateActivity(ctx context.Context, activity *domain.Activi
 	return id, err
 }
 
-func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error) {
-	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+// applyActivityFilter adds the WHERE clauses shared by ListActivities and
+// CountActivities, so the two can never drift out of sync on what counts as
+// a match.
+func applyActivityFilter(query squirrel.SelectBuilder, filter domain.ActivityFilter) squirrel.SelectBuilder {
+	query = query.Where(squirrel.Eq{"user_id": filter.UserID})
 
-	query := psql.Select(
-		"id", "user_id", "life_part_ids", "name", "description",
-		"progress_type", "frequency_days", "started_at", "ended_at", "created_at", "last_point_at",
-	).From("activities").
-		Where(squirrel.Eq{"user_id": filter.UserID})
-
-	if filter.ActiveOnly {
-		query = query.Where(squirrel.Eq{"ended_at": nil})
-	} else {
-		query = query.Where("ended_at IS NOT NULL")
+	switch {
+	case filter.FutureOnly:
+		// Не начавшиеся активности: started_at ещё не наступил.
+		query = query.Where("started_at > NOW()").Where(squirrel.Eq{"ended_at": nil})
+	case filter.ActiveOnly:
+		query = query.Where(squirrel.Eq{"ended_at": nil}).Where("started_at <= NOW()")
+	default:
+		query = query.Where("ended_at IS NOT NULL").Where("started_at <= NOW()")
 	}
 
 	if len(filter.LifePartIDs) > 0 {
 		query = query.Where("life_part_ids && ?", filter.LifePartIDs)
 	}
 
-	// Фильтр: не показывать активности, которые еще не начались
-	query = query.Where("started_at <= NOW()")
+	return query
+}
 
-	query = query.OrderBy("COALESCE((last_point_at::date + frequency_days) - CURRENT_DATE, 999999) ASC")
+func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := applyActivityFilter(psql.Select(
+		"id", "user_id", "life_part_ids", "name", "description",
+		"progress_type", "frequency_days", "started_at", "ended_at", "created_at", "last_point_at",
+	).From("activities"), filter)
+
+	if filter.FutureOnly {
+		query = query.OrderBy("started_at ASC")
+	} else {
+		query = query.OrderBy("COALESCE((last_point_at::date + frequency_days) - CURRENT_DATE, 999999) ASC")
+	}
+
+	if filter.Limit > 0 {
+		query = query.Limit(uint64(filter.Limit))
+	}
+	if filter.Offset > 0 {
+		query = query.Offset(uint64(filter.Offset))
+	}
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -1569,6 +1589,24 @@ func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityF
 	}
 
 	return activities, nil
+}
+
+func (r *repository) CountActivities(ctx context.Context, filter domain.ActivityFilter) (int, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := applyActivityFilter(psql.Select("COUNT(*)").From("activities"), filter)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	var count int
+	if err := r.db.QueryRow(ctx, sql, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count activities: %w", err)
+	}
+
+	return count, nil
 }
 
 func (r *repository) GetActivity(ctx context.Context, activityID int64, userID int64) (*domain.Activity, error) {
@@ -1680,14 +1718,11 @@ func (r *repository) CreateProgress(ctx context.Context, progress *domain.Activi
 	return id, nil
 }
 
-func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error) {
-	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
-
-	query := psql.Select(
-		"id", "activity_id", "user_id", "value", "hours_left", "note", "progress_at", "created_at",
-	).From("activity_progress").
-		Where(squirrel.Eq{"user_id": filter.UserID}).
-		OrderBy("progress_at DESC")
+// applyProgressFilter adds the WHERE clauses shared by ListProgress and
+// CountProgress, so the two can never drift out of sync on what counts as
+// a match.
+func applyProgressFilter(query squirrel.SelectBuilder, filter domain.ProgressFilter) squirrel.SelectBuilder {
+	query = query.Where(squirrel.Eq{"user_id": filter.UserID})
 
 	if filter.ActivityID != 0 {
 		query = query.Where(squirrel.Eq{"activity_id": filter.ActivityID})
@@ -1701,8 +1736,22 @@ func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFil
 		query = query.Where(squirrel.LtOrEq{"progress_at": filter.To})
 	}
 
+	return query
+}
+
+func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := applyProgressFilter(psql.Select(
+		"id", "activity_id", "user_id", "value", "hours_left", "note", "progress_at", "created_at",
+	).From("activity_progress"), filter).
+		OrderBy("progress_at DESC")
+
 	if filter.Limit > 0 {
 		query = query.Limit(uint64(filter.Limit))
+	}
+	if filter.Offset > 0 {
+		query = query.Offset(uint64(filter.Offset))
 	}
 
 	sql, args, err := query.ToSql()
@@ -1740,6 +1789,24 @@ func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFil
 	}
 
 	return points, nil
+}
+
+func (r *repository) CountProgress(ctx context.Context, filter domain.ProgressFilter) (int, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := applyProgressFilter(psql.Select("COUNT(*)").From("activity_progress"), filter)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	var count int
+	if err := r.db.QueryRow(ctx, sql, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count progress points: %w", err)
+	}
+
+	return count, nil
 }
 
 func (r *repository) SearchProgressNotes(ctx context.Context, filter domain.ProgressNoteSearchFilter) ([]domain.ActivityPointWithActivity, error) {

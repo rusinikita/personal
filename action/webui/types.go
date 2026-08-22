@@ -39,8 +39,21 @@ type TableRow struct {
 
 // TableData is a full table component.
 type TableData struct {
-	Columns []TableColumn
-	Rows    []TableRow
+	Columns    []TableColumn
+	Rows       []TableRow
+	Pagination *PaginationData // nil = no pagination controls rendered
+}
+
+// PaginationData drives the prev/next + "page X of Y" controls RenderTable
+// renders below the rows when set. Page is 1-indexed. PrevURL/NextURL are
+// pre-built by the caller (so the component stays agnostic of each page's
+// own query params) and are empty on the first/last page respectively,
+// which hides that link.
+type PaginationData struct {
+	Page       int
+	TotalPages int
+	PrevURL    string
+	NextURL    string
 }
 
 // DetailViewData is a drill-down page: a header plus a table of related records.

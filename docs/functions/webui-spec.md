@@ -24,6 +24,7 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Chart.js for two chart types**: server builds the data series as JSON, a thin inline script initializes a Chart.js chart from it — no server-side chart image/SVG generation to maintain. Two shapes cover every known future use: a **line chart** (single series over time — Workouts weight/reps trend, Progress activity value-over-time drill-down) and a **bar chart** (categorical comparison — Money spend-by-category)
 - **Typed Go structs, not raw HTML, as the component API**: pages build a `Table`, `StatTile`, `LineChart`, `BarChart`, or `DetailView` struct and hand it to the shell; the shell owns the markup
 - **Responsive by default**: flexbox/grid + relative units (`rem`, `%`, `minmax()`), no fixed `100vw`/`100vh` sizing (that pattern stays confined to the untouched screenshot dashboard)
+- **Pagination lives on `TableData`, not as a separate component call**: a table and its pagination controls are one visual unit, so `TableData.Pagination *PaginationData` is enough for any caller (list page or drill-down history table) to get consistent prev/next + "page X of Y" controls without composing an extra fragment
 - **Single shared Go package (`action/webui`)**: matches `action/{subdomain}` convention; the package exposes one real route (the demo page below) plus render functions other subdomains' handlers call directly
 - **Demo page doubles as living documentation**: `GET /web/design-system` renders every component (nav, stat tiles, table, line chart, bar chart, drill-down/detail layout, user menu) against fixture data, so visual regressions are caught by looking at one page instead of hunting through whichever real dashboard happens to use a given component
 - **User menu is a Pico dropdown, no custom JS**: the shell header shows `PageData.UserName` as a `<details class="dropdown"><summary>` element (Pico CSS v2's built-in disclosure pattern); clicking it opens a one-item menu with a "Logout" link — no click-outside/open-state JS to write or maintain
@@ -194,8 +195,20 @@ type TableRow struct {
 
 // TableData is a full table component.
 type TableData struct {
-    Columns []TableColumn
-    Rows    []TableRow
+    Columns    []TableColumn
+    Rows       []TableRow
+    Pagination *PaginationData // nil = no pagination controls rendered
+}
+
+// PaginationData drives the prev/next + "page X of Y" controls rendered
+// below a table. Page is 1-indexed. PrevURL/NextURL are pre-built by the
+// caller (so the component stays agnostic of each page's own query params)
+// and are empty on the first/last page respectively, which hides that link.
+type PaginationData struct {
+    Page       int
+    TotalPages int
+    PrevURL    string
+    NextURL    string
 }
 
 // DetailViewData is a drill-down page: a header plus a table of related records.
@@ -249,7 +262,8 @@ Every template is a real `.html` file, embedded at compile time and parsed once 
 action/webui/templates/
   layout.html                    {{define "layout"}}      — shell: head/nav/footer, design tokens
   components/
-    table.html                   {{define "components/table"}}
+    table.html                   {{define "components/table"}}       — renders Pagination controls below the rows when set
+    pagination.html               {{define "components/pagination"}} — prev/next + "page X of Y", included by table.html
     stat_tiles.html               {{define "components/stat_tiles"}}
     chart.html                    {{define "components/chart"}}       — shared by line + bar (differ by .Type)
     detail_view.html               {{define "components/detail_view"}}
@@ -281,7 +295,7 @@ Everything else is a Go function, not a route — called from other subdomains' 
 Executes the shared shell template (head/nav/footer + design tokens, light/dark via `prefers-color-scheme`) with `data.Content` dropped into the content slot. When `data.UserName` is set, the header also renders it as a `<details class="dropdown">` menu (Pico CSS's built-in disclosure pattern, no custom JS) containing one item: a "Logout" link to `GET /web/logout` (see `auth-spec.md`). Used by every `/web/*` handler, including the demo page above.
 
 ### `webui.RenderTable(data TableData) template.HTML`
-Renders a `TableData` into the shared table component markup, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template).
+Renders a `TableData` into the shared table component markup, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template). When `data.Pagination` is non-nil, also renders the pagination controls (prev/next links, "page X of Y") directly below the rows — callers needing a paginated list (e.g. Progress browse/finished/future lists, or a drill-down's history table) just set `TableData.Pagination` instead of calling a separate render function.
 
 ### `webui.RenderStatTiles(data []StatTileData) template.HTML`
 Renders a row of summary/stat tiles.

@@ -1,0 +1,9 @@
+{{define "components/pagination"}}
+<nav class="webui-pagination" aria-label="pagination">
+<ul>
+<li>{{if .PrevURL}}<a href="{{.PrevURL}}">← Prev</a>{{else}}<span aria-disabled="true">← Prev</span>{{end}}</li>
+<li>Page {{.Page}} of {{.TotalPages}}</li>
+<li>{{if .NextURL}}<a href="{{.NextURL}}">Next →</a>{{else}}<span aria-disabled="true">Next →</span>{{end}}</li>
+</ul>
+</nav>
+{{end}}

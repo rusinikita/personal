@@ -48,6 +48,24 @@ func (m *MockRepository) ListProgress(_ context.Context, filter domain.ProgressF
 	}, nil
 }
 
+func (m *MockRepository) CountActivities(_ context.Context, _ domain.ActivityFilter) (int, error) {
+	return 4, nil
+}
+
+func (m *MockRepository) GetActivity(_ context.Context, activityID int64, userID int64) (*domain.Activity, error) {
+	activities, _ := m.ListActivities(context.Background(), domain.ActivityFilter{UserID: userID})
+	for _, a := range activities {
+		if a.ID == activityID {
+			return &a, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockRepository) CountProgress(_ context.Context, _ domain.ProgressFilter) (int, error) {
+	return 5, nil
+}
+
 func (m *MockRepository) GetTrendStats(_ context.Context, _ int64, _ int64, _ time.Time, _ time.Time) (domain.TrendStats, error) {
 	return domain.TrendStats{Count: 5, Average: 1.2, Percentile80: 2}, nil
 }
