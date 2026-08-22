@@ -1630,10 +1630,14 @@ func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityF
 		"progress_type", "frequency_days", "started_at", "ended_at", "created_at", "last_point_at",
 	).From("activities"), filter)
 
-	if filter.FutureOnly {
+	switch {
+	case filter.FutureOnly:
 		query = query.OrderBy("started_at ASC")
-	} else {
+	case filter.ActiveOnly:
 		query = query.OrderBy("COALESCE((last_point_at::date + frequency_days) - CURRENT_DATE, 999999) ASC")
+	default:
+		// Finished activities: most recently finished first.
+		query = query.OrderBy("ended_at DESC")
 	}
 
 	if filter.Limit > 0 {
