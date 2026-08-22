@@ -452,6 +452,31 @@ func (s *IntegrationTestSuite) TestCalendar_SinglePageLevelPrevNext_NotOnePerMon
 	assert.Equal(s.T(), 1, strings.Count(body, "Next →"), "Next must appear exactly once on the page")
 }
 
+func (s *IntegrationTestSuite) TestCalendar_LeadingTrailingDaysFromAdjacentMonth_ShowNoStats() {
+	ctx := s.Context()
+	// 2026-07-31 is a Friday, so it's a leading (grayed-out) cell in
+	// August 2026's grid (which starts on Monday 2026-07-27) while also
+	// being an in-month cell in July 2026's own grid.
+	day := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	s.addTransaction(ctx, "expense", "food", "Shop", 5, day)
+
+	r := s.moneyDashboardRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/money/calendar?from=2026-07-01&to=2026-08-31", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+	require.Contains(s.T(), body, "August 2026")
+	require.Contains(s.T(), body, "July 2026")
+
+	link := `href="/web/money/transactions?from=2026-07-31&amp;to=2026-07-31"`
+	assert.Equal(s.T(), 1, strings.Count(body, link),
+		"the leading cell for 2026-07-31 in August's grid must not link or show stats, only July's own in-month cell may")
+	assert.Equal(s.T(), 1, strings.Count(body, "€5.00 (1)"),
+		"the amount/count must only render once, on the in-month cell")
+}
+
 func (s *IntegrationTestSuite) TestCalendar_NextHiddenWhenRangeReachesCurrentMonth_ShownOtherwise() {
 	r := s.moneyDashboardRouter(s.Context())
 

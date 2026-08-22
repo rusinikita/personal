@@ -555,7 +555,7 @@ func buildMonthGrid(year int, month time.Month, dayData map[string]domain.DailyS
 	for d := gridStart; !d.After(gridEnd); d = d.AddDate(0, 0, 1) {
 		key := d.Format("2006-01-02")
 		day := webui.CalendarDay{Day: d.Day(), InMonth: d.Month() == month}
-		if summary, ok := dayData[key]; ok && summary.Count > 0 {
+		if summary, ok := dayData[key]; ok && summary.Count > 0 && day.InMonth {
 			day.Total = fmt.Sprintf("%s (%d)", formatEUR(summary.SpendEUR), summary.Count)
 			day.LinkURL = dayLinkURL(key)
 		}
