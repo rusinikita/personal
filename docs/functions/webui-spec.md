@@ -25,6 +25,7 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Typed Go structs, not raw HTML, as the component API**: pages build a `Table`, `StatTile`, `LineChart`, `BarChart`, or `DetailView` struct and hand it to the shell; the shell owns the markup
 - **Responsive by default**: flexbox/grid + relative units (`rem`, `%`, `minmax()`), no fixed `100vw`/`100vh` sizing (that pattern stays confined to the untouched screenshot dashboard)
 - **Pagination lives on `TableData`, not as a separate component call**: a table and its pagination controls are one visual unit, so `TableData.Pagination *PaginationData` is enough for any caller (list page or drill-down history table) to get consistent prev/next + "page X of Y" controls without composing an extra fragment
+- **Pico's card is a bare `<article>`**: table, stat tile, and chart components render as `<article>` (Pico styles it as a card automatically — background, border-radius, shadow — no extra class needed); `<header>`/`<footer>` are used only where content actually maps to them (chart title in `<header>`, table pagination in `<footer>`) rather than on every card
 - **Single shared Go package (`action/webui`)**: matches `action/{subdomain}` convention; the package exposes one real route (the demo page below) plus render functions other subdomains' handlers call directly
 - **Demo page doubles as living documentation**: `GET /web/design-system` renders every component (nav, stat tiles, table, line chart, bar chart, drill-down/detail layout, user menu) against fixture data, so visual regressions are caught by looking at one page instead of hunting through whichever real dashboard happens to use a given component
 - **User menu is a Pico dropdown, no custom JS**: the shell header shows `PageData.UserName` as a `<details class="dropdown"><summary>` element (Pico CSS v2's built-in disclosure pattern); clicking it opens a one-item menu with a "Logout" link — no click-outside/open-state JS to write or maintain
@@ -295,13 +296,13 @@ Everything else is a Go function, not a route — called from other subdomains' 
 Executes the shared shell template (head/nav/footer + design tokens, light/dark via `prefers-color-scheme`) with `data.Content` dropped into the content slot. When `data.UserName` is set, the header also renders it as a `<details class="dropdown">` menu (Pico CSS's built-in disclosure pattern, no custom JS) containing one item: a "Logout" link to `GET /web/logout` (see `auth-spec.md`). Used by every `/web/*` handler, including the demo page above.
 
 ### `webui.RenderTable(data TableData) template.HTML`
-Renders a `TableData` into the shared table component markup, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template). When `data.Pagination` is non-nil, also renders the pagination controls (prev/next links, "page X of Y") directly below the rows — callers needing a paginated list (e.g. Progress browse/finished/future lists, or a drill-down's history table) just set `TableData.Pagination` instead of calling a separate render function.
+Renders a `TableData` as a Pico CSS card (`<article>` — no extra class needed, Pico styles a bare `<article>` as a card) containing the `<table>`, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template). When `data.Pagination` is non-nil, also renders the pagination controls (prev/next links, "page X of Y") inside a card `<footer>` below the rows — callers needing a paginated list (e.g. Progress browse/finished/future lists, or a drill-down's history table) just set `TableData.Pagination` instead of calling a separate render function.
 
 ### `webui.RenderStatTiles(data []StatTileData) template.HTML`
-Renders a row of summary/stat tiles.
+Renders a row of summary/stat tiles, each its own Pico card (`<article class="webui-stat-tile">`).
 
 ### `webui.RenderLineChart(data LineChartData) template.HTML`
-Renders a `<canvas>` placeholder plus the `LineChartData` points as embedded JSON and a small inline script that initializes a Chart.js line chart against it, colored from the page's CSS variables (so it follows light/dark automatically).
+Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>` holding the chart title and a `<canvas>` below it, fed the `LineChartData` points as embedded JSON via a small inline script that initializes a Chart.js line chart, colored from the page's CSS variables (so it follows light/dark automatically). The card is capped at a fixed max-width (`--webui-chart-container` CSS) plus a fixed Chart.js `aspectRatio`, so charts render compact rather than stretching to the full page width.
 
 ### `webui.RenderBarChart(data BarChartData) template.HTML`
 Same as `RenderLineChart`, but initializes a Chart.js bar chart from `BarChartData`.

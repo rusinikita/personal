@@ -1,4 +1,5 @@
 {{define "components/table"}}
+<article>
 <table>
 <thead><tr>
 {{range .Columns}}<th{{if eq .Align "right"}} style="text-align:right"{{end}}>{{.Label}}</th>
@@ -10,5 +11,6 @@
 {{end}}</tr>
 {{end}}</tbody>
 </table>
-{{if .Pagination}}{{template "components/pagination" .Pagination}}{{end}}
+{{if .Pagination}}<footer>{{template "components/pagination" .Pagination}}</footer>{{end}}
+</article>
 {{end}}

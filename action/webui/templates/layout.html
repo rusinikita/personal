@@ -10,7 +10,6 @@
 <style>
 :root {
   --webui-accent: #0d6efd;
-  --webui-stat-bg: #f4f4f4;
   --webui-stat-emphasis-bg: #e7f1ff;
   --webui-chart-grid: #dddddd;
   --webui-chart-line: #0d6efd;
@@ -18,7 +17,6 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --webui-accent: #4dabf7;
-    --webui-stat-bg: #22262b;
     --webui-stat-emphasis-bg: #14315e;
     --webui-chart-grid: #444444;
     --webui-chart-line: #4dabf7;
@@ -26,12 +24,12 @@
 }
 nav a[aria-current="page"] { color: var(--webui-accent); font-weight: 700; }
 .webui-stats { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
-.webui-stat-tile { flex: 1 1 10rem; padding: 1rem; border-radius: var(--pico-border-radius, 0.25rem); background: var(--webui-stat-bg); }
+.webui-stat-tile { flex: 1 1 10rem; margin: 0; }
 .webui-stat-tile.emphasis { background: var(--webui-stat-emphasis-bg); border: 1px solid var(--webui-accent); }
 .webui-stat-label { font-size: 0.8rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.03em; }
 .webui-stat-value { font-size: 1.6rem; font-weight: 600; }
 .webui-stat-sub { font-size: 0.8rem; opacity: 0.7; }
-.webui-chart-container { max-width: 100%; margin-bottom: 1.5rem; }
+.webui-chart-container { max-width: 28rem; margin-bottom: 1.5rem; }
 .webui-detail-back { display: inline-block; margin-bottom: 1rem; }
 .webui-pagination ul { display: flex; gap: 1rem; list-style: none; padding: 0; margin: 1rem 0 0; }
 .webui-pagination span[aria-disabled="true"] { opacity: 0.4; }

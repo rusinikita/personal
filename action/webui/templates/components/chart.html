@@ -1,5 +1,6 @@
 {{define "components/chart"}}
-<div class="webui-chart-container">
+<article class="webui-chart-container">
+<header>{{.Title}}</header>
 <canvas id="{{.ID}}"></canvas>
 <script>
 (function() {
@@ -19,10 +20,11 @@
     },
     options: {
       responsive: true,
-      plugins: { title: { display: true, text: {{.Title | toJS}} } }
+      maintainAspectRatio: true,
+      aspectRatio: 2
     }
   });
 })();
 </script>
-</div>
+</article>
 {{end}}

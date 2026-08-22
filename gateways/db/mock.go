@@ -40,11 +40,11 @@ func (m *MockRepository) ListActivities(_ context.Context, filter domain.Activit
 func (m *MockRepository) ListProgress(_ context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error) {
 	now := time.Now()
 	return []domain.ActivityPoint{
-		{ID: 1, ActivityID: 1, UserID: filter.UserID, Value: 1, ProgressAt: now.Add(-20 * time.Hour)},
-		{ID: 2, ActivityID: 1, UserID: filter.UserID, Value: 2, ProgressAt: now.Add(-3 * 24 * time.Hour)},
-		{ID: 3, ActivityID: 2, UserID: filter.UserID, Value: 1, ProgressAt: now.Add(-20 * time.Hour)},
-		{ID: 4, ActivityID: 3, UserID: filter.UserID, Value: 2, ProgressAt: now},
-		{ID: 5, ActivityID: 4, UserID: filter.UserID, Value: 1, ProgressAt: now.Add(-20 * time.Hour)},
+		{ID: 1, ActivityID: 1, UserID: filter.UserID, Value: 1, Note: "Wired up the transport/web package", ProgressAt: now.Add(-20 * time.Hour)},
+		{ID: 2, ActivityID: 1, UserID: filter.UserID, Value: 2, Note: "Shipped cookie-based session login", ProgressAt: now.Add(-3 * 24 * time.Hour)},
+		{ID: 3, ActivityID: 2, UserID: filter.UserID, Value: 1, Note: "Leg day, felt strong", ProgressAt: now.Add(-20 * time.Hour)},
+		{ID: 4, ActivityID: 3, UserID: filter.UserID, Value: 2, Note: "Bright and productive morning", ProgressAt: now},
+		{ID: 5, ActivityID: 4, UserID: filter.UserID, Value: 1, Note: "Left a voice message", ProgressAt: now.Add(-20 * time.Hour)},
 	}, nil
 }
 

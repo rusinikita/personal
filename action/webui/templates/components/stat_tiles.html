@@ -1,9 +1,9 @@
 {{define "components/stat_tiles"}}
 <div class="webui-stats">
-{{range .}}<div class="webui-stat-tile{{if .Emphasis}} emphasis{{end}}">
+{{range .}}<article class="webui-stat-tile{{if .Emphasis}} emphasis{{end}}">
 <div class="webui-stat-label">{{.Label}}</div>
 <div class="webui-stat-value">{{.Value}}</div>
 {{if .SubLabel}}<div class="webui-stat-sub">{{.SubLabel}}</div>{{end}}
-</div>
+</article>
 {{end}}</div>
 {{end}}
