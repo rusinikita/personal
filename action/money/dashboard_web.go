@@ -42,7 +42,7 @@ var moneyNav = webui.BuildNav(webui.NavMoney)
 // moneyDashboardLinks is the small nav line under the dashboard's stat
 // tiles. The URLs are fixed route constants, not user data, so embedding
 // them as template.HTML directly (no templating) is safe.
-const moneyDashboardLinks template.HTML = `<p><a href="/web/money/transactions">View all transactions</a> · <a href="/web/money/calendar">Calendar</a> · <a href="/money/import">Import transactions</a></p>`
+const moneyDashboardLinks template.HTML = `<p><a href="/web/money/transactions">View all transactions</a> · <a href="/web/money/calendar">Calendar</a> · <a href="/web/money/export">Export</a> · <a href="/money/import">Import transactions</a></p>`
 
 // formatEUR renders a EUR amount the way CalendarDay.Total's own doc
 // example does, e.g. "€42.10".

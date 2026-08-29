@@ -44,6 +44,8 @@ func (s *IntegrationTestSuite) moneyDashboardRouter(ctx context.Context) *gin.En
 	r.GET("/web/money", money.MoneyDashboardWebHandler)
 	r.GET("/web/money/transactions", money.TransactionsWebHandler)
 	r.GET("/web/money/calendar", money.CalendarWebHandler)
+	r.GET("/web/money/export", money.ExportWebHandler)
+	r.GET("/web/money/export/download", money.ExportDownloadWebHandler)
 	return r
 }
 
@@ -151,6 +153,7 @@ func (s *IntegrationTestSuite) TestMoneyDashboard_LinksToTransactionsCalendarAnd
 	body := w.Body.String()
 	assert.Contains(s.T(), body, `href="/web/money/transactions"`, "must link to the unfiltered transaction list")
 	assert.Contains(s.T(), body, `href="/web/money/calendar"`, "must link to the calendar")
+	assert.Contains(s.T(), body, `href="/web/money/export"`, "must link to the spending export screen")
 	assert.Contains(s.T(), body, `href="/money/import"`, "must link to the existing bulk-import page rather than duplicating it")
 }
 

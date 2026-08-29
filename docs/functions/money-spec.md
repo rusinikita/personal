@@ -4,7 +4,7 @@
 
 System for tracking personal financial transactions, income, expenses, and budgets with MCP (Model Context Protocol) interface. Supports multi-currency logging with EUR conversion, hierarchical category paths, merchant tracking, bulk import from bank CSV exports, and analytical tools for spending analysis and budget progress monitoring.
 
-A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, `GET /web/money/calendar`) sits on top of this same data for reviewing the overall financial picture — balance, income/spend trends, category weight, sync freshness, a day-by-day calendar of activity — at a glance. Adding/editing/deleting transactions stays out of scope for the dashboard; it links out to the existing `/money/import` bulk-import page instead of duplicating it. Built on the shared `action/webui` design system (see `webui-spec.md`), the same way `action/progress`'s browse view is.
+A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, `GET /web/money/calendar`, `GET /web/money/export`) sits on top of this same data for reviewing the overall financial picture — balance, income/spend trends, category weight, sync freshness, a day-by-day calendar of activity — at a glance, plus a dedicated screen for exporting a category-level spending breakdown as CSV. Adding/editing/deleting transactions stays out of scope for the dashboard; it links out to the existing `/money/import` bulk-import page instead of duplicating it. Built on the shared `action/webui` design system (see `webui-spec.md`), the same way `action/progress`'s browse view is.
 
 ## Best Practices Applied
 
@@ -32,6 +32,12 @@ A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, 
 - **Calendar renders one grid per calendar month in range, newest first, zero-fills client-side**: the handler calls `GetDailyTransactionSummary(from, to)` once for the whole range (it only returns rows for days that actually have transactions), splits the result by calendar month, and calls `webui.RenderCalendar` once per month in descending order (most recent month at the top, oldest at the bottom) — each grid fills its own days with no transactions as zero-count cells rather than the DB padding empty rows
 - **Calendar has one Prev/Next control for the whole page, not one per month grid**: clicking Prev/Next shifts both `from` and `to` by one calendar month and re-renders the whole stack — a single control at the top of the page, never repeated per grid (`webui.RenderCalendar`'s own per-card Prev/Next is left unset here; see webui-spec.md)
 - **Calendar Next is hidden once the range reaches the current month**: shifting forward from there would only move into the future, which has nothing to show — Prev has no such limit, since browsing further into the past is always valid
+- **Spending export reuses `GetSpendingByCategory`, no new repository method**: the export preview is the same top-level (`depth=1`) category breakdown the dashboard already computes for a date range — `from`/`to` are the only new query shape, and both dashboard and export can share one repository call
+- **Export state lives entirely in the URL, GET-only, no session**: same convention as the transactions list and calendar filters — `from`/`to` for the date range, `incl[<category>]=on` per included category (a plain HTML checkbox; an unchecked/absent category is excluded), `amt[<category>]=<value>` per category's exported amount, pre-filled with the real total and directly editable. There is no separate "override" flag: `amt[<category>]` *is* the exported value, it just starts out equal to the real total
+- **One `<form method="GET">`, two submit buttons via `formaction`**: "Update" (`formaction="/web/money/export"`) and "Export CSV" (`formaction="/web/money/export/download"`) submit the same field set — date inputs, one checkbox + one amount input per category row — to two different routes, avoiding a second form or any client-side JS to keep them in sync
+- **Preview computes a running total from the submitted state, not from the DB**: once `incl`/`amt` params are present (i.e. after the first "Update" or "Export"), the preview's total row sums the *submitted* `amt` values for *included* categories — letting the user see the effect of an override or exclusion immediately, without it being silently overwritten by the real DB total on the next render
+- **Export default range is the current calendar month**: unlike the transactions list (no default = all transactions) or the calendar (last 3 months), export's typical use case is "pull this month's spending" — first visit with no `from`/`to` defaults to `[start of current month, today]`, immediately adjustable via the same filter form used for "Update"
+- **Category checkbox/amount table is not a shared `webui` component**: `TableData.Rows` is plain-text `[]string` cells, which can't host a checkbox or a text input — the export preview table is rendered by a local template in `action/money`, the same pattern `renderTransactionsFilterForm` already uses for the transactions filter form, not a new addition to `action/webui`
 
 ## Architecture Diagrams
 
@@ -266,6 +272,34 @@ sequenceDiagram
 
     Browser->>Handler: click a day → GET /web/money/transactions?from=2026-08-05&to=2026-08-05
     Note over Browser,Handler: handled by the Transactions List flow above
+```
+
+### Sequence Diagram: Spending Export
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Handler as action/money web handler
+    participant DB
+
+    Browser->>Handler: GET /web/money/export<br/>(no params on first visit)
+    Handler->>Handler: from, to default to<br/>[start of current month, today] when absent
+    Handler->>DB: GetSpendingByCategory(userID, from, to, depth=1)
+    DB-->>Handler: []SpendingByCategory{category, total_eur, count}
+    Handler->>Handler: incl[], amt[] params absent on first visit →<br/>every category defaults to included,<br/>amt defaults to its real total_eur
+    Handler-->>Browser: 200 HTML: filter form (from/to)<br/>+ one row per category (checkbox, real total, count, editable amount)<br/>+ running total + "Update" / "Export CSV" buttons
+
+    Browser->>Handler: uncheck a category, edit an amount,<br/>click "Update"<br/>(GET /web/money/export?from&to&incl[cat]=on&amt[cat]=value ...)
+    Handler->>DB: GetSpendingByCategory(userID, from, to, depth=1)
+    DB-->>Handler: []SpendingByCategory (real totals, for the Count column<br/>and to list any category not yet represented in incl/amt)
+    Handler->>Handler: for each category: included = incl[category] present,<br/>amount = amt[category] if present else real total_eur<br/>running total = sum(amount) over included categories
+    Handler-->>Browser: 200 HTML: same page,<br/>reflecting the submitted selections/overrides
+
+    Browser->>Handler: click "Export CSV"<br/>(GET /web/money/export/download?from&to&incl[cat]=on&amt[cat]=value ...)
+    Handler->>DB: GetSpendingByCategory(userID, from, to, depth=1)
+    DB-->>Handler: []SpendingByCategory
+    Handler->>Handler: filter to included categories,<br/>amount = amt[category] (falls back to real total_eur if absent)
+    Handler-->>Browser: 200 text/csv, Content-Disposition: attachment<br/>rows: Category, Amount (EUR), Count
 ```
 
 ## Database Schema
@@ -568,6 +602,24 @@ One or more month-grid calendars (weeks as rows, Mon–Sun as columns) stacked o
 - A GET `<form>` (from/to date inputs, "Apply" button, "Clear" as an outline-styled link-button next to Apply — "Clear" returns to the 3-month default) lets the user widen or narrow the range directly in the UI, same convention as the Transactions List filter form
 - A single Prev/Next control at the top of the page — not repeated per month grid — shifts both `from` and `to` back/forward by one calendar month. Prev is never disabled (browsing further into the past is always valid); Next is hidden once the range already reaches the current month, since shifting further would only move into the future
 
+### Spending Export
+
+**Route**: `GET /web/money/export`, `GET /web/money/export/download`
+**Auth**: same `WebMiddleware` session cookie
+
+A dedicated screen for reviewing and exporting a category-level spending breakdown as CSV, separate from the read-only `/web/money` overview — for pulling a clean, shareable figure out of the system (e.g. to hand to someone else) without going through the raw transaction export or asking the agent. Linked from the money dashboard alongside "View all transactions" and "Calendar".
+
+Both routes share the same query params, all optional, all GET (no session state, no POST):
+- `from`, `to` — date range, `YYYY-MM-DD`, resolved to day bounds in the display timezone (Asia/Nicosia), same convention as the transactions list and calendar. Default when both absent: `[start of current month, today]`
+- `incl[<category>]=on` — one checkbox per category; present = included in the preview total and the export, absent = excluded. Every category is included by default when no `incl` params are present at all (first visit)
+- `amt[<category>]=<value>` — the amount that will be exported for that category; pre-filled with the real computed total (`GetSpendingByCategory`'s `total_eur`), directly editable to redact or adjust the figure. `GetSpendingByCategory`'s `count` is shown read-only and is never editable
+
+**`GET /web/money/export`** (preview) renders:
+- The date filter form (from/to inputs, "Apply" — same outline-Clear-next-to-Apply convention as the rest of the dashboard)
+- One `<form method="GET">` containing: a table with one row per top-level category — checkbox, category name, real total (EUR), count, editable amount input — a running total row (sum of `amt` over included rows, computed from the submitted state so an edit or exclusion is reflected immediately), and two submit buttons: "Update" (`formaction="/web/money/export"`) and "Export CSV" (`formaction="/web/money/export/download"`)
+
+**`GET /web/money/export/download`** re-runs `GetSpendingByCategory` for the same `from`/`to`, filters to categories present in `incl`, and streams `text/csv` with `Content-Disposition: attachment; filename="spending-export-<from>-<to>.csv"`, columns: Category, Amount (EUR), Count.
+
 ### Import Page
 
 **Route**: `GET /money/import`, `POST /money/import`
@@ -613,3 +665,5 @@ Simple HTML page for uploading bank CSV exports. Not exposed via MCP — intende
 - **Category Depth Default**: 1 (top-level grouping)
 - **Budget Progress**: transfers excluded from spent calculation
 - **Web Money Transactions List Page Size**: 100 (`GET /web/money/transactions`, distinct from the MCP `get_transactions` default limit of 50)
+- **Spending Export Default Range**: current calendar month (`[start of current month, today]`) when `from`/`to` are absent
+- **Spending Export Category Depth**: 1 (top-level grouping, same as the dashboard's category table)
