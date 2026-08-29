@@ -47,6 +47,15 @@ make down
 *   **Commits:** Follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification. NEVER add `Co-Authored-By` or any co-authorship lines to commit messages.
 *   **Architecture:** Follow project structure and architecture requirements written in docs/architecture.md
 
+## Backlog Convention
+
+`docs/backlog.md` holds ideas for future work that haven't started yet.
+
+- Each item is headed by the date it was added (`DD-MM-YY`) followed by a short title, not a sequence number — this way removing a finished item never forces renumbering the rest
+- Each item includes a short description, a **Why:** rationale, and, when useful, a **Use cases:** list and a **Depends on:** line referencing other items by date + title
+- Per the AI-Driven Development Convention, a backlog item MUST be turned into a feature document (`docs/functions/{subdomain}-spec.md`) and go through Stage 1 approval before implementation starts
+- When a backlog item's implementation is complete, remove it from `docs/backlog.md`
+
 ## Feature Document Convention
 
 ### Feature Document Template
