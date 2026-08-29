@@ -144,7 +144,7 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 - NEVER write or edit ANY .go files (including test files)
 - NEVER write or edit ANY code files in ANY programming language
 - NEVER create any files outside docs/functions/ folder
-- NEVER proceed to Stage 2 without explicit user approval
+- NEVER proceed to Stage 2 (E2E Tests and Feature Implementation) without explicit user approval
 
 **Communication rules:**
 - Ask user for missing information via TODO comments inside feature document
@@ -155,36 +155,11 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 
 **Stage 1 deliverable:** Complete feature document with all sections filled (Overview, Best Practices, Architecture Diagrams, Database Schema, Go Code Structure, handlers/tools, E2E Tests, Configuration)
 
-### Stage 2: E2E Tests Implementation
+### Stage 2: E2E Tests and Feature Implementation
 
 **What agent MUST do:**
-- Write or modify ONLY test files in `tests/` package
-- Test files MUST have `_test.go` suffix
-- Follow E2E test scenarios from feature document
-- If test requires non-existent repository method or handler, leave TODO comment like: `// TODO: implement Repository.GetNutritionLog method`
-- If test code doesn't compile due to missing implementation, COMMENT OUT the test code and leave explanation comment
-- NEVER fix compilation errors by creating stubs in non-test files
-
-**What agent MUST NOT do:**
-- NEVER edit or create ANY .go files outside tests/ folder
-- NEVER edit or create implementation files (actions/, domain/, gateways/, common/)
-- NEVER create stub implementations to make tests compile
-- NEVER run the tests (compilation check is optional but not required)
-- NEVER proceed to Stage 3 without explicit user approval
-
-**Communication rules:**
-- After completing test implementation, ask user in chat: "E2E tests written. Please review and provide APPROVAL or change request."
-- Continue to Stage 3 ONLY after user explicitly says "APPROVED" or "proceed to stage 3" or similar explicit approval
-
-**Stage 2 deliverable:** E2E test files in tests/ package (may have commented code or TODO comments for missing implementations)
-
-### Stage 3: Feature Implementation
-
-**What agent MUST do:**
-- Implement feature according to feature document plan
-- Edit or create ANY .go files as needed to complete the feature
-- Uncomment test code from Stage 2
-- Implement missing methods referenced in tests
+- Write or modify E2E test files (`_test.go` suffix) in `tests/` package, following scenarios from feature document
+- Implement the feature according to the feature document plan: edit or create ANY .go files as needed (actions/, domain/, gateways/, common/, tests/)
 - Run `make build-app` to check compilation (NEVER use `go build` directly)
 - Run `make test` to verify tests pass (NEVER use `go test` directly)
 - Fix any build or test failures
@@ -199,6 +174,6 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 - Create new files if absolutely necessary
 - Edit existing files
 - Refactor code if needed for feature
-- Iterate on implementation until all tests pass
+- Iterate on tests and implementation together until all tests pass
 
-**Stage 3 deliverable:** Working, tested feature implementation with all E2E tests passing
+**Stage 2 deliverable:** Working, tested feature implementation with all E2E tests passing
