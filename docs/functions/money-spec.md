@@ -2,7 +2,9 @@
 
 ## Overview
 
-System for tracking personal financial transactions, income, expenses, and budgets with MCP (Model Context Protocol) interface. Supports multi-currency logging with EUR conversion, hierarchical category paths, merchant tracking, bulk import from bank CSV exports, and analytical tools for spending analysis and budget progress monitoring.
+System for tracking personal financial transactions, income, and expenses with MCP (Model Context Protocol) interface. Supports multi-currency logging with EUR conversion, hierarchical category paths, merchant tracking, bulk import from bank CSV exports, and analytical tools for spending analysis.
+
+**Budgets have moved to the cross-domain Goals feature** (see `goals-spec.md`) — the old `set_budget`/`get_budget_progress` MCP tools and `budgets` table are superseded by `goals-spec.md`'s `money_spend`-type goal, alongside a new `money_saving` type and count-based goals (workout PRs, habit counts) that don't belong in the money subdomain. This spec keeps only what's genuinely money-specific: transactions and the read-only financial dashboard.
 
 A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, `GET /web/money/calendar`, `GET /web/money/export`) sits on top of this same data for reviewing the overall financial picture — balance, income/spend trends, category weight, sync freshness, a day-by-day calendar of activity — at a glance, plus a dedicated screen for exporting a category-level spending breakdown as CSV. Adding/editing/deleting transactions stays out of scope for the dashboard; it links out to the existing `/money/import` bulk-import page instead of duplicating it. Built on the shared `action/webui` design system (see `webui-spec.md`), the same way `action/progress`'s browse view is.
 
@@ -15,8 +17,8 @@ A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, 
 - **Hierarchical Categories**: Slash-separated paths (e.g. `food/cafe`) — group by prefix for rollups
 - **Original Description**: Raw bank text preserved for future re-categorization without data loss
 - **Flat Schema**: accounts, merchants, and categories are plain strings — no foreign key overhead
-- **Budget Matching**: Budget covers all transactions where category starts with budget.category path
 - **Nullable Fields**: note and original_description are nullable for manual entries
+- **Money dashboard embeds its own goal tiles, built elsewhere**: `GET /web/money` shows a `money_saving`/`money_spend` tile grid between the stat tiles and the category table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/money` doesn't own any goal logic itself, it just calls the helper and drops the fragment into its page. The section disappears entirely when the user has no money goals (empty `EmptyMessage`, see `webui-spec.md`)
 - **Web dashboard reuses existing analytics methods**: both the all-time and last-calendar-month figures (current balance, total income, net, per-category totals) are built from the same `GetBalance` and `GetSpendingByCategory` calls the MCP tools already use, just with different `from`/`to` bounds — the only new repository method is `GetMoneySummary`, needed because nothing today exposes the date range itself (see next point)
 - **"Last sync" is import freshness, not transaction age**: `GetMoneySummary.LastSyncedAt` is `MAX(created_at)`, not `MAX(transacted_at)` — a backdated manual entry or an import of old bank history would make the newest transaction's own date look stale even right after a sync. `created_at` answers "when did I last touch this data," which is what the dashboard's sync-freshness indicator is for
 - **Months-span is global, not per-category**: average monthly spend per category divides that category's all-time total by the number of months since the user's overall first transaction (`GetMoneySummary.FirstTransactionAt`), not that category's own first transaction — otherwise a category that only started appearing recently would show an inflated average relative to older categories
@@ -45,8 +47,6 @@ A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, 
 
 ```mermaid
 erDiagram
-    TRANSACTIONS ||--o{ BUDGETS : "matched_by_category"
-
     TRANSACTIONS {
         bigserial id PK
         bigint user_id
@@ -60,17 +60,6 @@ erDiagram
         text note
         text original_description "raw bank export text"
         timestamptz transacted_at
-        timestamptz created_at
-    }
-
-    BUDGETS {
-        bigserial id PK
-        bigint user_id
-        varchar name "e.g. March 2026, Barcelona Trip"
-        varchar category "matches transaction category prefix"
-        decimal amount_eur
-        timestamptz starts_at
-        timestamptz ends_at
         timestamptz created_at
     }
 ```
@@ -91,16 +80,13 @@ graph TB
     User -->|add_transactions| MCP
     User -->|edit_transactions| MCP
     User -->|delete_transaction| MCP
-    User -->|set_budget| MCP
     User -->|get_transactions| MCP
     User -->|get_spending_by_category| MCP
     User -->|get_top_merchants| MCP
     User -->|compare_periods| MCP
-    User -->|get_budget_progress| MCP
     User -->|get_balance| MCP
 
     DB -.->|transactions table| DB
-    DB -.->|budgets table| DB
 
     style User fill:#e1f5ff
     style MCP fill:#ffe1e1
@@ -172,11 +158,7 @@ sequenceDiagram
     MCP->>DB: SELECT split_part(category,'/',1..depth),<br/>SUM(amount_eur), COUNT(*)<br/>FROM transactions<br/>WHERE user_id=1 AND type='expense'<br/>AND transacted_at BETWEEN from AND to<br/>GROUP BY category_prefix<br/>ORDER BY sum DESC
     DB-->>MCP: category rows
 
-    User->>MCP: get_budget_progress(date)
-    MCP->>DB: SELECT b.*, SUM(t.amount_eur) as spent<br/>FROM budgets b<br/>LEFT JOIN transactions t ON<br/>t.category LIKE b.category||'%'<br/>AND t.transacted_at BETWEEN b.starts_at AND b.ends_at<br/>WHERE b.user_id=1 AND b.starts_at <= date AND b.ends_at >= date<br/>GROUP BY b.id
-    DB-->>MCP: budget rows with spent amounts
-
-    MCP-->>User: spending by category + budget progress
+    MCP-->>User: spending by category
 ```
 
 ### Sequence Diagram: Compare Periods
@@ -227,8 +209,11 @@ sequenceDiagram
     DB-->>Handler: last-month totals per top-level category
     Handler->>Handler: merge by category: total_eur, last_month_eur,<br/>avg_monthly_eur = total_eur / months_span<br/>sort by avg_monthly_eur DESC
 
-    Handler->>Webui: RenderStatTiles, RenderTable, RenderPage
-    Webui-->>Browser: 200 text/html (stat tiles + category table,<br/>links to /web/money/transactions,<br/>/web/money/calendar, and /money/import)
+    Handler->>DB: goals.BuildGoalTiles(userID, now, types=[money_saving, money_spend])<br/>(see goals-spec.md)
+    DB-->>Handler: []webui.GoalTileData (may be empty)
+
+    Handler->>Webui: RenderGoalTiles (omitted if empty), RenderStatTiles, RenderTable, RenderPage
+    Webui-->>Browser: 200 text/html (goal tiles + stat tiles + category table,<br/>links to /web/money/transactions,<br/>/web/money/calendar, and /money/import)
 ```
 
 ### Sequence Diagram: Transactions List (shared by all three entry points)
@@ -332,23 +317,6 @@ CREATE INDEX idx_transactions_user_date   ON transactions(user_id, transacted_at
 CREATE INDEX idx_transactions_user_cat    ON transactions(user_id, category);
 CREATE INDEX idx_transactions_user_type   ON transactions(user_id, type);
 CREATE INDEX idx_transactions_merchant    ON transactions(user_id, merchant);
-
-CREATE TABLE IF NOT EXISTS budgets (
-    id          BIGSERIAL PRIMARY KEY,
-    user_id     BIGINT NOT NULL,
-    name        VARCHAR(255) NOT NULL,
-    category    VARCHAR(255) NOT NULL,
-    amount_eur  DECIMAL(12,2) NOT NULL,
-    starts_at   TIMESTAMPTZ NOT NULL,
-    ends_at     TIMESTAMPTZ NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    CONSTRAINT check_budget_amount CHECK (amount_eur > 0),
-    CONSTRAINT check_budget_period CHECK (ends_at > starts_at)
-);
-
-CREATE INDEX idx_budgets_user_period ON budgets(user_id, starts_at, ends_at);
-CREATE INDEX idx_budgets_user_cat    ON budgets(user_id, category);
 ```
 
 ## Go Code Structure
@@ -386,18 +354,6 @@ type Transaction struct {
     CreatedAt           time.Time       `json:"created_at" db:"created_at"`
 }
 
-// Budget represents a spending limit for a category over a time period
-type Budget struct {
-    ID        int64     `json:"id" db:"id"`
-    UserID    int64     `json:"user_id" db:"user_id"`
-    Name      string    `json:"name" db:"name"`
-    Category  string    `json:"category" db:"category"`
-    AmountEUR float64   `json:"amount_eur" db:"amount_eur"`
-    StartsAt  time.Time `json:"starts_at" db:"starts_at"`
-    EndsAt    time.Time `json:"ends_at" db:"ends_at"`
-    CreatedAt time.Time `json:"created_at" db:"created_at"`
-}
-
 // TransactionFilter defines query parameters for listing transactions
 type TransactionFilter struct {
     UserID   int64
@@ -423,13 +379,6 @@ type MerchantSummary struct {
     Merchant string  `json:"merchant"`
     TotalEUR float64 `json:"total_eur"`
     Count    int     `json:"count"`
-}
-
-// BudgetProgress is a budget with its spent amount calculated
-type BudgetProgress struct {
-    Budget
-    SpentEUR    float64 `json:"spent_eur"`
-    RemainingEUR float64 `json:"remaining_eur"`
 }
 
 // PeriodSpending is spending aggregated by category for one period
@@ -507,7 +456,6 @@ type DB interface {
     AddTransactions(ctx context.Context, txs []*domain.Transaction) (int, error)
     EditTransactions(ctx context.Context, userID int64, updates []domain.TransactionUpdate) (int, error)
     DeleteTransaction(ctx context.Context, id int64, userID int64) error
-    SetBudget(ctx context.Context, b *domain.Budget) (int64, error)
 
     // Read
     GetTransactions(ctx context.Context, filter domain.TransactionFilter) ([]*domain.Transaction, error)
@@ -516,7 +464,6 @@ type DB interface {
     GetSpendingByCategory(ctx context.Context, userID int64, from, to time.Time, depth int) ([]domain.SpendingByCategory, error)
     GetTopMerchants(ctx context.Context, userID int64, from, to time.Time, limit int) ([]domain.MerchantSummary, error)
     GetSpendingForPeriod(ctx context.Context, userID int64, from, to time.Time) ([]domain.SpendingByCategory, error)
-    GetBudgetProgress(ctx context.Context, userID int64, at time.Time) ([]domain.BudgetProgress, error)
     GetBalance(ctx context.Context, userID int64, from, to time.Time) (domain.BalanceResult, error)
 
     // GetMoneySummary returns the user's first transaction date and last
@@ -542,9 +489,6 @@ Deletes a transaction by ID after verifying it belongs to the user.
 ### add_transactions
 Bulk-inserts multiple transactions in one call after validating each; returns all created records.
 
-### set_budget
-Creates or updates a budget for a category over a period (upsert on user_id + name). Validates amount > 0 and ends_at > starts_at.
-
 ### get_transactions
 Lists transactions with optional filters (from/to/account/category/type/merchant). `category` matches by prefix (`LIKE 'food%'`). Default limit 50, max 200.
 
@@ -556,9 +500,6 @@ Top merchants ranked by total spend for a period (type=expense, grouped by merch
 
 ### compare_periods
 Side-by-side spending comparison between two periods, merged by top-level category with diff_eur and diff_pct computed per category.
-
-### get_budget_progress
-Returns budgets active as of a given date with spent_eur (transactions matching category prefix within the budget period) and remaining_eur.
 
 ### get_balance
 Income minus expenses for a period in one aggregation query; transfer transactions are excluded from the balance.
@@ -572,6 +513,7 @@ Income minus expenses for a period in one aggregation query; transfer transactio
 
 Read-only overview built on the shared `action/webui` design system (see `webui-spec.md`):
 - Stat tiles: last sync date (`GetMoneySummary.LastSyncedAt`), current balance, total income (all time), net for last calendar month, average monthly savings, and projected balance 3 months / 6 months / 1 year out (see the "Web Dashboard" sequence diagram and Best Practices above for how each is derived)
+- A financial goal tile grid (`money_saving`/`money_spend` types only) via `goals.BuildGoalTiles` + `webui.RenderGoalTiles` (see `goals-spec.md`), placed directly below the stat tiles — omitted entirely when the user has no money goals
 - A table of top-level categories sorted by average monthly spend descending, columns: Category, Avg monthly spend, Total (all time), Last month — each row links to `/web/money/transactions?category=:category`
 - A "View all transactions" link to `/web/money/transactions` (no filters — most recent first)
 - A "Calendar" link to `/web/money/calendar`
@@ -663,7 +605,6 @@ Simple HTML page for uploading bank CSV exports. Not exposed via MCP — intende
 - **Default Query Limit**: 50
 - **Max Query Limit**: 200
 - **Category Depth Default**: 1 (top-level grouping)
-- **Budget Progress**: transfers excluded from spent calculation
 - **Web Money Transactions List Page Size**: 100 (`GET /web/money/transactions`, distinct from the MCP `get_transactions` default limit of 50)
 - **Spending Export Default Range**: current calendar month (`[start of current month, today]`) when `from`/`to` are absent
 - **Spending Export Category Depth**: 1 (top-level grouping, same as the dashboard's category table)

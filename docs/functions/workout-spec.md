@@ -21,6 +21,7 @@ A **read-only** web dashboard (`GET /web/workouts`, `GET /web/workouts/:id`) sit
 - **List view reuses `GetPersonalRecords` per row**: `ListPersonalRecords` first ranks exercises by set count, then calls the existing single-exercise `GetPersonalRecords` for each — N+1 queries, acceptable for a single-user personal tool with a handful of exercises (same trade-off `BrowseDetailWebHandler` already makes calling `GetTrendStats` three times)
 - **Est. 1RM computed in the handler, not stored**: same Epley formula (`weight × (1 + reps/30)`) `get_personal_records_mcp.go` already computes from `MaxWeight`, kept out of `domain.PersonalRecords` so the DB layer stays formula-agnostic
 - **Drill-down page has no table, only charts**: unlike the Progress browse drill-down (which pairs a chart with a paginated point-history table), the exercise drill-down is stat tiles + two line charts only — `webui.RenderDetailView` is adjusted to skip rendering the table section when `DetailViewData.Table.Columns` is empty (mirrors its existing "skip stat tiles when `Stats` is empty" behavior), instead of showing an empty table box
+- **List view embeds its own goal tiles, built elsewhere**: `GET /web/workouts` shows an `exercise_max_weight`/`exercise_total_volume` tile grid above the exercise table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/workout` owns no goal logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no exercise goals (empty `EmptyMessage`, see `webui-spec.md`)
 
 ## Architecture Diagrams
 
@@ -174,10 +175,12 @@ sequenceDiagram
     participant Webui as action/webui
 
     Browser->>Handler: GET /web/workouts
+    Handler->>DB: goals.BuildGoalTiles(userID, now, types=[exercise_max_weight, exercise_total_volume])<br/>(see goals-spec.md)
+    DB-->>Handler: []webui.GoalTileData (may be empty)
     Handler->>DB: ListPersonalRecords(userID)
     DB-->>Handler: []ExercisePersonalRecords, sorted by SetCount DESC
     Handler->>Handler: build TableData (Name, Equipment, Times performed, Max weight, Max reps, Est. 1RM)<br/>each row links to /web/workouts/{exercise_id}
-    Handler->>Webui: RenderTable, RenderPage
+    Handler->>Webui: RenderGoalTiles (omitted if empty), RenderTable, RenderPage
     Webui-->>Browser: 200 text/html
 
     Browser->>Handler: GET /web/workouts/{id}
@@ -420,7 +423,7 @@ Returns best-ever results for an exercise: max_weight, max_reps, max_volume (sin
 ## HTTP Handlers
 
 ### GET /web/workouts
-Read-only list view: every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
+Read-only list view: an exercise goal tile grid at the top (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderGoalTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
 
 ### GET /web/workouts/:id
 Drill-down for a single exercise: stat tiles (max weight, max reps, est. 1RM, times performed) plus two line charts — weight over time and reps over time — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.

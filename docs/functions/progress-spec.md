@@ -17,6 +17,7 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **Screenshot dashboard stays untouched**: `dashboard_web.go` (`GET /web/progress`) keeps its separate fixed-viewport, black-and-white, top-5-only implementation; the browse view is new, additional code, not a replacement
 - **Filter extended, not replaced**: `ActivityFilter` gains new fields (`FutureOnly`, `Limit`, `Offset`) instead of new query methods — `ListActivities` already branches on `ActiveOnly`, so the not-yet-started case is one more branch in the same query builder, and `LIMIT`/`OFFSET` are one more clause
 - **Every browse list and the drill-down history are paginated**: fixed page size, `?page=N` query param (1-indexed, defaults to 1); each list handler calls a `Count*` repository method alongside the paginated `List*` call to build `webui.PaginationData` (see `webui-spec.md`)
+- **Browse view embeds its own goal tiles, built elsewhere**: `GET /web/progress/browse` shows an `activity_occurrence_count`/`activity_streak_count` tile grid above the activities table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/progress` owns no goal logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no activity goals (empty `EmptyMessage`, see `webui-spec.md`)
 
 ## Architecture Diagrams
 
@@ -130,11 +131,13 @@ sequenceDiagram
     participant Webui as action/webui
 
     Browser->>Handler: GET /web/progress/browse?page=2
+    Handler->>DB: goals.BuildGoalTiles(userID, now, types=[activity_occurrence_count, activity_streak_count])<br/>(see goals-spec.md)
+    DB-->>Handler: []webui.GoalTileData (may be empty)
     Handler->>DB: CountActivities(ActiveOnly: true)
     DB-->>Handler: total count
     Handler->>DB: ListActivities(ActiveOnly: true, Limit, Offset)
     DB-->>Handler: one page of active projects + habits
-    Handler->>Webui: RenderTable(Rows, Pagination) + RenderPage
+    Handler->>Webui: RenderGoalTiles (omitted if empty), RenderTable(Rows, Pagination) + RenderPage
     Webui-->>Browser: HTML, rows link to /web/progress/browse/{id}, prev/next links carry ?page=
 
     Browser->>Handler: GET /web/progress/browse/finished?page=1
@@ -411,7 +414,7 @@ Searches `activity_progress.note` by 1-5 query variants (ILIKE), with optional a
 Renders a read-only dashboard of all activities with recent progress, staleness indicators, and trend summaries. Protected by the same auth middleware as other `/web/*` routes. Purpose-built fixed-viewport/B&W/top-5-only screenshot page (`dashboard_web.go`) — untouched by the browse view below.
 
 ### GET /web/progress/browse
-New free-scrolling, full-color browse page built on the `action/webui` design system. Lists **all** active projects and habits (no top-5 limit, no viewport/B&W restriction) in a table, split or labeled by progress type; links to the finished/future lists and to each activity's drill-down. Paginated: fixed page size, `?page=N` (default 1), `webui.PaginationData` built from `CountActivities` + `ListActivities(Limit, Offset)`. Protected by `WebMiddleware` like every other `/web/*` route.
+New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity goal tile grid above the table (see Best Practices), then lists **all** active projects and habits (no top-5 limit, no viewport/B&W restriction) in a table, split or labeled by progress type; links to the finished/future lists and to each activity's drill-down. Paginated: fixed page size, `?page=N` (default 1), `webui.PaginationData` built from `CountActivities` + `ListActivities(Limit, Offset)`. Protected by `WebMiddleware` like every other `/web/*` route.
 
 ### GET /web/progress/browse/finished
 Lists activities where `ended_at` is set (`ListActivities(ActiveOnly: false)`), same table shape and pagination as the main browse view, with a back link.
