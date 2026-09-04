@@ -72,6 +72,11 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/goals", webAuth, dbMiddleware(db), goals.DashboardWebHandler)
 	router.POST("/web/goals/refresh", webAuth, dbMiddleware(db), goals.RefreshWebHandler)
 
+	// Goals e-ink dashboard — purpose-built fixed-viewport, black-and-white
+	// screenshot page for a physical always-on display, unauthenticated
+	// like /web/progress above (see goals.EinkDashboardWebHandler).
+	router.GET("/web/goals/eink", dbMiddleware(db), goals.EinkDashboardWebHandler)
+
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))
 	moneyImport.GET("/import", money.ImportGETHandler)

@@ -629,6 +629,11 @@ Read-mostly, single page, built on the shared `action/webui` design system (see 
 
 The one write route among the `/web/*` dashboards — every other one (Money, Progress browse, Workouts) is strictly read-only/GET-only, see `money-spec.md`/`workout-spec.md` — the web equivalent of the `refresh_goals` MCP tool with no `goal_id` (refreshes every active goal owned by the user; see the "Refresh Goals" and "Web Goals Refresh" sequence diagrams above). Takes no body/params — the "Refresh" button on `/web/goals` is the only caller. On success, redirects (`302`) back to `GET /web/goals`, so the page reloads showing the freshly recomputed values.
 
+### GET /web/goals/eink
+**Auth**: none — unauthenticated, same as `GET /web/progress` (see `progress-spec.md`)
+
+Purpose-built fixed-viewport (`100vw`/`100vh`), black-and-white, monospace screenshot page for a physical e-ink display, mirroring `action/progress/dashboard_web.go`'s `/web/progress`. Content is just the active-goals tile grid — `BuildGoalTiles(ctx, db, userID, now, types=nil)` + `webui.RenderGoalTiles`, restyled black-and-white by `action/goals`' own inline CSS (same `webui-goal-tile*` classes, no shared design-system stylesheet) — no Refresh form, no past/completed table.
+
 ### Embedded goal tiles on Money, Progress browse, and Workouts
 Each of `GET /web/money`, `GET /web/progress/browse`, and `GET /web/workouts` (see `money-spec.md`, `progress-spec.md`, `workout-spec.md`) calls `BuildGoalTiles` with its own domain's `types` and embeds the resulting `webui.RenderGoalTiles` fragment on its existing page — no new route. `EmptyMessage` is left unset on all three, so a domain with no goals of its own renders no goals section at all rather than an empty grid (see Best Practices).
 

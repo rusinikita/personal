@@ -37,6 +37,7 @@ func (s *IntegrationTestSuite) goalsDashboardRouter(ctx context.Context) *gin.En
 	})
 	r.GET("/web/goals", goals.DashboardWebHandler)
 	r.POST("/web/goals/refresh", goals.RefreshWebHandler)
+	r.GET("/web/goals/eink", goals.EinkDashboardWebHandler)
 	return r
 }
 
@@ -124,6 +125,48 @@ func (s *IntegrationTestSuite) TestGoalsRefresh_RecomputesActiveGoalsAndRedirect
 	updated, err := s.Repo().GetGoal(ctx, created.ID, gateways.UserIDFromContext(ctx))
 	require.NoError(s.T(), err)
 	assert.InDelta(s.T(), 80.0, updated.CurrentValue, 0.01)
+}
+
+// --- GET /web/goals/eink ----------------------------------------------------
+
+func (s *IntegrationTestSuite) TestGoalsEink_ActiveGoalsShowAsTiles_NoRefreshFormOrPastTable() {
+	ctx := s.Context()
+	now := time.Now().UTC()
+	pastStart := now.Add(-48 * time.Hour)
+	pastEnd := now.Add(-24 * time.Hour)
+
+	_, _, err := goals.CreateGoal(ctx, nil, goals.CreateGoalInput{Name: "Read 12 Books", GoalType: "manual", TargetValue: 12})
+	require.NoError(s.T(), err)
+	_, _, err = goals.CreateGoal(ctx, nil, goals.CreateGoalInput{
+		Name: "Old Goal", GoalType: "manual", TargetValue: 12, StartsAt: &pastStart, EndsAt: &pastEnd,
+	})
+	require.NoError(s.T(), err)
+
+	r := s.goalsDashboardRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/goals/eink", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	assert.Equal(s.T(), "text/html; charset=utf-8", w.Header().Get("Content-Type"))
+	body := w.Body.String()
+	assert.Contains(s.T(), body, `<div class="page-title">Goals</div>`)
+	assert.Contains(s.T(), body, "Read 12 Books")
+	assert.Contains(s.T(), body, `<article class="webui-goal-tile`)
+	assert.NotContains(s.T(), body, "Old Goal", "past/completed goals must not appear on the e-ink page")
+	assert.NotContains(s.T(), body, `action="/web/goals/refresh"`, "e-ink page has no Refresh form")
+	assert.Contains(s.T(), body, "100vw")
+	assert.Contains(s.T(), body, "100vh")
+}
+
+func (s *IntegrationTestSuite) TestGoalsEink_EmptyState() {
+	r := s.goalsDashboardRouter(s.Context())
+	req := httptest.NewRequest(http.MethodGet, "/web/goals/eink", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	assert.Contains(s.T(), w.Body.String(), "No active goals")
 }
 
 // --- Embedded goal tiles on Money/Progress-browse/Workouts ------------------
