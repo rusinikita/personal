@@ -29,18 +29,6 @@ type Transaction struct {
 	CreatedAt           time.Time       `db:"created_at"`
 }
 
-// Budget represents a spending limit for a category over a time period.
-type Budget struct {
-	ID        int64     `db:"id"`
-	UserID    int64     `db:"user_id"`
-	Name      string    `db:"name"`
-	Category  string    `db:"category"`
-	AmountEUR float64   `db:"amount_eur"`
-	StartsAt  time.Time `db:"starts_at"`
-	EndsAt    time.Time `db:"ends_at"`
-	CreatedAt time.Time `db:"created_at"`
-}
-
 // TransactionFilter defines query parameters for listing transactions.
 type TransactionFilter struct {
 	UserID   int64
@@ -82,13 +70,6 @@ type MerchantSummary struct {
 	Merchant string
 	TotalEUR float64
 	Count    int
-}
-
-// BudgetProgress is a budget enriched with spent and remaining amounts.
-type BudgetProgress struct {
-	Budget
-	SpentEUR     float64
-	RemainingEUR float64
 }
 
 // BalanceResult is income minus expenses for a period.

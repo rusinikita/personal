@@ -7,6 +7,7 @@ const (
 	NavMoney        NavSection = "money"
 	NavProgress     NavSection = "progress"
 	NavWorkouts     NavSection = "workouts"
+	NavGoals        NavSection = "goals"
 	NavDesignSystem NavSection = "design-system"
 )
 
@@ -17,6 +18,7 @@ func BuildNav(active NavSection) []NavItem {
 		{Label: "Money", URL: "/web/money", Active: active == NavMoney},
 		{Label: "Progress", URL: "/web/progress/browse", Active: active == NavProgress},
 		{Label: "Workouts", URL: "/web/workouts", Active: active == NavWorkouts},
+		{Label: "Goals", URL: "/web/goals", Active: active == NavGoals},
 		{Label: "Design System", URL: "/web/design-system", Active: active == NavDesignSystem},
 	}
 }

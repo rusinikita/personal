@@ -161,6 +161,17 @@ func RenderDetailView(data DetailViewData) template.HTML {
 	})
 }
 
+// RenderGoalTiles renders data.Tiles as a responsive card grid, each card
+// showing the goal name, a Pico native progress bar, the ProgressLabel text,
+// and the Deadline line when set. When Tiles is empty, renders
+// EmptyMessage if set, or nothing at all if it's also empty — the dedicated
+// /web/goals page always sets a message, while Money/Progress-browse/
+// Workouts leave it unset so an embedded section with no goals of that
+// domain's types simply doesn't appear (see goals-spec.md).
+func RenderGoalTiles(data GoalTilesData) template.HTML {
+	return execToHTML("components/goal_tiles", data)
+}
+
 // execToHTML executes the named template (defined in one of the embedded
 // templates/ files) against data and returns the result as template.HTML,
 // so it can be embedded into a parent template without double-escaping.

@@ -19,10 +19,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"personal/action/goals"
 	"personal/action/webui"
 	"personal/domain"
 	"personal/gateways"
 )
+
+// moneyGoalTypes is which goal_types Money's embedded tile grid shows (see
+// docs/functions/goals-spec.md).
+var moneyGoalTypes = []domain.GoalType{domain.GoalTypeMoneySaving, domain.GoalTypeMoneySpend}
 
 // displayTimezone is the timezone day boundaries (the transactions list's
 // ?from/?to filter and the calendar's day grouping) are computed in,
@@ -290,7 +295,14 @@ func MoneyDashboardWebHandler(c *gin.Context) {
 		Points:     trendPoints,
 	}
 
-	content := webui.RenderStatTiles(stats) + webui.RenderLineChart(trendChart) + moneyDashboardLinks + webui.RenderTable(table)
+	goalTiles, err := goals.BuildGoalTiles(ctx, db, userID, now, moneyGoalTypes)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to load goals: %v", err)
+		return
+	}
+
+	content := webui.RenderStatTiles(stats) + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles}) +
+		webui.RenderLineChart(trendChart) + moneyDashboardLinks + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)

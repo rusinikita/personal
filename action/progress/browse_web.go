@@ -14,10 +14,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"personal/action/goals"
 	"personal/action/webui"
 	"personal/domain"
 	"personal/gateways"
 )
+
+// progressGoalTypes is which goal_types the Progress browse view's embedded
+// tile grid shows (see docs/functions/goals-spec.md).
+var progressGoalTypes = []domain.GoalType{domain.GoalTypeActivityOccurrenceCount, domain.GoalTypeActivityStreakCount}
 
 // BrowsePageSize is the fixed page size for every browse-view list (the
 // three activity lists and a drill-down's progress-point history). It's a
@@ -83,8 +88,11 @@ func progressTypeLabel(pt domain.ProgressType) string {
 
 // renderActivityList is shared by the three activity list handlers
 // (active/finished/future): it paginates filter, fetches the page plus the
-// total count, and renders the list page.
-func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, baseURL, extraLabel string, extra activityExtraColumn) {
+// total count, and renders the list page. goalTilesHTML is pre-rendered by
+// the caller and dropped in above the table — only BrowseWebHandler (the
+// active list) passes a non-empty fragment, per goals-spec.md's "browse view
+// embeds its own goal tiles" (Finished/Future don't).
+func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, baseURL, extraLabel string, extra activityExtraColumn, goalTilesHTML template.HTML) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
 	if db == nil {
@@ -111,7 +119,7 @@ func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, bas
 	}
 
 	table := buildActivityTable(activities, extraLabel, extra, buildPagination(page, total, baseURL))
-	content := browseCrossLinks + webui.RenderTable(table)
+	content := browseCrossLinks + goalTilesHTML + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
@@ -125,25 +133,39 @@ func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, bas
 	}
 }
 
-// BrowseWebHandler renders GET /web/progress/browse: every active project
-// and habit (no top-5 limit, unlike dashboard_web.go's screenshot view).
+// BrowseWebHandler renders GET /web/progress/browse: an activity goal tile
+// grid, then every active project and habit (no top-5 limit, unlike
+// dashboard_web.go's screenshot view).
 func BrowseWebHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+	db := gateways.DBFromContext(ctx)
+	if db == nil {
+		c.String(http.StatusInternalServerError, "Database not available")
+		return
+	}
+	goalTiles, err := goals.BuildGoalTiles(ctx, db, webui.CurrentUserID(c), time.Now().UTC(), progressGoalTypes)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to load goals: %v", err)
+		return
+	}
+
 	renderActivityList(c, domain.ActivityFilter{ActiveOnly: true}, "Progress — Active", "/web/progress/browse",
-		"Last update", func(a domain.Activity) string { return formatTimeAgoPtr(a.LastPointAt) })
+		"Last update", func(a domain.Activity) string { return formatTimeAgoPtr(a.LastPointAt) },
+		webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles}))
 }
 
 // BrowseFinishedWebHandler renders GET /web/progress/browse/finished:
 // activities with ended_at set.
 func BrowseFinishedWebHandler(c *gin.Context) {
 	renderActivityList(c, domain.ActivityFilter{ActiveOnly: false}, "Progress — Finished", "/web/progress/browse/finished",
-		"Finished", func(a domain.Activity) string { return formatTimeAgoPtr(a.EndedAt) })
+		"Finished", func(a domain.Activity) string { return formatTimeAgoPtr(a.EndedAt) }, "")
 }
 
 // BrowseFutureWebHandler renders GET /web/progress/browse/future:
 // activities whose started_at is still in the future.
 func BrowseFutureWebHandler(c *gin.Context) {
 	renderActivityList(c, domain.ActivityFilter{FutureOnly: true}, "Progress — Future", "/web/progress/browse/future",
-		"Starts", func(a domain.Activity) string { return a.StartedAt.Format("2006-01-02") })
+		"Starts", func(a domain.Activity) string { return a.StartedAt.Format("2006-01-02") }, "")
 }
 
 // BrowseDetailWebHandler renders GET /web/progress/browse/{id}: a

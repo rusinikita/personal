@@ -20,6 +20,7 @@ type designSystemPageData struct {
 	SpendChartHTML  template.HTML
 	CalendarHTML    template.HTML
 	DetailHTML      template.HTML
+	GoalTilesHTML   template.HTML
 }
 
 // fixtureCalendarWeeks builds a real, correctly-computed August 2026 month
@@ -150,6 +151,14 @@ func DesignSystemHandler(c *gin.Context) {
 		},
 	}
 
+	goalTiles := GoalTilesData{
+		Tiles: []GoalTileData{
+			{Name: "Emergency Fund", ProgressLabel: "€2,100.00 / €5,000.00 (42%)", PercentComplete: 42, Deadline: "by Dec 31, 2026"},
+			{Name: "Food Budget", ProgressLabel: "€320.00 / €300.00 (107%)", PercentComplete: 100, OverTarget: true},
+			{Name: "Bench Press 100kg", ProgressLabel: "82.5kg / 100kg", PercentComplete: 82.5},
+		},
+	}
+
 	content := execToHTML("pages/design_system", designSystemPageData{
 		StatsHTML:       RenderStatTiles(stats),
 		TableHTML:       RenderTable(table),
@@ -158,6 +167,7 @@ func DesignSystemHandler(c *gin.Context) {
 		SpendChartHTML:  RenderBarChart(spendChart),
 		CalendarHTML:    RenderCalendar(calendar),
 		DetailHTML:      RenderDetailView(detail),
+		GoalTilesHTML:   RenderGoalTiles(goalTiles),
 	})
 
 	c.Header("Content-Type", "text/html; charset=utf-8")

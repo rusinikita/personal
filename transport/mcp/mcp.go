@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"personal/action/food"
+	"personal/action/goals"
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/telegram"
@@ -218,13 +219,18 @@ func Server(db gateways.DB, tg gateways.Telegram) *mcp.Server {
 	mcp.AddTool(server, &money.AddTransactionsMCPDefinition, money.AddTransactions)
 	mcp.AddTool(server, &money.EditTransactionsMCPDefinition, money.EditTransactions)
 	mcp.AddTool(server, &money.DeleteTransactionMCPDefinition, money.DeleteTransaction)
-	mcp.AddTool(server, &money.SetBudgetMCPDefinition, money.SetBudget)
 	mcp.AddTool(server, &money.GetTransactionsMCPDefinition, money.GetTransactions)
 	mcp.AddTool(server, &money.GetSpendingByCategoryMCPDefinition, money.GetSpendingByCategory)
 	mcp.AddTool(server, &money.GetTopMerchantsMCPDefinition, money.GetTopMerchants)
 	mcp.AddTool(server, &money.ComparePeriodsMCPDefinition, money.ComparePeriods)
-	mcp.AddTool(server, &money.GetBudgetProgressMCPDefinition, money.GetBudgetProgress)
 	mcp.AddTool(server, &money.GetBalanceMCPDefinition, money.GetBalance)
+
+	// Goals tracking tools
+	mcp.AddTool(server, &goals.CreateGoalMCPDefinition, goals.CreateGoal)
+	mcp.AddTool(server, &goals.UpdateGoalMCPDefinition, goals.UpdateGoal)
+	mcp.AddTool(server, &goals.RefreshGoalsMCPDefinition, goals.RefreshGoals)
+	mcp.AddTool(server, &goals.GetGoalProgressMCPDefinition, goals.GetGoalProgress)
+	mcp.AddTool(server, &goals.LogGoalProgressMCPDefinition, goals.LogGoalProgress)
 
 	// Telegram notifications
 	mcp.AddTool(server, &telegram.SendTelegramMessageMCPDefinition, telegram.SendTelegramMessage)

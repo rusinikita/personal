@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"personal/action/auth"
+	"personal/action/goals"
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/webui"
@@ -64,6 +65,12 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/money/calendar", webAuth, dbMiddleware(db), money.CalendarWebHandler)
 	router.GET("/web/money/export", webAuth, dbMiddleware(db), money.ExportWebHandler)
 	router.GET("/web/money/export/download", webAuth, dbMiddleware(db), money.ExportDownloadWebHandler)
+
+	// Goals dashboard — every goal type, read-mostly plus one Refresh write
+	// route, built on the webui design system. Creating/editing goals and
+	// logging manual progress stay MCP-only.
+	router.GET("/web/goals", webAuth, dbMiddleware(db), goals.DashboardWebHandler)
+	router.POST("/web/goals/refresh", webAuth, dbMiddleware(db), goals.RefreshWebHandler)
 
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))

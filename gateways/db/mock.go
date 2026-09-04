@@ -319,6 +319,50 @@ func (m *MockRepository) GetTransactions(_ context.Context, filter domain.Transa
 	return filtered[offset:end], total, nil
 }
 
+// mockGoals is fixture data for the goals dashboard and every page that
+// embeds a goal tile grid (Money/Progress-browse/Workouts), one goal per
+// applicable type on each of those domains, so the preview shows what an
+// embedded (and the dedicated) grid actually looks like.
+func mockGoals(userID int64) []domain.Goal {
+	now := time.Now()
+	deadline := now.AddDate(0, 3, 0)
+	category := "food"
+	unit := "sessions"
+	baseline := 1000.0
+	exerciseID := int64(1)
+	activityID := int64(2)
+	return []domain.Goal{
+		{ID: 1, UserID: userID, Name: "Emergency Fund", GoalType: domain.GoalTypeMoneySaving, TargetValue: 5000, CurrentValue: 2100, BaselineBalanceEUR: &baseline, StartsAt: now.AddDate(0, -2, 0), EndsAt: &deadline},
+		{ID: 2, UserID: userID, Name: "Food Budget", GoalType: domain.GoalTypeMoneySpend, TargetValue: 400, CurrentValue: 320, Category: &category, StartsAt: now.AddDate(0, 0, -20)},
+		{ID: 3, UserID: userID, Name: "Bench Press 100kg", GoalType: domain.GoalTypeExerciseMaxWeight, ExerciseID: &exerciseID, TargetValue: 100, CurrentValue: 82.5, StartsAt: now.AddDate(0, -1, 0)},
+		{ID: 4, UserID: userID, Name: "Meditate 30 Times", GoalType: domain.GoalTypeActivityOccurrenceCount, ActivityID: &activityID, TargetValue: 30, CurrentValue: 12, Unit: &unit, StartsAt: now.AddDate(0, 0, -14)},
+	}
+}
+
+func (m *MockRepository) ListGoals(_ context.Context, filter domain.GoalFilter) ([]domain.Goal, error) {
+	types := make(map[domain.GoalType]bool, len(filter.Types))
+	for _, t := range filter.Types {
+		types[t] = true
+	}
+	var result []domain.Goal
+	for _, g := range mockGoals(filter.UserID) {
+		if len(types) > 0 && !types[g.GoalType] {
+			continue
+		}
+		result = append(result, g)
+	}
+	return result, nil
+}
+
+func (m *MockRepository) GetGoal(_ context.Context, goalID int64, userID int64) (*domain.Goal, error) {
+	for _, g := range mockGoals(userID) {
+		if g.ID == goalID {
+			return &g, nil
+		}
+	}
+	return nil, nil
+}
+
 // GetDailyTransactionSummary mirrors the real repository's grouping by
 // calendar day in the display timezone (Asia/Nicosia).
 func (m *MockRepository) GetDailyTransactionSummary(_ context.Context, userID int64, from, to time.Time) ([]domain.DailySummary, error) {

@@ -60,12 +60,10 @@ type DB interface {
 	AddTransactions(ctx context.Context, txs []*domain.Transaction) ([]*domain.Transaction, error)
 	EditTransactions(ctx context.Context, userID int64, updates []domain.TransactionUpdate) (int, error)
 	DeleteTransaction(ctx context.Context, id int64, userID int64) error
-	SetBudget(ctx context.Context, b *domain.Budget) (int64, error)
 	GetTransactions(ctx context.Context, filter domain.TransactionFilter) ([]*domain.Transaction, int, error)
 	GetSpendingByCategory(ctx context.Context, userID int64, from, to time.Time, depth int) ([]domain.SpendingByCategory, error)
 	GetTopMerchants(ctx context.Context, userID int64, from, to time.Time, limit int) ([]domain.MerchantSummary, error)
 	GetSpendingForPeriod(ctx context.Context, userID int64, from, to time.Time) ([]domain.SpendingByCategory, error)
-	GetBudgetProgress(ctx context.Context, userID int64, at time.Time) ([]domain.BudgetProgress, error)
 	GetBalance(ctx context.Context, userID int64, from, to time.Time) (domain.BalanceResult, error)
 
 	// GetMoneySummary returns the user's first transaction date and last
@@ -90,6 +88,27 @@ type DB interface {
 	CountProgress(ctx context.Context, filter domain.ProgressFilter) (int, error)
 	GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error)
 	SearchProgressNotes(ctx context.Context, filter domain.ProgressNoteSearchFilter) ([]domain.ActivityPointWithActivity, error)
+
+	// Goals tracking methods (see docs/functions/goals-spec.md)
+
+	// CreateGoal and UpdateGoal are the only two write methods on the whole
+	// repository for goals — every write to an existing goal, no matter the
+	// caller (update_goal, refresh_goals, log_goal_progress), goes through
+	// UpdateGoal's generic partial update (see goals-spec.md Best Practices).
+	CreateGoal(ctx context.Context, g *domain.Goal) (int64, error)
+	UpdateGoal(ctx context.Context, userID int64, update domain.GoalUpdate) error
+
+	GetGoal(ctx context.Context, goalID int64, userID int64) (*domain.Goal, error)
+	ListGoals(ctx context.Context, filter domain.GoalFilter) ([]domain.Goal, error)
+
+	// GetCategorySpend sums transactions.amount_eur where category starts
+	// with the given prefix, within [from, to] — powers money_spend goals.
+	// Same query the old Budget/BudgetProgress used, now goal-scoped.
+	GetCategorySpend(ctx context.Context, userID int64, category string, from, to time.Time) (float64, error)
+
+	// GetExerciseVolume sums sets.weight_kg * sets.reps for an exercise
+	// since a given time — powers exercise_total_volume goals.
+	GetExerciseVolume(ctx context.Context, userID int64, exerciseID int64, since time.Time) (float64, error)
 }
 
 type DBMaintainer interface {

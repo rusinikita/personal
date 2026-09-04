@@ -112,3 +112,22 @@ type CalendarData struct {
 	Weekdays []string        // 7 column headers, e.g. ["Mon", ..., "Sun"]
 	Weeks    [][]CalendarDay // each inner slice has exactly 7 CalendarDay entries
 }
+
+// GoalTileData is one goal rendered as a card with a progress bar (see
+// docs/functions/goals-spec.md).
+type GoalTileData struct {
+	Name            string
+	ProgressLabel   string  // e.g. "€420 / €1,000 (42%)", "82kg / 100kg", "14 / 30 day streak"
+	PercentComplete float64 // 0-100, clamped for the bar width (ProgressLabel still shows the real, unclamped numbers)
+	Deadline        string  // formatted, e.g. "by Dec 31, 2026" — empty hides the deadline line (no deadline set)
+	OverTarget      bool    // current exceeds target — tile renders with a warning tint. Only meaningful for goal
+	// types where exceeding is bad (e.g. money_spend over budget); left false otherwise
+}
+
+// GoalTilesData is a grid of goal tiles — either every active goal (the
+// dedicated /web/goals page) or a subset pre-filtered to one domain's goal
+// types (embedded in the Money/Progress-browse/Workouts pages).
+type GoalTilesData struct {
+	Tiles        []GoalTileData
+	EmptyMessage string // shown instead of the grid when Tiles is empty; empty string means render nothing (see goals-spec.md's embedded-vs-dedicated empty-state convention)
+}

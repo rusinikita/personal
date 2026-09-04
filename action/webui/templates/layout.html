@@ -13,6 +13,8 @@
   --webui-stat-emphasis-bg: #e7f1ff;
   --webui-chart-grid: #dddddd;
   --webui-chart-line: #0d6efd;
+  --webui-goal-over-bg: #ffe7e7;
+  --webui-goal-over-border: #dc3545;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -20,6 +22,8 @@
     --webui-stat-emphasis-bg: #14315e;
     --webui-chart-grid: #444444;
     --webui-chart-line: #4dabf7;
+    --webui-goal-over-bg: #4a1f1f;
+    --webui-goal-over-border: #dc3545;
   }
 }
 nav a[aria-current="page"] { color: var(--webui-accent); font-weight: 700; }
@@ -40,6 +44,11 @@ nav a[aria-current="page"] { color: var(--webui-accent); font-weight: 700; }
 .webui-calendar-day-num { font-weight: 600; }
 .webui-calendar-count, .webui-calendar-total { font-size: 0.75rem; opacity: 0.8; }
 .webui-calendar-nav ul { display: flex; gap: 1rem; list-style: none; padding: 0; margin: 0 0 1rem; }
+.webui-goal-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.webui-goal-tile { margin: 0; }
+.webui-goal-tile--over { background: var(--webui-goal-over-bg); border: 1px solid var(--webui-goal-over-border); }
+.webui-goal-tile-label { font-size: 0.85rem; opacity: 0.8; }
+.webui-goal-tile-deadline { font-size: 0.75rem; opacity: 0.6; }
 </style>
 </head>
 <body>

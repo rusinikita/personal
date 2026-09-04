@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -143,7 +144,15 @@ func (r *repository) ApplyMigrations(ctx context.Context) error {
 }
 
 func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM consumption_log WHERE user_id = $1`, userID)
+	// goals.exercise_id/activity_id are real FKs into exercises/activities —
+	// deleted first so those tables' own deletes below don't hit a
+	// foreign-key violation.
+	_, err := r.db.Exec(ctx, `DELETE FROM goals WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM consumption_log WHERE user_id = $1`, userID)
 	if err != nil {
 		return err
 	}
@@ -184,11 +193,6 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 	}
 
 	_, err = r.db.Exec(ctx, `DELETE FROM transactions WHERE user_id = $1`, userID)
-	if err != nil {
-		return err
-	}
-
-	_, err = r.db.Exec(ctx, `DELETE FROM budgets WHERE user_id = $1`, userID)
 	if err != nil {
 		return err
 	}
@@ -316,23 +320,6 @@ func (r *repository) DeleteTransaction(ctx context.Context, id int64, userID int
 		return fmt.Errorf("transaction not found")
 	}
 	return nil
-}
-
-func (r *repository) SetBudget(ctx context.Context, b *domain.Budget) (int64, error) {
-	b.CreatedAt = time.Now().UTC()
-	var id int64
-	err := r.db.QueryRow(ctx, `
-		INSERT INTO budgets (user_id, name, category, amount_eur, starts_at, ends_at, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
-		ON CONFLICT (user_id, name) DO UPDATE
-			SET category   = EXCLUDED.category,
-			    amount_eur = EXCLUDED.amount_eur,
-			    starts_at  = EXCLUDED.starts_at,
-			    ends_at    = EXCLUDED.ends_at
-		RETURNING id`,
-		b.UserID, b.Name, b.Category, b.AmountEUR, b.StartsAt, b.EndsAt, b.CreatedAt,
-	).Scan(&id)
-	return id, err
 }
 
 func (r *repository) GetTransactions(ctx context.Context, filter domain.TransactionFilter) ([]*domain.Transaction, int, error) {
@@ -486,40 +473,22 @@ func (r *repository) GetSpendingForPeriod(ctx context.Context, userID int64, fro
 	return r.GetSpendingByCategory(ctx, userID, from, to, 1)
 }
 
-func (r *repository) GetBudgetProgress(ctx context.Context, userID int64, at time.Time) ([]domain.BudgetProgress, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT b.id, b.user_id, b.name, b.category, b.amount_eur, b.starts_at, b.ends_at, b.created_at,
-		       COALESCE(SUM(t.amount_eur), 0) AS spent_eur
-		FROM budgets b
-		LEFT JOIN transactions t
-		       ON t.user_id = b.user_id
-		      AND t.type = 'expense'
-		      AND t.category LIKE b.category || '%'
-		      AND t.transacted_at >= b.starts_at
-		      AND t.transacted_at <= b.ends_at
-		WHERE b.user_id = $1
-		  AND b.starts_at <= $2
-		  AND b.ends_at >= $2
-		GROUP BY b.id, b.user_id, b.name, b.category, b.amount_eur, b.starts_at, b.ends_at, b.created_at
-		ORDER BY b.starts_at`, userID, at)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var result []domain.BudgetProgress
-	for rows.Next() {
-		var bp domain.BudgetProgress
-		if err = rows.Scan(
-			&bp.ID, &bp.UserID, &bp.Name, &bp.Category, &bp.AmountEUR,
-			&bp.StartsAt, &bp.EndsAt, &bp.CreatedAt, &bp.SpentEUR,
-		); err != nil {
-			return nil, err
-		}
-		bp.RemainingEUR = bp.AmountEUR - bp.SpentEUR
-		result = append(result, bp)
-	}
-	return result, rows.Err()
+// GetCategorySpend sums expense transactions whose category starts with the
+// given prefix, within [from, to] — the same query the old Budget/
+// BudgetProgress used, now goal-scoped and powering money_spend goals (see
+// docs/functions/goals-spec.md).
+func (r *repository) GetCategorySpend(ctx context.Context, userID int64, category string, from, to time.Time) (float64, error) {
+	var spent float64
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_eur), 0)
+		FROM transactions
+		WHERE user_id = $1
+		  AND type = 'expense'
+		  AND category LIKE $2 || '%'
+		  AND transacted_at >= $3
+		  AND transacted_at <= $4`, userID, category, from, to,
+	).Scan(&spent)
+	return spent, err
 }
 
 func (r *repository) GetBalance(ctx context.Context, userID int64, from, to time.Time) (domain.BalanceResult, error) {
@@ -1995,4 +1964,193 @@ func (r *repository) GetTrendStats(ctx context.Context, activityID int64, userID
 	}
 
 	return stats, nil
+}
+
+// ---------------------------------------------------------------------------
+// Goals tracking (see docs/functions/goals-spec.md)
+// ---------------------------------------------------------------------------
+
+// goalDetails is the JSON shape stored in goals.details — assembled from and
+// unpacked back into domain.Goal's typed fields only here; action/goals and
+// the MCP tool handlers never see raw JSON, only domain.Goal (see
+// goals-spec.md Best Practices).
+type goalDetails struct {
+	Category           *string  `json:"category,omitempty"`
+	Unit               *string  `json:"unit,omitempty"`
+	BaselineBalanceEUR *float64 `json:"baseline_balance_eur,omitempty"`
+}
+
+func marshalGoalDetails(g *domain.Goal) ([]byte, error) {
+	return json.Marshal(goalDetails{
+		Category:           g.Category,
+		Unit:               g.Unit,
+		BaselineBalanceEUR: g.BaselineBalanceEUR,
+	})
+}
+
+// goalRowScanner is satisfied by both pgx.Row (QueryRow) and pgx.Rows
+// (Query, one row at a time via Next()), so scanGoal works for both GetGoal
+// and ListGoals.
+type goalRowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanGoal(row goalRowScanner) (*domain.Goal, error) {
+	var g domain.Goal
+	var details []byte
+	err := row.Scan(
+		&g.ID, &g.UserID, &g.Name, &g.GoalType, &g.ExerciseID, &g.ActivityID,
+		&g.TargetValue, &g.CurrentValue, &details, &g.StartsAt, &g.EndsAt,
+		&g.CreatedAt, &g.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	var d goalDetails
+	if err := json.Unmarshal(details, &d); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal goal details: %w", err)
+	}
+	g.Category = d.Category
+	g.Unit = d.Unit
+	g.BaselineBalanceEUR = d.BaselineBalanceEUR
+	return &g, nil
+}
+
+const goalColumns = "id, user_id, name, goal_type, exercise_id, activity_id, target_value, current_value, details, starts_at, ends_at, created_at, updated_at"
+
+func (r *repository) CreateGoal(ctx context.Context, g *domain.Goal) (int64, error) {
+	details, err := marshalGoalDetails(g)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now().UTC()
+	g.CreatedAt = now
+	g.UpdatedAt = now
+
+	var id int64
+	err = r.db.QueryRow(ctx, `
+		INSERT INTO goals (user_id, name, goal_type, exercise_id, activity_id, target_value, current_value, details, starts_at, ends_at, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		RETURNING id`,
+		g.UserID, g.Name, g.GoalType, g.ExerciseID, g.ActivityID, g.TargetValue, g.CurrentValue,
+		details, g.StartsAt, g.EndsAt, g.CreatedAt, g.UpdatedAt,
+	).Scan(&id)
+	return id, err
+}
+
+// UpdateGoal is the only way to write to an existing goal — every caller
+// (the update_goal MCP tool, refresh_goals' recompute, log_goal_progress's
+// increment) builds a domain.GoalUpdate and goes through this one dynamic
+// partial update (see goals-spec.md Best Practices). Category/Unit are
+// never both set on the same call in practice — a goal_type that allows one
+// never allows the other — so the two jsonb_set branches never collide in
+// the same generated SET clause.
+func (r *repository) UpdateGoal(ctx context.Context, userID int64, update domain.GoalUpdate) error {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+	q := psql.Update("goals").Where(squirrel.Eq{"id": update.ID, "user_id": userID})
+
+	if update.Name != nil {
+		q = q.Set("name", *update.Name)
+	}
+	if update.TargetValue != nil {
+		q = q.Set("target_value", *update.TargetValue)
+	}
+	if update.CurrentValue != nil {
+		q = q.Set("current_value", *update.CurrentValue)
+	}
+	if update.ClearEndsAt {
+		q = q.Set("ends_at", nil)
+	} else if update.EndsAt != nil {
+		q = q.Set("ends_at", *update.EndsAt)
+	}
+	if update.Category != nil {
+		q = q.Set("details", squirrel.Expr("jsonb_set(details, '{category}', to_jsonb(?::text))", *update.Category))
+	}
+	if update.Unit != nil {
+		q = q.Set("details", squirrel.Expr("jsonb_set(details, '{unit}', to_jsonb(?::text))", *update.Unit))
+	}
+	q = q.Set("updated_at", time.Now().UTC())
+
+	sql, args, err := q.ToSql()
+	if err != nil {
+		return err
+	}
+	tag, err := r.db.Exec(ctx, sql, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("goal not found")
+	}
+	return nil
+}
+
+func (r *repository) GetGoal(ctx context.Context, goalID int64, userID int64) (*domain.Goal, error) {
+	row := r.db.QueryRow(ctx, `SELECT `+goalColumns+` FROM goals WHERE id = $1 AND user_id = $2`, goalID, userID)
+	g, err := scanGoal(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get goal: %w", err)
+	}
+	return g, nil
+}
+
+// ListGoals is a plain cached read of already-computed current_value
+// columns — no per-goal_type computation happens here, only in
+// create_goal/refresh_goals (see goals-spec.md Best Practices).
+func (r *repository) ListGoals(ctx context.Context, filter domain.GoalFilter) ([]domain.Goal, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+	q := psql.Select(strings.Split(goalColumns, ", ")...).
+		From("goals").
+		Where(squirrel.Eq{"user_id": filter.UserID})
+
+	if filter.ActiveOnly {
+		at := filter.At
+		if at.IsZero() {
+			at = time.Now().UTC()
+		}
+		q = q.Where(squirrel.LtOrEq{"starts_at": at}).
+			Where(squirrel.Or{squirrel.Eq{"ends_at": nil}, squirrel.GtOrEq{"ends_at": at}})
+	}
+	if len(filter.Types) > 0 {
+		q = q.Where(squirrel.Eq{"goal_type": filter.Types})
+	}
+	q = q.OrderBy("starts_at")
+
+	sql, args, err := q.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []domain.Goal
+	for rows.Next() {
+		g, err := scanGoal(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *g)
+	}
+	return result, rows.Err()
+}
+
+// GetExerciseVolume sums weight_kg * reps for an exercise since a given
+// time — powers exercise_total_volume goals. Only sets with both weight_kg
+// and reps set count, the same restriction GetPersonalRecords already
+// applies for its own max-weight/max-volume records.
+func (r *repository) GetExerciseVolume(ctx context.Context, userID int64, exerciseID int64, since time.Time) (float64, error) {
+	var volume float64
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(weight_kg * reps), 0)
+		FROM sets
+		WHERE user_id = $1 AND exercise_id = $2 AND reps > 0 AND weight_kg > 0 AND created_at >= $3`,
+		userID, exerciseID, since,
+	).Scan(&volume)
+	return volume, err
 }

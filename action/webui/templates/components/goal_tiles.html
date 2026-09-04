@@ -1,0 +1,12 @@
+{{define "components/goal_tiles"}}
+{{if .Tiles}}<div class="webui-goal-tiles">
+{{range .Tiles}}<article class="webui-goal-tile{{if .OverTarget}} webui-goal-tile--over{{end}}">
+<header>{{.Name}}</header>
+<progress value="{{.PercentComplete}}" max="100"></progress>
+<div class="webui-goal-tile-label">{{.ProgressLabel}}</div>
+{{if .Deadline}}<div class="webui-goal-tile-deadline">{{.Deadline}}</div>{{end}}
+</article>
+{{end}}</div>
+{{else if .EmptyMessage}}<p>{{.EmptyMessage}}</p>
+{{end}}
+{{end}}
