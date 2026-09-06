@@ -4,17 +4,11 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 05-09-26 — Generic entity-ordering table (fractional indexing) + web drag-and-drop editing
-
-A reusable `entity_order` table, not tied to one subdomain, so any list (starting with `/web/progress`'s activities and `/web/goals/eink`'s goals) can have a user-controlled display order instead of whatever `ListActivities`/`ListGoals` returns — replacing `/web/progress`'s current partial workaround (`TOP_ACTIVITY_ID` env var, a comma-separated priority list read in `buildDashboardDataFromDB`). Schema: `user_id BIGINT, entity_type SMALLINT, entity_id BIGINT, idx TEXT COLLATE "C"`, composite `PRIMARY KEY (user_id, entity_type, entity_id)` (serves the per-entity upsert/lookup on every move) plus a secondary index on `(user_id, entity_type, idx)` (serves "list this user's slots for one type, in order" — the PK's column order can't serve that sort). `idx` is a fractional-indexing key (string-based, not float, to avoid precision exhaustion — see e.g. Figma's `fractional-indexing` or Jira's LexoRank), `COLLATE "C"` so Postgres compares it byte-wise rather than locale-aware. `entity_id` is polymorphic (points at `activities`/`goals`/... depending on `entity_type`) so it can't carry a real FK — each domain's delete path must clean up its own `entity_order` row.
-
-Editing is web-only, no MCP tool: drag-and-drop via SortableJS (already precedented — `layout.html` loads `chart.js` from jsdelivr the same way) on each orderable list, posting the moved item's new neighbors to one generic endpoint (e.g. `POST /web/order` with `{entity_type, entity_id, before_entity_id, after_entity_id}`), which computes a new key between them and upserts the single row.
-
-**Why:** Activity/goal order on the e-ink displays is currently whatever the DB query happens to return, not what's actually most useful to glance at first, and the ad-hoc env-var workaround doesn't generalize to goals or scale to reordering from the web itself.
-
-## 05-09-26 — Bigger text + rounded corners on e-ink goal cards
+## 05-09-26 — Bigger text + rounded corners on e-ink goal cards + goals order
 
 On `/web/goals/eink`'s cards specifically: larger text (name/label sizes are currently tuned for the dense `/web/progress` layout, cramped for a goal card with fewer items) and rounded corners (currently sharp `border: 1px solid #000`, see `dashboard_web_eink.go`'s inline CSS).
+
+Make additional sort of goals: 1 - activities, 2 - money, 3 - gym, 4 - others. Secondary sort param inside category - by id smaller first.
 
 **Why:** The goals e-ink page was styled as a quick reuse of the progress page's density-first look rather than tuned for its own content, which has far fewer items per screen.
 
@@ -35,3 +29,11 @@ On the goal card (`action/webui/templates/components/goal_tiles.html`), show whe
 Add a combined chart type to the `action/webui` design system: a single chart overlaying a line series (e.g. running balance or average trend) with bar series (e.g. per-period totals) — an addition to the existing separate `RenderLineChart`/`RenderBarChart` components.
 
 **Why:** Several trend views (e.g. monthly spend bars with a savings-rate line, or category totals with a trend overlay) need both a magnitude-per-period read and a trend-over-time read on the same chart, which today requires two separate charts.
+
+## 05-09-26 — Generic entity-pinning table + web selector editing
+
+A reusable `entity_pin` table, not tied to one subdomain, so any list (starting with `/web/progress`'s activities and `/web/goals/eink`'s goals) can have a handful of user-chosen entities pinned to fixed top positions instead of whatever `ListActivities`/`ListGoals` returns — replacing `/web/progress`'s current partial workaround (`TOP_ACTIVITY_ID` env var, a comma-separated priority list read in `buildDashboardDataFromDB`). Deliberately **pinning, not full sorting** (superseded an earlier fractional-indexing/drag-and-drop design — see `docs/functions/pins-spec.md` for the full rationale): the user only pins the few entities they want at the top; everything else keeps its existing order and renders after the pinned ones, so there's no need to manually place every item in a list. Schema: `user_id BIGINT, entity_type SMALLINT, position SMALLINT, entity_id BIGINT`, composite `PRIMARY KEY (user_id, entity_type, position)` (also directly serves "list this user's pins for one type, in order" — no secondary index needed) plus `UNIQUE (user_id, entity_type, entity_id)` so one entity never holds two positions. `position` is a small contiguous 1-based integer (not a fractional-indexing key — the pinned set per type is always small and user-curated, so plain integers with a cheap shift on insert/remove are simpler). `entity_id` is polymorphic (points at `activities`/`goals`/... depending on `entity_type`) so it can't carry a real FK — each domain's delete path must clean up its own `entity_pin` row.
+
+Editing is web-only, no MCP tool, no client-side JS: each row gets a plain `<select>` (not pinned / position 1..N) inside a small form, `POST /web/pins` with `{entity_type, entity_id, position}`, same write-then-redirect pattern as the existing `POST /web/goals/refresh`.
+
+**Why:** Activity/goal order on the e-ink displays is currently whatever the DB query happens to return, not what's actually most useful to glance at first, and the ad-hoc env-var workaround doesn't generalize to goals or scale to pinning from the web itself. A full manual-sort-everything UI was considered and rejected as more complexity (and more stale/garbage ordering data for entities nobody bothers to place) than the actual need, which is just keeping a few important goals/habits/projects/promises pinned to the top.
