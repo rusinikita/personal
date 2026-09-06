@@ -63,6 +63,7 @@ const einkHTMLTemplate = `<!DOCTYPE html>
 
         .webui-goal-tile {
             border: 1px solid #000;
+            border-radius: 8px;
             padding: 10px 12px;
         }
 
@@ -71,10 +72,15 @@ const einkHTMLTemplate = `<!DOCTYPE html>
         }
 
         .webui-goal-tile header {
-            font-size: 13px;
+            font-size: 18px;
             font-weight: 600;
             color: #000;
             margin-bottom: 6px;
+        }
+
+        .webui-goal-tile header a {
+            color: #000;
+            text-decoration: none;
         }
 
         .webui-goal-tile progress {
@@ -86,12 +92,12 @@ const einkHTMLTemplate = `<!DOCTYPE html>
         }
 
         .webui-goal-tile-label {
-            font-size: 11px;
+            font-size: 15px;
             color: #000;
         }
 
         .webui-goal-tile-deadline {
-            font-size: 10px;
+            font-size: 12px;
             color: #808080;
             margin-top: 2px;
         }

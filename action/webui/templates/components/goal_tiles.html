@@ -1,7 +1,7 @@
 {{define "components/goal_tiles"}}
 {{if .Tiles}}<div class="webui-goal-tiles">
 {{range .Tiles}}<article class="webui-goal-tile{{if .OverTarget}} webui-goal-tile--over{{end}}">
-<header>{{.Name}}</header>
+<header>{{if .LinkURL}}<a href="{{.LinkURL}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</header>
 <progress value="{{.PercentComplete}}" max="100"></progress>
 <div class="webui-goal-tile-label">{{.ProgressLabel}}</div>
 {{if .Deadline}}<div class="webui-goal-tile-deadline">{{.Deadline}}</div>{{end}}

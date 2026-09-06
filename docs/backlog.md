@@ -4,20 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 05-09-26 — Bigger text + rounded corners on e-ink goal cards + goals order
-
-On `/web/goals/eink`'s cards specifically: larger text (name/label sizes are currently tuned for the dense `/web/progress` layout, cramped for a goal card with fewer items) and rounded corners (currently sharp `border: 1px solid #000`, see `dashboard_web_eink.go`'s inline CSS).
-
-Make additional sort of goals: 1 - activities, 2 - money, 3 - gym, 4 - others. Secondary sort param inside category - by id smaller first.
-
-**Why:** The goals e-ink page was styled as a quick reuse of the progress page's density-first look rather than tuned for its own content, which has far fewer items per screen.
-
-## 05-09-26 — Goal card drill-down link
-
-On the goal card (`webui.GoalTileData`/`RenderGoalTiles`, `action/webui/templates/components/goal_tiles.html`), add a link to the relevant drill-down page per `goal_type`: `money_saving`/`money_spend` → the category filter page (`/web/money/transactions?category=...`, same URL `action/money/dashboard_web.go`'s `categoryLinkURL` builds), `exercise_max_weight`/`exercise_total_volume` → that exercise's page (`/web/workouts/{exercise_id}`), `activity_occurrence_count`/`activity_streak_count` → that activity's page (`/web/progress/browse/{activity_id}`). `manual` goals get no link — they have no underlying page to point to.
-
-**Why:** A goal card only shows the cached progress number today; clicking through to the underlying category/exercise/activity to see the detail behind that number requires manually navigating there instead of one click from the card.
-
 ## 04-09-26 — Goal card UX: last-updated time and per-card refresh icon
 
 On the goal card (`action/webui/templates/components/goal_tiles.html`), show when the goal's progress was last updated, plus a refresh icon on each card to trigger progress refresh for that individual goal (rather than only a global refresh).

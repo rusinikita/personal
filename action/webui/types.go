@@ -123,6 +123,8 @@ type GoalTileData struct {
 	Deadline        string  // formatted, e.g. "by Dec 31, 2026" — empty hides the deadline line (no deadline set)
 	OverTarget      bool    // current exceeds target — tile renders with a warning tint. Only meaningful for goal
 	// types where exceeding is bad (e.g. money_spend over budget); left false otherwise
+	LinkURL string // drill-down link to the underlying category/exercise/activity page; empty = not clickable
+	// (same convention as TableRow.LinkURL/CalendarDay.LinkURL)
 }
 
 // GoalTilesData is a grid of goal tiles — either every active goal (the
