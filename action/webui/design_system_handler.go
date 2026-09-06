@@ -18,6 +18,7 @@ type designSystemPageData struct {
 	WeightChartHTML template.HTML
 	MoodChartHTML   template.HTML
 	SpendChartHTML  template.HTML
+	ComboChartHTML  template.HTML
 	CalendarHTML    template.HTML
 	DetailHTML      template.HTML
 	GoalTilesHTML   template.HTML
@@ -123,6 +124,19 @@ func DesignSystemHandler(c *gin.Context) {
 		},
 	}
 
+	balanceTrendChart := ComboChartData{
+		ID:         "chart-balance-trend-demo",
+		Title:      "Balance trend",
+		SeriesName: "Balance (EUR)",
+		Points: []ComboChartPoint{
+			{Label: "-6m", Value: 3100},
+			{Label: "-3m", Value: 3650},
+			{Label: "Now", Value: 4231},
+			{Label: "+3m", Value: 4780},
+			{Label: "+6m", Value: 5330},
+		},
+	}
+
 	calendar := CalendarData{
 		Title:    "August 2026",
 		PrevURL:  "/web/design-system",
@@ -165,6 +179,7 @@ func DesignSystemHandler(c *gin.Context) {
 		WeightChartHTML: RenderLineChart(weightChart),
 		MoodChartHTML:   RenderLineChart(moodChart),
 		SpendChartHTML:  RenderBarChart(spendChart),
+		ComboChartHTML:  RenderComboChart(balanceTrendChart),
 		CalendarHTML:    RenderCalendar(calendar),
 		DetailHTML:      RenderDetailView(detail),
 		GoalTilesHTML:   RenderGoalTiles(goalTiles),

@@ -109,6 +109,26 @@ func (s *IntegrationTestSuite) TestMoneyDashboard_CategoryTableSortedByAvgMonthl
 	assert.Less(s.T(), iRent, iTransport, "higher avg monthly spend must be listed first")
 }
 
+func (s *IntegrationTestSuite) TestMoneyDashboard_ShowsBalanceTrendAsComboChart() {
+	// Per webui-spec.md, the balance trend is a combo chart — the same
+	// balance value drawn as both a bar and an overlaid line, not two
+	// different series — so the legend must stay off.
+	ctx := s.Context()
+	s.addTransaction(ctx, "income", "salary", "Employer", 5000, time.Now().UTC().AddDate(0, -2, 0))
+
+	r := s.moneyDashboardRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/money", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(s.T(), body, `<canvas id="chart-balance-trend">`)
+	assert.Contains(s.T(), body, `type: "bar"`)
+	assert.Contains(s.T(), body, `type: "line"`)
+	assert.Contains(s.T(), body, "legend: { display: false }")
+}
+
 func (s *IntegrationTestSuite) TestMoneyDashboard_EmptyState_NoTransactionsYet() {
 	r := s.moneyDashboardRouter(s.Context())
 	req := httptest.NewRequest(http.MethodGet, "/web/money", nil)

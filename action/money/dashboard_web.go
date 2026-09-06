@@ -145,7 +145,7 @@ func balanceTrendLabel(months int) string {
 	}
 }
 
-// buildBalanceTrendPoints builds the dashboard's balance trend line: actual
+// buildBalanceTrendPoints builds the dashboard's balance trend series: actual
 // cumulative balance (GetBalance(firstAt, pointDate), the same all-time
 // query the "Current balance" tile itself uses, just with an earlier upper
 // bound) at 12/6/3 months ago, the current balance, and avgMonthlySavings-
@@ -153,8 +153,8 @@ func balanceTrendLabel(months int) string {
 // trend instead of separate "Projected" tiles. A past point older than the
 // account's first transaction has no data yet and reads as 0, the same
 // empty-state convention used elsewhere on this page.
-func buildBalanceTrendPoints(ctx context.Context, db gateways.DB, userID int64, firstAt, now time.Time, currentBalance, avgMonthlySavings float64) ([]webui.LineChartPoint, error) {
-	points := make([]webui.LineChartPoint, 0, len(balanceTrendOffsets))
+func buildBalanceTrendPoints(ctx context.Context, db gateways.DB, userID int64, firstAt, now time.Time, currentBalance, avgMonthlySavings float64) ([]webui.ComboChartPoint, error) {
+	points := make([]webui.ComboChartPoint, 0, len(balanceTrendOffsets))
 	for _, months := range balanceTrendOffsets {
 		var value float64
 		switch {
@@ -174,7 +174,7 @@ func buildBalanceTrendPoints(ctx context.Context, db gateways.DB, userID int64, 
 		default:
 			value = currentBalance + avgMonthlySavings*float64(months)
 		}
-		points = append(points, webui.LineChartPoint{Label: balanceTrendLabel(months), Value: value})
+		points = append(points, webui.ComboChartPoint{Label: balanceTrendLabel(months), Value: value})
 	}
 	return points, nil
 }
@@ -218,7 +218,7 @@ func buildCategoryRows(allTime, lastMonth []domain.SpendingByCategory, monthsSpa
 }
 
 // MoneyDashboardWebHandler renders GET /web/money: stat tiles for balance,
-// income, last-month net and savings, a balance trend line chart (actual
+// income, last-month net and savings, a balance trend combo chart (actual
 // balance 12/6/3 months ago through the current balance to a 3/6/12-month
 // projection), and a category table sorted by average monthly spend
 // descending. A fresh account with no transactions yet renders
@@ -288,7 +288,7 @@ func MoneyDashboardWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Failed to load balance trend: %v", err)
 		return
 	}
-	trendChart := webui.LineChartData{
+	trendChart := webui.ComboChartData{
 		ID:         "chart-balance-trend",
 		Title:      "Balance trend",
 		SeriesName: "Balance (EUR)",
@@ -302,7 +302,7 @@ func MoneyDashboardWebHandler(c *gin.Context) {
 	}
 
 	content := webui.RenderStatTiles(stats) + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles}) +
-		webui.RenderLineChart(trendChart) + moneyDashboardLinks + webui.RenderTable(table)
+		webui.RenderComboChart(trendChart) + moneyDashboardLinks + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)

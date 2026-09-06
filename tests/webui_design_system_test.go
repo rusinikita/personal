@@ -131,6 +131,22 @@ func (s *IntegrationTestSuite) TestDesignSystem_ShowsBarChart() {
 		"demo must render a bar chart example (Money-style spend-by-category)")
 }
 
+func (s *IntegrationTestSuite) TestDesignSystem_ShowsComboChart() {
+	r := s.designSystemRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/web/design-system", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, `<canvas id="chart-balance-trend-demo">`,
+		"demo must render a combo chart example (Money-style balance trend)")
+	assert.Contains(s.T(), body, "--webui-chart-bar",
+		"combo chart's bar dataset must use its own color token, distinct from its line overlay")
+	assert.Contains(s.T(), body, "legend: { display: false }",
+		"combo chart must keep the legend off — its bar and line datasets are the same series, not two")
+}
+
 func (s *IntegrationTestSuite) TestDesignSystem_ChartsHaveUniqueCanvasIDs() {
 	r := s.designSystemRouter()
 
@@ -140,8 +156,8 @@ func (s *IntegrationTestSuite) TestDesignSystem_ChartsHaveUniqueCanvasIDs() {
 
 	body := w.Body.String()
 	canvasCount := strings.Count(body, "<canvas id=")
-	// two line chart examples + one bar chart example
-	assert.GreaterOrEqual(s.T(), canvasCount, 3)
+	// two line chart examples + one bar chart example + one combo chart example
+	assert.GreaterOrEqual(s.T(), canvasCount, 4)
 
 	// Every canvas id referenced in a getElementById call must actually exist
 	// as a rendered <canvas id="..."> element (charts wired to the right canvas).

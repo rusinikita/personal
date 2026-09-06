@@ -96,6 +96,24 @@ type BarChartData struct {
 	Bars       []BarChartBar
 }
 
+// ComboChartPoint is one (x, y) sample plotted as both a bar and a line —
+// the same value drawn two ways, not two different series.
+type ComboChartPoint struct {
+	Label string  // x-axis label, e.g. "2026-08"
+	Value float64 // e.g. balance at this point in the trend
+}
+
+// ComboChartData is a single-series chart rendered as both a bar and an
+// overlaid line for the same values (e.g. Money's balance trend) — for when
+// a plain LineChartData or BarChartData reads less clearly alone than the
+// two drawing styles combined on one series.
+type ComboChartData struct {
+	ID         string // unique DOM id for this chart's <canvas>, e.g. "chart-balance-trend"
+	Title      string
+	SeriesName string // e.g. "Balance (EUR)" — shown in the tooltip, no legend (both datasets are the same series)
+	Points     []ComboChartPoint
+}
+
 // CalendarDay is one cell in a month-grid calendar.
 type CalendarDay struct {
 	Day     int    // day-of-month number shown in the cell, e.g. 5

@@ -124,6 +124,26 @@ func RenderBarChart(data BarChartData) template.HTML {
 	})
 }
 
+// RenderComboChart renders a <canvas> plus ComboChartData's points as
+// embedded JSON and a small inline script that initializes a single
+// Chart.js chart plotting the same values as both a bar dataset (colored
+// from --webui-chart-bar) and an overlaid line dataset (colored from
+// --webui-chart-line, same as RenderLineChart) — one series, two drawing
+// styles, not two different series, so the legend stays off same as
+// RenderLineChart/RenderBarChart.
+func RenderComboChart(data ComboChartData) template.HTML {
+	labels := make([]string, len(data.Points))
+	values := make([]float64, len(data.Points))
+	for i, p := range data.Points {
+		labels[i] = p.Label
+		values[i] = p.Value
+	}
+	return execToHTML("components/combo_chart", chartTemplateData{
+		ID: data.ID, Title: data.Title, SeriesName: data.SeriesName,
+		Labels: labels, Values: values,
+	})
+}
+
 // RenderCalendar renders a CalendarData into the shared month-grid calendar
 // component markup.
 func RenderCalendar(data CalendarData) template.HTML {

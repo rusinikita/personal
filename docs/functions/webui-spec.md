@@ -21,7 +21,8 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Composition via named templates, not Go-side string concatenation**: a page's content is its own `templates/pages/{name}.html` file that lays out `{{.SomeComponentHTML}}` fields declaratively; the handler's only job is building the data (calling `RenderTable`/`RenderStatTiles`/etc. to produce each fragment) and executing the page template once — no handler manually writes `<section>` markup or concatenates HTML strings
 - **Design tokens as CSS custom properties**: custom (non-Pico) colors/spacing defined once as `:root` CSS variables; component CSS never hardcodes a color, so swapping the palette or adding a new theme touches one place
 - **Automatic light/dark via `prefers-color-scheme`**: no theme toggle or stored preference — both Pico CSS and the custom layer (and Chart.js, via a small init script reading the resolved CSS variables) follow the OS/browser setting
-- **Chart.js for two chart types**: server builds the data series as JSON, a thin inline script initializes a Chart.js chart from it — no server-side chart image/SVG generation to maintain. Two shapes cover every known future use: a **line chart** (single series over time — Workouts weight/reps trend, Progress activity value-over-time drill-down) and a **bar chart** (categorical comparison — Money spend-by-category)
+- **Chart.js for three chart types**: server builds the data series as JSON, a thin inline script initializes a Chart.js chart from it — no server-side chart image/SVG generation to maintain. A **line chart** (single series over time — Workouts weight/reps trend, Progress activity value-over-time drill-down), a **bar chart** (categorical comparison — Money spend-by-category), and a **combo chart** (one series over time, rendered as both a bar and a line at once — Money's balance trend) cover every known use
+- **Combo chart is one series, drawn twice for readability — not two different series**: it plots the *same* `Points[].Value` per x-axis label as both a bar and an overlaid line via Chart.js's native mixed-dataset support (one `type: "bar"` chart with a second dataset overridden to `type: "line"`) — the per-period magnitude reads clearly from the bars, the shape of the trend reads clearly from the line, both for one number. Because both datasets carry identical values, the legend stays off (same convention as the single-series line/bar charts — a legend would just show the same label twice) and a second color token (`--webui-chart-bar`, alongside the existing `--webui-chart-line`) keeps the bar visually distinct from its own line overlay
 - **Goal tiles reuse Pico's native `<progress>` element, no Chart.js**: `RenderGoalTiles` renders each goal as its own card with a `<progress value=... max=100>` bar plus a text label — Pico CSS already themes `<progress>` for light/dark, so this needs no canvas, no JS init script, and no new custom CSS beyond the card grid layout. One component, two placements: the dedicated `/web/goals` page renders every goal in one grid, while Money/Progress-browse/Workouts each embed the same component with a `GoalTilesData.Tiles` slice pre-filtered to their own domain's goal types (see `goals-spec.md`)
 - **Typed Go structs, not raw HTML, as the component API**: pages build a `Table`, `StatTile`, `LineChart`, `BarChart`, or `DetailView` struct and hand it to the shell; the shell owns the markup
 - **Responsive by default**: flexbox/grid + relative units (`rem`, `%`, `minmax()`), no fixed `100vw`/`100vh` sizing (that pattern stays confined to the untouched screenshot dashboard)
@@ -58,6 +59,7 @@ graph TB
         Stat[Stat tile component]
         Line[Line chart component<br/>JSON data + Chart.js init script]
         Bar[Bar chart component<br/>JSON data + Chart.js init script]
+        Combo[Combo chart component<br/>bar+line mixed dataset, Chart.js init script]
         Detail[Drill-down/detail layout]
         Tile[Goal tile grid component<br/>Pico native progress bar, no Chart.js]
     end
@@ -93,6 +95,7 @@ graph TB
     Shell --> Stat
     Shell --> Line
     Shell --> Bar
+    Shell --> Combo
     Shell --> Detail
     Shell --> Tile
 
@@ -111,8 +114,8 @@ sequenceDiagram
 
     Browser->>Demo: GET /web/design-system (WebMiddleware already validated session)
     Demo->>Demo: read username set on gin context by WebMiddleware
-    Demo->>Demo: build fixture data:<br/>NavItems, TableData, []StatTileData,<br/>LineChartData (x2: line style variants),<br/>BarChartData, DetailViewData
-    Demo->>Webui: RenderTable / RenderStatTiles /<br/>RenderLineChart / RenderBarChart / RenderDetailView
+    Demo->>Demo: build fixture data:<br/>NavItems, TableData, []StatTileData,<br/>LineChartData (x2: line style variants),<br/>BarChartData, ComboChartData, DetailViewData
+    Demo->>Webui: RenderTable / RenderStatTiles /<br/>RenderLineChart / RenderBarChart /<br/>RenderComboChart / RenderDetailView
     Webui-->>Demo: template.HTML fragments
     Demo->>Webui: RenderPage(w, PageData{UserName: ..., Content: <concatenated fragments>})
     Webui->>Webui: render header with UserName dropdown (Logout link)
@@ -262,6 +265,24 @@ type BarChartData struct {
     Bars       []BarChartBar
 }
 
+// ComboChartPoint is one (x, y) sample plotted as both a bar and a line —
+// the same value drawn two ways, not two different series.
+type ComboChartPoint struct {
+    Label string  // x-axis label, e.g. "2026-08"
+    Value float64 // e.g. balance at this point in the trend
+}
+
+// ComboChartData is a single-series chart rendered as both a bar and an
+// overlaid line for the same values (e.g. Money's balance trend) — for
+// when a plain LineChartData or BarChartData reads less clearly alone than
+// the two drawing styles combined on one series.
+type ComboChartData struct {
+    ID         string // unique DOM id for this chart's <canvas>, caller-supplied
+    Title      string
+    SeriesName string // e.g. "Balance (EUR)" — shown in the tooltip, no legend (see Best Practices)
+    Points     []ComboChartPoint
+}
+
 // CalendarDay is one cell in a month-grid calendar.
 type CalendarDay struct {
     Day      int    // day-of-month number shown in the cell, e.g. 5
@@ -318,6 +339,7 @@ action/webui/templates/
     pagination.html               {{define "components/pagination"}} — prev/next + "page X of Y", included by table.html
     stat_tiles.html               {{define "components/stat_tiles"}}
     chart.html                    {{define "components/chart"}}       — shared by line + bar (differ by .Type)
+    combo_chart.html               {{define "components/combo_chart"}} — one series, bar+line mixed-dataset overlay
     calendar.html                  {{define "components/calendar"}}
     detail_view.html               {{define "components/detail_view"}}
     goal_tiles.html                 {{define "components/goal_tiles"}}  — one <article> card per GoalTileData, wrapped in a responsive grid
@@ -336,6 +358,7 @@ The one real route this package owns. Renders a single page built entirely from 
 - A table (with at least one clickable/drill-down row)
 - A line chart with sample time-series data (styled to preview both a Workouts-style "weight over time" and a Progress-style "value over time" use)
 - A bar chart with sample categorical data (previewing a Money-style "spend by category" use)
+- A combo chart with sample data (previewing Money's balance trend: one series drawn as both a bar and a line)
 - A month-grid calendar with real, correctly-computed leading/trailing days and a few sample linked/unlinked days (previewing the Money transaction calendar use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 - A goal tile grid with a few sample tiles (mixed progress percentages, one with a deadline, one `OverTarget`) previewing both the dedicated Goals page and an embedded subset use
@@ -361,6 +384,9 @@ Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>
 
 ### `webui.RenderBarChart(data BarChartData) template.HTML`
 Same as `RenderLineChart`, but initializes a Chart.js bar chart from `BarChartData`.
+
+### `webui.RenderComboChart(data ComboChartData) template.HTML`
+Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>` holding the chart title and a `<canvas>` below it, initializing a single Chart.js chart (`type: "bar"`) built from `ComboChartData.Points` with two datasets both plotting the *same* `Points[].Value` against the shared `Points[].Label` x-axis: a bar dataset colored from `--webui-chart-bar`, and a second dataset overridden to `type: "line"` colored from the existing `--webui-chart-line` (same color `RenderLineChart` uses). Legend stays off, same as `RenderLineChart`/`RenderBarChart` — both datasets are the one series, so a legend would just repeat `SeriesName` twice.
 
 ### `webui.RenderCalendar(data CalendarData) template.HTML`
 Renders a Pico card (`<article>`) with a `<header>` holding the month title, and a 7-column grid below (`<table>`, one `<tr>` per `Weeks` entry) — each cell shows the day number plus, when set, `Count` and `Total`. When `PrevURL`/`NextURL` are set, the header also shows a prev/next nav — but a caller stacking several months on one page (e.g. Money's calendar) typically leaves both empty per grid and renders a single page-level Prev/Next control of its own instead, so the header falls back to just the title. A day with `InMonth == false` renders muted/de-emphasized; a day with `LinkURL` set is a clickable link, matching `RenderTable`'s row-link convention. Used by the Money transaction calendar (`money-spec.md`).
