@@ -225,11 +225,12 @@ type PaginationData struct {
 
 // DetailViewData is a drill-down page: a header plus a table of related records.
 type DetailViewData struct {
-    Title    string
-    BackURL  string
-    BackText string
-    Stats    []StatTileData // optional summary tiles at top
-    Table    TableData
+    Title       string
+    Description template.HTML // optional subtitle under Title, e.g. an activity's free-text description; empty renders nothing
+    BackURL     string
+    BackText    string
+    Stats       []StatTileData // optional summary tiles at top
+    Table       TableData
 }
 
 // LineChartPoint is one (x, y) sample in a trend line chart.
@@ -362,7 +363,7 @@ Same as `RenderLineChart`, but initializes a Chart.js bar chart from `BarChartDa
 Renders a Pico card (`<article>`) with a `<header>` holding the month title, and a 7-column grid below (`<table>`, one `<tr>` per `Weeks` entry) — each cell shows the day number plus, when set, `Count` and `Total`. When `PrevURL`/`NextURL` are set, the header also shows a prev/next nav — but a caller stacking several months on one page (e.g. Money's calendar) typically leaves both empty per grid and renders a single page-level Prev/Next control of its own instead, so the header falls back to just the title. A day with `InMonth == false` renders muted/de-emphasized; a day with `LinkURL` set is a clickable link, matching `RenderTable`'s row-link convention. Used by the Money transaction calendar (`money-spec.md`).
 
 ### `webui.RenderDetailView(data DetailViewData) template.HTML`
-Renders the drill-down/detail layout: back link, optional stat tiles, then an optional table. When `data.Table.Columns` is empty, the table section is skipped entirely (mirrors the existing "skip stat tiles when `Stats` is empty" behavior) — used by the Workouts exercise drill-down (`workout-spec.md`), which has stat tiles and two charts but no table.
+Renders the drill-down/detail layout: back link, title, optional description paragraph, optional stat tiles, then an optional table. `Description` renders (as pre-escaped `template.HTML`, so callers can pass through markdown-rendered content) only when non-empty — used by the Progress activity drill-down (`progress-spec.md`) to show `Activity.Description`. When `data.Table.Columns` is empty, the table section is skipped entirely (mirrors the existing "skip stat tiles when `Stats` is empty" behavior) — used by the Workouts exercise drill-down (`workout-spec.md`), which has stat tiles and two charts but no table.
 
 ### `webui.RenderGoalTiles(data GoalTilesData) template.HTML`
 Renders `data.Tiles` as a responsive card grid (`<article class="webui-goal-tile">` per tile, CSS grid wrapper — same "no fixed viewport sizing" responsiveness as every other component), each card showing the goal name, a Pico native `<progress value="{{.PercentComplete}}" max="100">` bar, the `ProgressLabel` text below it, and the `Deadline` line when set. A tile with `OverTarget` true gets a warning-tint class (`webui-goal-tile--over`), styled from the same `:root` design tokens as the rest of the custom CSS layer. When `data.Tiles` is empty, renders `data.EmptyMessage` if set, or nothing at all if it's also empty — the dedicated `/web/goals` page always sets a message ("No active goals yet"), while Money/Progress-browse/Workouts leave it unset so an embedded section with no goals of that domain's types simply doesn't appear (see `goals-spec.md`).

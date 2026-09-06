@@ -51,21 +51,30 @@ func buildPagination(page, totalCount int, baseURL string) *webui.PaginationData
 // column (last update / finished / starts).
 type activityExtraColumn func(a domain.Activity) string
 
-func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, pagination *webui.PaginationData) webui.TableData {
+// buildActivityTable builds one list's table. includeType is false for the
+// active list's per-progress_type sections (see activeSectionOrder), where
+// the section heading already says the type — a Type column there would
+// just repeat it. The still-combined finished/future lists pass true.
+func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, includeType bool, pagination *webui.PaginationData) webui.TableData {
 	rows := make([]webui.TableRow, 0, len(activities))
 	for _, a := range activities {
+		cells := []string{a.Name, a.Description}
+		if includeType {
+			cells = append(cells, progressTypeLabel(a.ProgressType))
+		}
+		cells = append(cells, formatFrequency(a.FrequencyDays), extra(a))
 		rows = append(rows, webui.TableRow{
-			Cells:   []string{a.Name, progressTypeLabel(a.ProgressType), formatFrequency(a.FrequencyDays), extra(a)},
+			Cells:   cells,
 			LinkURL: fmt.Sprintf("/web/progress/browse/%d", a.ID),
 		})
 	}
+	columns := []webui.TableColumn{{Label: "Name"}, {Label: "Description"}}
+	if includeType {
+		columns = append(columns, webui.TableColumn{Label: "Type"})
+	}
+	columns = append(columns, webui.TableColumn{Label: "Frequency"}, webui.TableColumn{Label: extraLabel})
 	return webui.TableData{
-		Columns: []webui.TableColumn{
-			{Label: "Name"},
-			{Label: "Type"},
-			{Label: "Frequency"},
-			{Label: extraLabel},
-		},
+		Columns:    columns,
 		Rows:       rows,
 		Pagination: pagination,
 	}
@@ -86,13 +95,12 @@ func progressTypeLabel(pt domain.ProgressType) string {
 	}
 }
 
-// renderActivityList is shared by the three activity list handlers
-// (active/finished/future): it paginates filter, fetches the page plus the
-// total count, and renders the list page. goalTilesHTML is pre-rendered by
-// the caller and dropped in above the table — only BrowseWebHandler (the
-// active list) passes a non-empty fragment, per goals-spec.md's "browse view
-// embeds its own goal tiles" (Finished/Future don't).
-func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, baseURL, extraLabel string, extra activityExtraColumn, goalTilesHTML template.HTML) {
+// renderActivityList is shared by the finished/future list handlers: it
+// paginates filter, fetches the page plus the total count, and renders the
+// list page as one combined table across all progress_types (see
+// activeSectionOrder for why the active list, handled separately by
+// BrowseWebHandler, does not use this).
+func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, baseURL, extraLabel string, extra activityExtraColumn) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
 	if db == nil {
@@ -118,8 +126,8 @@ func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, bas
 		return
 	}
 
-	table := buildActivityTable(activities, extraLabel, extra, buildPagination(page, total, baseURL))
-	content := browseCrossLinks + goalTilesHTML + webui.RenderTable(table)
+	table := buildActivityTable(activities, extraLabel, extra, true, buildPagination(page, total, baseURL))
+	content := browseCrossLinks + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
@@ -133,9 +141,24 @@ func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, bas
 	}
 }
 
+// activeSectionOrder is the active list's fixed per-progress_type section
+// order and heading text (see progress-spec.md). A type with zero active
+// activities still renders its heading with an empty table, so the
+// four-section layout stays predictable.
+var activeSectionOrder = []struct {
+	Type    domain.ProgressType
+	Heading string
+}{
+	{domain.ProgressTypeHabitProgress, "Habits"},
+	{domain.ProgressTypePromiseState, "Promises"},
+	{domain.ProgressTypeProjectProgress, "Projects"},
+	{domain.ProgressTypeMood, "Mood"},
+}
+
 // BrowseWebHandler renders GET /web/progress/browse: an activity goal tile
-// grid, then every active project and habit (no top-5 limit, unlike
-// dashboard_web.go's screenshot view).
+// grid, then every active activity split into four unpaginated tables (one
+// per progress_type, activeSectionOrder), unlike dashboard_web.go's
+// top-5-only screenshot view.
 func BrowseWebHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
@@ -143,29 +166,50 @@ func BrowseWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Database not available")
 		return
 	}
-	goalTiles, err := goals.BuildGoalTiles(ctx, db, webui.CurrentUserID(c), time.Now().UTC(), progressGoalTypes)
+	userID := webui.CurrentUserID(c)
+
+	goalTiles, err := goals.BuildGoalTiles(ctx, db, userID, time.Now().UTC(), progressGoalTypes)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to load goals: %v", err)
 		return
 	}
 
-	renderActivityList(c, domain.ActivityFilter{ActiveOnly: true}, "Progress — Active", "/web/progress/browse",
-		"Last update", func(a domain.Activity) string { return formatTimeAgoPtr(a.LastPointAt) },
-		webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles}))
+	extra := func(a domain.Activity) string { return formatTimeAgoPtr(a.LastPointAt) }
+	content := browseCrossLinks + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles})
+	for _, section := range activeSectionOrder {
+		activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, ActiveOnly: true, ProgressType: section.Type})
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Failed to list activities: %v", err)
+			return
+		}
+		table := buildActivityTable(activities, "Last update", extra, false, nil)
+		content += template.HTML(fmt.Sprintf("<h3>%s</h3>", section.Heading)) + webui.RenderTable(table)
+	}
+
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Status(http.StatusOK)
+	if err := webui.RenderPage(c.Writer, webui.PageData{
+		Title:    "Progress — Active",
+		Nav:      browseNav,
+		UserName: c.GetString("user_name"),
+		Content:  content,
+	}); err != nil {
+		c.String(http.StatusInternalServerError, "render error: %v", err)
+	}
 }
 
 // BrowseFinishedWebHandler renders GET /web/progress/browse/finished:
 // activities with ended_at set.
 func BrowseFinishedWebHandler(c *gin.Context) {
 	renderActivityList(c, domain.ActivityFilter{ActiveOnly: false}, "Progress — Finished", "/web/progress/browse/finished",
-		"Finished", func(a domain.Activity) string { return formatTimeAgoPtr(a.EndedAt) }, "")
+		"Finished", func(a domain.Activity) string { return formatTimeAgoPtr(a.EndedAt) })
 }
 
 // BrowseFutureWebHandler renders GET /web/progress/browse/future:
 // activities whose started_at is still in the future.
 func BrowseFutureWebHandler(c *gin.Context) {
 	renderActivityList(c, domain.ActivityFilter{FutureOnly: true}, "Progress — Future", "/web/progress/browse/future",
-		"Starts", func(a domain.Activity) string { return a.StartedAt.Format("2006-01-02") }, "")
+		"Starts", func(a domain.Activity) string { return a.StartedAt.Format("2006-01-02") })
 }
 
 // BrowseDetailWebHandler renders GET /web/progress/browse/{id}: a
@@ -252,9 +296,10 @@ func BrowseDetailWebHandler(c *gin.Context) {
 	}
 
 	detail := webui.DetailViewData{
-		Title:    activity.Name,
-		BackURL:  "/web/progress/browse",
-		BackText: "Back to active list",
+		Title:       activity.Name,
+		Description: renderBoldMarkdown(activity.Description),
+		BackURL:     "/web/progress/browse",
+		BackText:    "Back to active list",
 		Stats: []webui.StatTileData{
 			{Label: "Overall", Value: fmt.Sprintf("%.1f", overall.Average), SubLabel: fmt.Sprintf("%d check-ins", overall.Count)},
 			{Label: "Last 30 days", Value: fmt.Sprintf("%.1f", lastMonth.Average), SubLabel: fmt.Sprintf("%d check-ins", lastMonth.Count), Emphasis: true},

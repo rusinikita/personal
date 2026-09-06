@@ -4,12 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 05-09-26 — Show activity description on the browse list and detail screen
-
-`domain.Activity.Description` already exists and renders on `/web/progress`'s e-ink page (`activity-desc` div), but `/web/progress/browse`'s activity table and `/web/progress/browse/{id}`'s detail view (`action/progress/browse_web.go`) don't show it at all.
-
-**Why:** The description is only visible on the screenshot dashboard today — anyone using the full browse/detail pages to check an activity has no way to see why it was created or what it's tracking.
-
 ## 05-09-26 — Generic entity-ordering table (fractional indexing) + web drag-and-drop editing
 
 A reusable `entity_order` table, not tied to one subdomain, so any list (starting with `/web/progress`'s activities and `/web/goals/eink`'s goals) can have a user-controlled display order instead of whatever `ListActivities`/`ListGoals` returns — replacing `/web/progress`'s current partial workaround (`TOP_ACTIVITY_ID` env var, a comma-separated priority list read in `buildDashboardDataFromDB`). Schema: `user_id BIGINT, entity_type SMALLINT, entity_id BIGINT, idx TEXT COLLATE "C"`, composite `PRIMARY KEY (user_id, entity_type, entity_id)` (serves the per-entity upsert/lookup on every move) plus a secondary index on `(user_id, entity_type, idx)` (serves "list this user's slots for one type, in order" — the PK's column order can't serve that sort). `idx` is a fractional-indexing key (string-based, not float, to avoid precision exhaustion — see e.g. Figma's `fractional-indexing` or Jira's LexoRank), `COLLATE "C"` so Postgres compares it byte-wise rather than locale-aware. `entity_id` is polymorphic (points at `activities`/`goals`/... depending on `entity_type`) so it can't carry a real FK — each domain's delete path must clean up its own `entity_order` row.

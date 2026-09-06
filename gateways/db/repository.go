@@ -1588,6 +1588,10 @@ func applyActivityFilter(query squirrel.SelectBuilder, filter domain.ActivityFil
 		query = query.Where("life_part_ids && ?", filter.LifePartIDs)
 	}
 
+	if filter.ProgressType != "" {
+		query = query.Where(squirrel.Eq{"progress_type": filter.ProgressType})
+	}
+
 	return query
 }
 

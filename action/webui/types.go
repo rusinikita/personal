@@ -58,11 +58,12 @@ type PaginationData struct {
 
 // DetailViewData is a drill-down page: a header plus a table of related records.
 type DetailViewData struct {
-	Title    string
-	BackURL  string
-	BackText string
-	Stats    []StatTileData // optional summary tiles at top
-	Table    TableData
+	Title       string
+	Description template.HTML // optional subtitle under Title, e.g. an activity's free-text description; empty renders nothing
+	BackURL     string
+	BackText    string
+	Stats       []StatTileData // optional summary tiles at top
+	Table       TableData
 }
 
 // LineChartPoint is one (x, y) sample in a line chart.

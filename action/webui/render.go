@@ -134,11 +134,12 @@ func RenderCalendar(data CalendarData) template.HTML {
 // StatsHTML/TableHTML are already-rendered fragments so the component
 // template doesn't need to know how to build a table or stat tile itself.
 type detailViewRenderData struct {
-	Title     string
-	BackURL   string
-	BackText  string
-	StatsHTML template.HTML
-	TableHTML template.HTML
+	Title       string
+	Description template.HTML
+	BackURL     string
+	BackText    string
+	StatsHTML   template.HTML
+	TableHTML   template.HTML
 }
 
 // RenderDetailView renders the drill-down/detail layout: back link, optional
@@ -153,11 +154,12 @@ func RenderDetailView(data DetailViewData) template.HTML {
 		tableHTML = RenderTable(data.Table)
 	}
 	return execToHTML("components/detail_view", detailViewRenderData{
-		Title:     data.Title,
-		BackURL:   data.BackURL,
-		BackText:  data.BackText,
-		StatsHTML: statsHTML,
-		TableHTML: tableHTML,
+		Title:       data.Title,
+		Description: data.Description,
+		BackURL:     data.BackURL,
+		BackText:    data.BackText,
+		StatsHTML:   statsHTML,
+		TableHTML:   tableHTML,
 	})
 }
 

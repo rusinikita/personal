@@ -31,12 +31,22 @@ func NewMockRepository() gateways.DB {
 func (m *MockRepository) ListActivities(_ context.Context, filter domain.ActivityFilter) ([]domain.Activity, error) {
 	now := time.Now()
 	yesterday := now.Add(-20 * time.Hour)
-	return []domain.Activity{
+	activities := []domain.Activity{
 		{ID: 1, UserID: filter.UserID, Name: "Ship personal tracker", Description: "**Refactor** web transport", ProgressType: domain.ProgressTypeProjectProgress, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -14), LastPointAt: &yesterday},
 		{ID: 2, UserID: filter.UserID, Name: "Gym", Description: "Push/pull/legs", ProgressType: domain.ProgressTypeHabitProgress, FrequencyDays: 2, StartedAt: now.AddDate(0, 0, -60), LastPointAt: &yesterday},
 		{ID: 3, UserID: filter.UserID, Name: "Mood check-in", ProgressType: domain.ProgressTypeMood, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -90), LastPointAt: &now},
 		{ID: 4, UserID: filter.UserID, Name: "Call mom", ProgressType: domain.ProgressTypePromiseState, FrequencyDays: 7, StartedAt: now.AddDate(0, 0, -30), LastPointAt: &yesterday},
-	}, nil
+	}
+	if filter.ProgressType == "" {
+		return activities, nil
+	}
+	filtered := make([]domain.Activity, 0, len(activities))
+	for _, a := range activities {
+		if a.ProgressType == filter.ProgressType {
+			filtered = append(filtered, a)
+		}
+	}
+	return filtered, nil
 }
 
 func (m *MockRepository) ListProgress(_ context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error) {

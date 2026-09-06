@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,27 @@ func (s *IntegrationTestSuite) TestBrowse_ExcludesFinishedAndFutureActivities() 
 	assert.NotContains(s.T(), body, "Future one")
 }
 
+func (s *IntegrationTestSuite) TestBrowse_ShowsActivityDescription() {
+	ctx := s.Context()
+	now := time.Now()
+	_, err := s.Repo().CreateActivity(ctx, &domain.Activity{
+		UserID:        gateways.UserIDFromContext(ctx),
+		Name:          "Ship personal tracker",
+		Description:   "Track weekly progress on the side project",
+		ProgressType:  domain.ProgressTypeProjectProgress,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -10),
+	})
+	require.NoError(s.T(), err)
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Contains(s.T(), w.Body.String(), "Track weekly progress on the side project")
+}
+
 func (s *IntegrationTestSuite) TestBrowse_HasCrossLinksToFinishedAndFuture() {
 	r := s.browseRouter(s.Context())
 	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse", nil)
@@ -114,32 +136,107 @@ func (s *IntegrationTestSuite) TestBrowse_HasCrossLinksToFinishedAndFuture() {
 	assert.Contains(s.T(), body, `href="/web/progress/browse/future"`)
 }
 
-func (s *IntegrationTestSuite) TestBrowse_Pagination() {
+// TestBrowse_SplitsActiveActivitiesByProgressTypeSections covers the
+// four-section active list (Habits, Promises, Projects, Mood, in that
+// order) from progress-spec.md: each section is headed by its type name,
+// has no Type column (redundant with the heading), and is unpaginated.
+func (s *IntegrationTestSuite) TestBrowse_SplitsActiveActivitiesByProgressTypeSections() {
+	ctx := s.Context()
+	now := time.Now()
+	s.createActivity(ctx, "Gym", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -30))
+	s.createActivity(ctx, "Call mom", domain.ProgressTypePromiseState, now.AddDate(0, 0, -10))
+	s.createActivity(ctx, "Ship personal tracker", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -14))
+	s.createActivity(ctx, "Daily mood", domain.ProgressTypeMood, now.AddDate(0, 0, -1))
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	habitsIdx := strings.Index(body, "<h3>Habits</h3>")
+	promisesIdx := strings.Index(body, "<h3>Promises</h3>")
+	projectsIdx := strings.Index(body, "<h3>Projects</h3>")
+	moodIdx := strings.Index(body, "<h3>Mood</h3>")
+	require.True(s.T(), habitsIdx >= 0 && promisesIdx >= 0 && projectsIdx >= 0 && moodIdx >= 0, "all four section headings must render")
+	assert.True(s.T(), habitsIdx < promisesIdx && promisesIdx < projectsIdx && projectsIdx < moodIdx, "sections must render in Habits, Promises, Projects, Mood order")
+
+	assert.Contains(s.T(), body, "Gym")
+	assert.Contains(s.T(), body, "Call mom")
+	assert.Contains(s.T(), body, "Ship personal tracker")
+	assert.Contains(s.T(), body, "Daily mood")
+	assert.NotContains(s.T(), body, ">Type</th>", "Type column must not appear on the active list")
+}
+
+// TestBrowse_ActiveSectionRendersEmptyTableWhenNoActivitiesOfThatType covers
+// the "still show the heading" rule for a progress_type with zero active
+// activities.
+func (s *IntegrationTestSuite) TestBrowse_ActiveSectionRendersEmptyTableWhenNoActivitiesOfThatType() {
+	ctx := s.Context()
+	now := time.Now()
+	s.createActivity(ctx, "Gym", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -30))
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, "<h3>Promises</h3>")
+	assert.Contains(s.T(), body, "<h3>Projects</h3>")
+	assert.Contains(s.T(), body, "<h3>Mood</h3>")
+}
+
+// TestBrowse_ActiveListIsNotPaginated covers the "active list shows
+// everything" decision (unlike finished/future, which stay paginated).
+func (s *IntegrationTestSuite) TestBrowse_ActiveListIsNotPaginated() {
 	withBrowsePageSize(s.T(), 2)
 	ctx := s.Context()
 	now := time.Now()
-	s.createActivity(ctx, "Activity A", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -1))
-	s.createActivity(ctx, "Activity B", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -2))
-	s.createActivity(ctx, "Activity C", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -3))
+	s.createActivity(ctx, "Habit A", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -1))
+	s.createActivity(ctx, "Habit B", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -2))
+	s.createActivity(ctx, "Habit C", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -3))
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, "Habit A")
+	assert.Contains(s.T(), body, "Habit B")
+	assert.Contains(s.T(), body, "Habit C")
+	assert.NotContains(s.T(), body, "Page 1 of")
+}
+
+func (s *IntegrationTestSuite) TestBrowseFinished_Pagination() {
+	withBrowsePageSize(s.T(), 2)
+	ctx := s.Context()
+	now := time.Now()
+	userID := gateways.UserIDFromContext(ctx)
+	for _, name := range []string{"Activity A", "Activity B", "Activity C"} {
+		id := s.createActivity(ctx, name, domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -10))
+		require.NoError(s.T(), s.Repo().FinishActivity(ctx, id, userID, now.AddDate(0, 0, -1)))
+	}
 
 	r := s.browseRouter(ctx)
 
 	// Page 1: two rows, a next link, no prev link.
-	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse", nil)
+	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse/finished", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	body := w.Body.String()
 	assert.Contains(s.T(), body, "Page 1 of 2")
-	assert.Contains(s.T(), body, `href="/web/progress/browse?page=2"`)
+	assert.Contains(s.T(), body, `href="/web/progress/browse/finished?page=2"`)
 	assert.NotContains(s.T(), body, "page=0")
 
 	// Page 2: remaining row, a prev link, no next link.
-	req = httptest.NewRequest(http.MethodGet, "/web/progress/browse?page=2", nil)
+	req = httptest.NewRequest(http.MethodGet, "/web/progress/browse/finished?page=2", nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	body = w.Body.String()
 	assert.Contains(s.T(), body, "Page 2 of 2")
-	assert.Contains(s.T(), body, `href="/web/progress/browse?page=1"`)
+	assert.Contains(s.T(), body, `href="/web/progress/browse/finished?page=1"`)
 	assert.NotContains(s.T(), body, "Next →</a>")
 }
 
@@ -209,6 +306,27 @@ func (s *IntegrationTestSuite) TestBrowseDetail_ShowsHistoryNoteAndChart() {
 	assert.Contains(s.T(), body, "major breakthrough")
 	assert.Contains(s.T(), body, "<canvas id=", "must render a value-over-time chart")
 	assert.Contains(s.T(), body, `href="/web/progress/browse"`, "must have a back link")
+}
+
+func (s *IntegrationTestSuite) TestBrowseDetail_ShowsActivityDescription() {
+	ctx := s.Context()
+	now := time.Now()
+	activityID, err := s.Repo().CreateActivity(ctx, &domain.Activity{
+		UserID:        gateways.UserIDFromContext(ctx),
+		Name:          "Architecture strategy",
+		Description:   "Long-term plan for the service split",
+		ProgressType:  domain.ProgressTypeProjectProgress,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -30),
+	})
+	require.NoError(s.T(), err)
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/progress/browse/%d", activityID), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Contains(s.T(), w.Body.String(), "Long-term plan for the service split")
 }
 
 func (s *IntegrationTestSuite) TestBrowseDetail_UnknownOrForeignActivity_404s() {

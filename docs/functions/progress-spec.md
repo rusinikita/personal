@@ -18,6 +18,8 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **Filter extended, not replaced**: `ActivityFilter` gains new fields (`FutureOnly`, `Limit`, `Offset`) instead of new query methods — `ListActivities` already branches on `ActiveOnly`, so the not-yet-started case is one more branch in the same query builder, and `LIMIT`/`OFFSET` are one more clause
 - **Every browse list and the drill-down history are paginated**: fixed page size, `?page=N` query param (1-indexed, defaults to 1); each list handler calls a `Count*` repository method alongside the paginated `List*` call to build `webui.PaginationData` (see `webui-spec.md`)
 - **Browse view embeds its own goal tiles, built elsewhere**: `GET /web/progress/browse` shows an `activity_occurrence_count`/`activity_streak_count` tile grid above the activities table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/progress` owns no goal logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no activity goals (empty `EmptyMessage`, see `webui-spec.md`)
+- **Description shown, not just stored**: `Activity.Description` already rendered on the screenshot dashboard (`dashboard_web.go`'s `activity-desc` div) but was write-only on the browse view; the browse list's table now has a plain-text "Description" column (`webui.TableRow.Cells`, auto-escaped, no markdown rendering) and the drill-down detail view shows it as a paragraph under the title via `webui.DetailViewData.Description`, reusing the same `renderBoldMarkdown` helper the screenshot dashboard uses (see `webui-spec.md`)
+- **Active list is split by progress_type, finished/future are not**: `GET /web/progress/browse` (active only) renders four separate, unpaginated tables in fixed order — Habit, Promise, Project, Mood — each headed by its type name, via `ActivityFilter.ProgressType` (new field; empty = no filter, existing callers unaffected) added to the shared `applyActivityFilter`. A type with zero active activities still renders its heading with an empty table (`webui.TableData{Rows: nil}` renders a headers-only table), so the four-section layout stays predictable. Since each table is already scoped to one type, its "Type" column is dropped (`buildActivityTable`'s Type/`progressTypeLabel` column is only used by the still-combined finished/future tables). `GET /web/progress/browse/finished` and `/future` are untouched by this — single combined table across all types, same pagination as before — splitting was judged not worth the complexity for those lower-traffic views
 
 ## Architecture Diagrams
 
@@ -130,15 +132,15 @@ sequenceDiagram
     participant DB
     participant Webui as action/webui
 
-    Browser->>Handler: GET /web/progress/browse?page=2
+    Browser->>Handler: GET /web/progress/browse
     Handler->>DB: goals.BuildGoalTiles(userID, now, types=[activity_occurrence_count, activity_streak_count])<br/>(see goals-spec.md)
     DB-->>Handler: []webui.GoalTileData (may be empty)
-    Handler->>DB: CountActivities(ActiveOnly: true)
-    DB-->>Handler: total count
-    Handler->>DB: ListActivities(ActiveOnly: true, Limit, Offset)
-    DB-->>Handler: one page of active projects + habits
-    Handler->>Webui: RenderGoalTiles (omitted if empty), RenderTable(Rows, Pagination) + RenderPage
-    Webui-->>Browser: HTML, rows link to /web/progress/browse/{id}, prev/next links carry ?page=
+    loop For each progress_type in [Habit, Promise, Project, Mood]
+        Handler->>DB: ListActivities(ActiveOnly: true, ProgressType: type)<br/>(no Limit/Offset — unpaginated)
+        DB-->>Handler: all active activities of that type (may be empty)
+        Handler->>Webui: RenderTable(Rows, no Type column, no Pagination)
+    end
+    Webui-->>Browser: HTML: goal tiles, then 4 headed sections in order,<br/>rows link to /web/progress/browse/{id}
 
     Browser->>Handler: GET /web/progress/browse/finished?page=1
     Handler->>DB: CountActivities(ActiveOnly: false) + ListActivities(ActiveOnly: false, Limit, Offset)
@@ -152,11 +154,11 @@ sequenceDiagram
 
     Browser->>Handler: GET /web/progress/browse/{id}?page=1
     Handler->>DB: GetActivity(id)
-    DB-->>Handler: activity
+    DB-->>Handler: activity (including description)
     Handler->>DB: CountProgress(ActivityID: id) + ListProgress(ActivityID: id, Limit, Offset)
     DB-->>Handler: total count + one page of progress point history (value, note, progress_at)
-    Handler->>Webui: RenderLineChart(full value-over-time series, unpaginated) + RenderTable(history page, Pagination) + RenderDetailView
-    Webui-->>Browser: HTML detail page with back link and prev/next
+    Handler->>Webui: RenderLineChart(full value-over-time series, unpaginated) + RenderTable(history page, Pagination) + RenderDetailView(Description: activity.Description)
+    Webui-->>Browser: HTML detail page with back link, description paragraph, and prev/next
 ```
 
 ## Database Schema
@@ -322,12 +324,13 @@ type MappingValue struct {
 
 // ActivityFilter defines query parameters for listing activities
 type ActivityFilter struct {
-    UserID      int64   `json:"user_id"`
-    ActiveOnly  bool    `json:"active_only" jsonschema:"Only return active activities (not finished)"`
-    FutureOnly  bool    `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future); overrides ActiveOnly's started_at<=NOW() clause"`
-    LifePartIDs []int64 `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
-    Limit       int64   `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit, existing MCP callers unaffected)"`
-    Offset      int64   `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
+    UserID       int64        `json:"user_id"`
+    ActiveOnly   bool         `json:"active_only" jsonschema:"Only return active activities (not finished)"`
+    FutureOnly   bool         `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future); overrides ActiveOnly's started_at<=NOW() clause"`
+    ProgressType ProgressType `json:"progress_type,omitempty" jsonschema:"Only return activities of this progress_type (empty = all types); used by the browse view's per-type active-list sections"`
+    LifePartIDs  []int64      `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
+    Limit        int64        `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit, existing MCP callers unaffected)"`
+    Offset       int64        `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
 }
 
 // ProgressFilter defines query parameters for listing progress points
@@ -414,16 +417,16 @@ Searches `activity_progress.note` by 1-5 query variants (ILIKE), with optional a
 Renders a read-only dashboard of all activities with recent progress, staleness indicators, and trend summaries. Protected by the same auth middleware as other `/web/*` routes. Purpose-built fixed-viewport/B&W/top-5-only screenshot page (`dashboard_web.go`) — untouched by the browse view below.
 
 ### GET /web/progress/browse
-New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity goal tile grid above the table (see Best Practices), then lists **all** active projects and habits (no top-5 limit, no viewport/B&W restriction) in a table, split or labeled by progress type; links to the finished/future lists and to each activity's drill-down. Paginated: fixed page size, `?page=N` (default 1), `webui.PaginationData` built from `CountActivities` + `ListActivities(Limit, Offset)`. Protected by `WebMiddleware` like every other `/web/*` route.
+New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity goal tile grid above the lists (see Best Practices), then **four separate, unpaginated tables**, one per `progress_type`, in fixed order — Habit, Promise, Project, Mood — each with a heading and columns Name, Description, Frequency, Last update (no Type column, redundant with the heading); a type with no active activities still renders its heading with an empty table. Links to the finished/future lists and to each activity's drill-down. Protected by `WebMiddleware` like every other `/web/*` route.
 
 ### GET /web/progress/browse/finished
-Lists activities where `ended_at` is set (`ListActivities(ActiveOnly: false)`), same table shape and pagination as the main browse view, with a back link.
+Lists activities where `ended_at` is set (`ListActivities(ActiveOnly: false)`), same table shape (including the Description column) and pagination as the main browse view, with a back link.
 
 ### GET /web/progress/browse/future
-Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true)`), same table shape and pagination, with a back link.
+Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true)`), same table shape (including the Description column) and pagination, with a back link.
 
 ### GET /web/progress/browse/{id}
-Drill-down for one activity: a `DetailView` with stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), and a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1). Back link returns to wherever the user came from (main/finished/future list).
+Drill-down for one activity: a `DetailView` with the activity's description (when set) shown as a paragraph under the title, stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), and a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1). Back link returns to wherever the user came from (main/finished/future list).
 
 ## Dialog & Conversation Guidelines
 

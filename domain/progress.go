@@ -66,12 +66,13 @@ type TrendStats struct {
 
 // ActivityFilter defines query parameters for listing activities
 type ActivityFilter struct {
-	UserID      int64   `json:"user_id"`
-	ActiveOnly  bool    `json:"active_only" jsonschema:"Only return active activities (not finished)"`
-	FutureOnly  bool    `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future); overrides ActiveOnly's started_at<=NOW() clause"`
-	LifePartIDs []int64 `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
-	Limit       int64   `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit)"`
-	Offset      int64   `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
+	UserID       int64        `json:"user_id"`
+	ActiveOnly   bool         `json:"active_only" jsonschema:"Only return active activities (not finished)"`
+	FutureOnly   bool         `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future); overrides ActiveOnly's started_at<=NOW() clause"`
+	ProgressType ProgressType `json:"progress_type,omitempty" jsonschema:"Only return activities of this progress_type (empty = all types)"`
+	LifePartIDs  []int64      `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
+	Limit        int64        `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit)"`
+	Offset       int64        `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
 }
 
 // ProgressFilter defines query parameters for listing progress points
