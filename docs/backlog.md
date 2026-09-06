@@ -12,12 +12,6 @@ Editing is web-only, no MCP tool: drag-and-drop via SortableJS (already preceden
 
 **Why:** Activity/goal order on the e-ink displays is currently whatever the DB query happens to return, not what's actually most useful to glance at first, and the ad-hoc env-var workaround doesn't generalize to goals or scale to reordering from the web itself.
 
-## 29-08-26 — MCP tools to edit and delete progress points
-
-`create_progress_point` and `search_progress_notes` exist for `ActivityPoint` (`domain/progress.go`), but there's no way to fix a mis-logged value/note or backdated timestamp, or remove a duplicate/mistaken entry, without touching the database directly. Add `edit_progress_point` (mutable fields: value, note, hours_left, progress_at) and `delete_progress_point` MCP tools, both scoped to the owning user's activity like the existing progress tools.
-
-**Why:** Same gap already fixed for activities via `edit_activity` (see `docs/functions/progress-spec.md`) — logged progress points have the same correction need (wrong value tapped, typo in note, wrong day) but no fix path yet.
-
 ## 05-09-26 — Bigger text + rounded corners on e-ink goal cards
 
 On `/web/goals/eink`'s cards specifically: larger text (name/label sizes are currently tuned for the dense `/web/progress` layout, cramped for a goal card with fewer items) and rounded corners (currently sharp `border: 1px solid #000`, see `dashboard_web_eink.go`'s inline CSS).

@@ -20,6 +20,7 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **Browse view embeds its own goal tiles, built elsewhere**: `GET /web/progress/browse` shows an `activity_occurrence_count`/`activity_streak_count` tile grid above the activities table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/progress` owns no goal logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no activity goals (empty `EmptyMessage`, see `webui-spec.md`)
 - **Description shown, not just stored**: `Activity.Description` already rendered on the screenshot dashboard (`dashboard_web.go`'s `activity-desc` div) but was write-only on the browse view; the browse list's table now has a plain-text "Description" column (`webui.TableRow.Cells`, auto-escaped, no markdown rendering) and the drill-down detail view shows it as a paragraph under the title via `webui.DetailViewData.Description`, reusing the same `renderBoldMarkdown` helper the screenshot dashboard uses (see `webui-spec.md`)
 - **Active list is split by progress_type, finished/future are not**: `GET /web/progress/browse` (active only) renders four separate, unpaginated tables in fixed order — Habit, Promise, Project, Mood — each headed by its type name, via `ActivityFilter.ProgressType` (new field; empty = no filter, existing callers unaffected) added to the shared `applyActivityFilter`. A type with zero active activities still renders its heading with an empty table (`webui.TableData{Rows: nil}` renders a headers-only table), so the four-section layout stays predictable. Since each table is already scoped to one type, its "Type" column is dropped (`buildActivityTable`'s Type/`progressTypeLabel` column is only used by the still-combined finished/future tables). `GET /web/progress/browse/finished` and `/future` are untouched by this — single combined table across all types, same pagination as before — splitting was judged not worth the complexity for those lower-traffic views
+- **Progress point correction mirrors activity correction**: `edit_progress_point` follows the same partial-update pattern as `edit_activity` — pointer fields, at least one required, unspecified fields keep their current value — scoped to the point's owning activity/user the same way `create_progress_point` already verifies ownership before writing
 
 ## Architecture Diagrams
 
@@ -82,6 +83,8 @@ graph TB
     User -->|get_progress_type_examples| MCP
     User -->|get_activity_stats| MCP
     User -->|create_progress_point| MCP
+    User -->|edit_progress_point| MCP
+    User -->|delete_progress_point| MCP
     User -->|finish_activity| MCP
     User -->|search_progress_notes| MCP
 
@@ -376,6 +379,8 @@ type ProgressRepository interface {
     CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error)
     ListProgress(ctx context.Context, filter ProgressFilter) ([]ActivityPoint, error)
     CountProgress(ctx context.Context, filter ProgressFilter) (int, error) // same WHERE clauses as ListProgress, ignores Limit/Offset — for drill-down pagination
+    UpdateProgress(ctx context.Context, progress *ActivityPoint) error // ID + UserID identify the row; caller has already merged partial-update fields onto a fetched point
+    DeleteProgress(ctx context.Context, progressID int64, userID int64) error
     SearchProgressNotes(ctx context.Context, filter ProgressNoteSearchFilter) ([]ActivityPointWithActivity, error)
 
     // Statistics helpers
@@ -402,6 +407,12 @@ Returns last 3 progress points plus trend averages and 80th percentiles for thre
 
 ### create_progress_point
 Logs a progress point for an activity: value (-2 to +2, required), optional note, hours_left, and progress_at (defaults to now).
+
+### edit_progress_point
+Updates mutable fields (value, note, hours_left, progress_at) of an existing progress point, scoped to the owning user. At least one field required; unspecified fields keep their current value. Same partial-update pointer-field pattern as `edit_activity`.
+
+### delete_progress_point
+Deletes a progress point by ID, scoped to the owning user. Errors if the point doesn't exist or isn't owned by the user. Cannot be undone.
 
 ### finish_activity
 Sets ended_at on an active activity, marking it complete. Errors if the activity is already finished or not owned by the user.
@@ -678,3 +689,6 @@ Use `search_progress_notes` to pull up past reflections on a topic if the user w
 **User cancels mid-session:**
 - No problem - progress points are saved immediately as they're created
 - Resume later by calling `get_activity_list()` again
+
+**User wants to fix a mis-logged point:**
+- "That was wrong, I meant -1 not +1" / "delete that entry, I logged it twice" → use `edit_progress_point` / `delete_progress_point` on the point in question (find it via `search_progress_notes` or the last-created point's ID from this session)

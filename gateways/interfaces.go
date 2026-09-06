@@ -84,8 +84,11 @@ type DB interface {
 	UpdateActivity(ctx context.Context, activity *domain.Activity) error
 	FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
 	CreateProgress(ctx context.Context, progress *domain.ActivityPoint) (int64, error)
+	GetProgress(ctx context.Context, progressID int64, userID int64) (*domain.ActivityPoint, error)
 	ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error)
 	CountProgress(ctx context.Context, filter domain.ProgressFilter) (int, error)
+	UpdateProgress(ctx context.Context, progress *domain.ActivityPoint) error
+	DeleteProgress(ctx context.Context, progressID int64, userID int64) error
 	GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error)
 	SearchProgressNotes(ctx context.Context, filter domain.ProgressNoteSearchFilter) ([]domain.ActivityPointWithActivity, error)
 

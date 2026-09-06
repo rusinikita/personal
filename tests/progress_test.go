@@ -695,6 +695,335 @@ func (s *IntegrationTestSuite) TestEditActivity_InvalidFrequencyDays() {
 	assert.Contains(s.T(), err.Error(), "frequency_days must be at least 1")
 }
 
+func (s *IntegrationTestSuite) TestEditProgressPoint_UpdateValue() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Activity",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	point := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      1,
+		Note:       "Original note",
+		ProgressAt: time.Now(),
+	}
+	pointID, err := db.CreateProgress(ctx, point)
+	require.NoError(s.T(), err)
+
+	newValue := -1
+	_, output, err := progress.EditProgressPoint(ctx, nil, progress.EditProgressPointInput{
+		ProgressID: pointID,
+		Value:      &newValue,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), -1, output.Progress.Value)
+	assert.Equal(s.T(), "Original note", output.Progress.Note) // unchanged
+
+	points, err := db.ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID, Limit: 10})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), points, 1)
+	assert.Equal(s.T(), -1, points[0].Value)
+}
+
+func (s *IntegrationTestSuite) TestEditProgressPoint_ClearNote() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Activity",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	point := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      1,
+		Note:       "Typo'd note",
+		ProgressAt: time.Now(),
+	}
+	pointID, err := db.CreateProgress(ctx, point)
+	require.NoError(s.T(), err)
+
+	emptyNote := ""
+	_, output, err := progress.EditProgressPoint(ctx, nil, progress.EditProgressPointInput{
+		ProgressID: pointID,
+		Note:       &emptyNote,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "", output.Progress.Note)
+}
+
+func (s *IntegrationTestSuite) TestEditProgressPoint_UpdateHoursLeftAndProgressAt() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Project",
+		ProgressType:  domain.ProgressTypeProjectProgress,
+		FrequencyDays: 1,
+		StartedAt:     time.Now().AddDate(0, 0, -10),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	originalHours := 10.0
+	point := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      1,
+		HoursLeft:  &originalHours,
+		ProgressAt: time.Now().AddDate(0, 0, -2),
+	}
+	pointID, err := db.CreateProgress(ctx, point)
+	require.NoError(s.T(), err)
+
+	newHours := 4.5
+	newProgressAt := time.Now().AddDate(0, 0, -1).UTC().Format(time.RFC3339)
+	_, output, err := progress.EditProgressPoint(ctx, nil, progress.EditProgressPointInput{
+		ProgressID: pointID,
+		HoursLeft:  &newHours,
+		ProgressAt: &newProgressAt,
+	})
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), output.Progress.HoursLeft)
+	assert.Equal(s.T(), 4.5, *output.Progress.HoursLeft)
+	assert.NotEmpty(s.T(), output.Progress.ProgressAt)
+}
+
+func (s *IntegrationTestSuite) TestEditProgressPoint_NotFound() {
+	ctx := s.Context()
+
+	newValue := 1
+	_, _, err := progress.EditProgressPoint(ctx, nil, progress.EditProgressPointInput{
+		ProgressID: 999999,
+		Value:      &newValue,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "progress point not found")
+}
+
+func (s *IntegrationTestSuite) TestEditProgressPoint_NoFieldsProvided() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Activity",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	point := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: time.Now(),
+	}
+	pointID, err := db.CreateProgress(ctx, point)
+	require.NoError(s.T(), err)
+
+	_, _, err = progress.EditProgressPoint(ctx, nil, progress.EditProgressPointInput{
+		ProgressID: pointID,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "at least one field must be provided")
+}
+
+func (s *IntegrationTestSuite) TestEditProgressPoint_InvalidValue() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Activity",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	point := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: time.Now(),
+	}
+	pointID, err := db.CreateProgress(ctx, point)
+	require.NoError(s.T(), err)
+
+	invalidValue := 5
+	_, _, err = progress.EditProgressPoint(ctx, nil, progress.EditProgressPointInput{
+		ProgressID: pointID,
+		Value:      &invalidValue,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "value must be between -2 and +2")
+}
+
+func (s *IntegrationTestSuite) TestEditProgressPoint_RefreshesLastPointAt() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+	now := time.Now().UTC()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Activity",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -10),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	point := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: now.AddDate(0, 0, -5),
+	}
+	pointID, err := db.CreateProgress(ctx, point)
+	require.NoError(s.T(), err)
+
+	// Backdate the point further than it was created at — a naive
+	// "overwrite last_point_at with this edit's progress_at" would still
+	// pass here, so this alone doesn't prove recomputation; the real test
+	// is TestDeleteProgressPoint_RefreshesLastPointAt below where deleting
+	// the newest of two points must fall back to the older one.
+	newProgressAt := now.AddDate(0, 0, -8).UTC().Format(time.RFC3339)
+	_, _, err = progress.EditProgressPoint(ctx, nil, progress.EditProgressPointInput{
+		ProgressID: pointID,
+		ProgressAt: &newProgressAt,
+	})
+	require.NoError(s.T(), err)
+
+	activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, ActiveOnly: true})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), activities, 1)
+	require.NotNil(s.T(), activities[0].LastPointAt)
+	assert.WithinDuration(s.T(), now.AddDate(0, 0, -8), *activities[0].LastPointAt, time.Second)
+}
+
+func (s *IntegrationTestSuite) TestDeleteProgressPoint_Success() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Activity",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	point := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      2,
+		Note:       "Duplicate entry",
+		ProgressAt: time.Now(),
+	}
+	pointID, err := db.CreateProgress(ctx, point)
+	require.NoError(s.T(), err)
+
+	_, output, err := progress.DeleteProgressPoint(ctx, nil, progress.DeleteProgressPointInput{
+		ProgressID: pointID,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), pointID, output.ProgressID)
+	assert.Equal(s.T(), 2, output.Value)
+	assert.Equal(s.T(), "Duplicate entry", output.Note)
+
+	points, err := db.ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID, Limit: 10})
+	require.NoError(s.T(), err)
+	assert.Empty(s.T(), points)
+}
+
+func (s *IntegrationTestSuite) TestDeleteProgressPoint_NotFound() {
+	ctx := s.Context()
+
+	_, _, err := progress.DeleteProgressPoint(ctx, nil, progress.DeleteProgressPointInput{
+		ProgressID: 999999,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "progress point not found")
+}
+
+func (s *IntegrationTestSuite) TestDeleteProgressPoint_RefreshesLastPointAt() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+	now := time.Now().UTC()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Activity",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -10),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	olderPoint := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      1,
+		ProgressAt: now.AddDate(0, 0, -5),
+	}
+	_, err = db.CreateProgress(ctx, olderPoint)
+	require.NoError(s.T(), err)
+
+	newerPoint := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      2,
+		ProgressAt: now.AddDate(0, 0, -1),
+	}
+	newerPointID, err := db.CreateProgress(ctx, newerPoint)
+	require.NoError(s.T(), err)
+
+	// Delete the newest point — last_point_at must fall back to the
+	// remaining older point, not stay stuck on the deleted one's timestamp.
+	_, _, err = progress.DeleteProgressPoint(ctx, nil, progress.DeleteProgressPointInput{
+		ProgressID: newerPointID,
+	})
+	require.NoError(s.T(), err)
+
+	activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, ActiveOnly: true})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), activities, 1)
+	require.NotNil(s.T(), activities[0].LastPointAt)
+	assert.WithinDuration(s.T(), now.AddDate(0, 0, -5), *activities[0].LastPointAt, time.Second)
+}
+
 func (s *IntegrationTestSuite) TestGetActivityList_SortedByDaysUntilCheckIn() {
 	ctx := s.Context()
 	db := s.Repo()

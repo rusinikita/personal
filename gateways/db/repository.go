@@ -1787,6 +1787,87 @@ func (r *repository) CreateProgress(ctx context.Context, progress *domain.Activi
 	return id, nil
 }
 
+func (r *repository) GetProgress(ctx context.Context, progressID int64, userID int64) (*domain.ActivityPoint, error) {
+	query := `
+		SELECT id, activity_id, user_id, value, hours_left, note, progress_at, created_at
+		FROM activity_progress
+		WHERE id = $1 AND user_id = $2`
+
+	var p domain.ActivityPoint
+	err := r.db.QueryRow(ctx, query, progressID, userID).Scan(
+		&p.ID,
+		&p.ActivityID,
+		&p.UserID,
+		&p.Value,
+		&p.HoursLeft,
+		&p.Note,
+		&p.ProgressAt,
+		&p.CreatedAt,
+	)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &p, nil
+}
+
+func (r *repository) UpdateProgress(ctx context.Context, progress *domain.ActivityPoint) error {
+	query := `
+		UPDATE activity_progress
+		SET value = $1, hours_left = $2, note = $3, progress_at = $4
+		WHERE id = $5 AND user_id = $6`
+
+	result, err := r.db.Exec(ctx, query,
+		progress.Value,
+		progress.HoursLeft,
+		progress.Note,
+		progress.ProgressAt,
+		progress.ID,
+		progress.UserID,
+	)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("progress point not found")
+	}
+
+	return r.refreshLastPointAt(ctx, progress.ActivityID)
+}
+
+func (r *repository) DeleteProgress(ctx context.Context, progressID int64, userID int64) error {
+	query := `DELETE FROM activity_progress WHERE id = $1 AND user_id = $2 RETURNING activity_id`
+
+	var activityID int64
+	err := r.db.QueryRow(ctx, query, progressID, userID).Scan(&activityID)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return fmt.Errorf("progress point not found")
+		}
+		return err
+	}
+
+	return r.refreshLastPointAt(ctx, activityID)
+}
+
+// refreshLastPointAt recomputes activities.last_point_at after a progress
+// point is edited or deleted — CreateProgress's naive "set to this point's
+// progress_at" only holds for appending; editing or removing a point out of
+// order needs the actual max over what's left.
+func (r *repository) refreshLastPointAt(ctx context.Context, activityID int64) error {
+	query := `UPDATE activities SET last_point_at = (SELECT MAX(progress_at) FROM activity_progress WHERE activity_id = $1) WHERE id = $1`
+
+	if _, err := r.db.Exec(ctx, query, activityID); err != nil {
+		return fmt.Errorf("failed to update last_point_at: %w", err)
+	}
+
+	return nil
+}
+
 // applyProgressFilter adds the WHERE clauses shared by ListProgress and
 // CountProgress, so the two can never drift out of sync on what counts as
 // a match.
