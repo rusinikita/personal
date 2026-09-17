@@ -51,6 +51,8 @@ type ActivityResult struct {
 	Name          string  `json:"name" jsonschema:"Activity name"`
 	Description   string  `json:"description,omitempty" jsonschema:"Activity description"`
 	ProgressType  string  `json:"progress_type" jsonschema:"Progress type"`
+	Status        string  `json:"status" jsonschema:"Lifecycle status (active|paused|finished|dropped)"`
+	DeferredUntil string  `json:"deferred_until,omitempty" jsonschema:"When a paused activity should resume (ISO8601), empty unless paused with a resume date"`
 	FrequencyDays int     `json:"frequency_days" jsonschema:"Check-in frequency in days"`
 	LifePartIDs   []int64 `json:"life_part_ids" jsonschema:"Life area IDs"`
 	StartedAt     string  `json:"started_at" jsonschema:"When tracking started (ISO8601)"`
@@ -131,11 +133,17 @@ func activityToResult(a *domain.Activity) ActivityResult {
 	if lifePartIDs == nil {
 		lifePartIDs = []int64{}
 	}
+	var deferredUntil string
+	if a.DeferredUntil != nil {
+		deferredUntil = a.DeferredUntil.Format(time.RFC3339)
+	}
 	return ActivityResult{
 		ID:            a.ID,
 		Name:          a.Name,
 		Description:   a.Description,
 		ProgressType:  string(a.ProgressType),
+		Status:        string(a.Status),
+		DeferredUntil: deferredUntil,
 		FrequencyDays: a.FrequencyDays,
 		LifePartIDs:   lifePartIDs,
 		StartedAt:     a.StartedAt.Format(time.RFC3339),

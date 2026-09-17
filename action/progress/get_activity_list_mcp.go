@@ -22,14 +22,14 @@ var GetActivityListMCPDefinition = mcp.Tool{
 Use this tool when:
 - Starting a reflection session to see what needs to be checked in (active_only=true)
 - User asks "what activities do I have?" or "what should I track today?" (active_only=true)
-- User wants to see completed/finished activities (active_only=false)
+- User wants to see completed/finished/dropped activities (active_only=false)
 
 Parameters:
-- active_only=true (default): returns only active activities, ordered by check-in urgency
-- active_only=false: returns only finished activities, ordered by ended_at DESC
+- active_only=true (default): returns active activities in "activities" (ordered by check-in urgency) plus every paused activity separately in "paused_activities" — a paused activity is never silently missing, just shown separately
+- active_only=false: returns finished/dropped activities in "activities", ordered by ended_at DESC
 
-Each activity includes ID, name, progress type (mood/habit_progress/project_progress/promise_state), frequency in days, and optional description.
-Finished activities also include ended_at timestamp.
+Each activity includes ID, name, progress type (mood/habit_progress/project_progress/promise_state), status, frequency in days, and optional description.
+Finished/dropped activities also include ended_at. Paused activities also include deferred_until when set.
 
 Example workflow:
 1. Call this tool with active_only=true to get activity list
@@ -38,21 +38,24 @@ Example workflow:
 }
 
 type GetActivityListInput struct {
-	ActiveOnly bool `json:"active_only" jsonschema:"If true, return only active activities; if false, return only finished activities"`
+	ActiveOnly bool `json:"active_only" jsonschema:"If true, return only active/paused activities; if false, return only finished/dropped activities"`
 }
 
 type ActivityItem struct {
 	ID            int64  `json:"id" jsonschema:"Activity ID"`
 	Name          string `json:"name" jsonschema:"Activity name"`
 	ProgressType  string `json:"progress_type" jsonschema:"Progress type (mood|habit_progress|project_progress|promise_state)"`
+	Status        string `json:"status" jsonschema:"Lifecycle status (active|paused|finished|dropped)"`
 	FrequencyDays int    `json:"frequency_days" jsonschema:"Check-in frequency in days"`
 	Description   string `json:"description,omitempty" jsonschema:"Activity description"`
 	StartedAt     string `json:"started_at" jsonschema:"When activity was started (RFC3339)"`
-	EndedAt       string `json:"ended_at,omitempty" jsonschema:"When activity was finished (RFC3339), only set for finished activities"`
+	EndedAt       string `json:"ended_at,omitempty" jsonschema:"When activity was finished/dropped (RFC3339), only set for finished/dropped activities"`
+	DeferredUntil string `json:"deferred_until,omitempty" jsonschema:"When a paused activity should resume (RFC3339), only set for paused activities with a resume date"`
 }
 
 type GetActivityListOutput struct {
-	Activities []ActivityItem `json:"activities" jsonschema:"List of active activities"`
+	Activities       []ActivityItem `json:"activities" jsonschema:"List of active (or finished/dropped, depending on active_only) activities"`
+	PausedActivities []ActivityItem `json:"paused_activities,omitempty" jsonschema:"List of paused activities, populated alongside activities when active_only=true"`
 }
 
 func GetActivityList(ctx context.Context, _ *mcp.CallToolRequest, input GetActivityListInput) (*mcp.CallToolResult, GetActivityListOutput, error) {
@@ -66,25 +69,39 @@ func GetActivityList(ctx context.Context, _ *mcp.CallToolRequest, input GetActiv
 		return nil, GetActivityListOutput{}, fmt.Errorf("user_id not available in context")
 	}
 
-	filter := domain.ActivityFilter{
-		UserID:     userID,
-		ActiveOnly: input.ActiveOnly,
+	var statuses []domain.ActivityStatus
+	if input.ActiveOnly {
+		statuses = []domain.ActivityStatus{domain.ActivityStatusActive}
+	} else {
+		statuses = []domain.ActivityStatus{domain.ActivityStatusFinished, domain.ActivityStatusDropped}
 	}
 
-	activities, err := db.ListActivities(ctx, filter)
+	activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, Statuses: statuses})
 	if err != nil {
 		return nil, GetActivityListOutput{}, fmt.Errorf("database error: %w", err)
 	}
 
-	output := GetActivityListOutput{
-		Activities: make([]ActivityItem, 0, len(activities)),
+	output := GetActivityListOutput{Activities: toActivityItems(activities)}
+
+	if input.ActiveOnly {
+		paused, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, Statuses: []domain.ActivityStatus{domain.ActivityStatusPaused}})
+		if err != nil {
+			return nil, GetActivityListOutput{}, fmt.Errorf("database error: %w", err)
+		}
+		output.PausedActivities = toActivityItems(paused)
 	}
 
+	return nil, output, nil
+}
+
+func toActivityItems(activities []domain.Activity) []ActivityItem {
+	items := make([]ActivityItem, 0, len(activities))
 	for _, a := range activities {
 		item := ActivityItem{
 			ID:            a.ID,
 			Name:          a.Name,
 			ProgressType:  string(a.ProgressType),
+			Status:        string(a.Status),
 			FrequencyDays: a.FrequencyDays,
 			Description:   a.Description,
 			StartedAt:     a.StartedAt.Format(time.RFC3339),
@@ -92,8 +109,10 @@ func GetActivityList(ctx context.Context, _ *mcp.CallToolRequest, input GetActiv
 		if a.EndedAt != nil {
 			item.EndedAt = a.EndedAt.Format(time.RFC3339)
 		}
-		output.Activities = append(output.Activities, item)
+		if a.DeferredUntil != nil {
+			item.DeferredUntil = a.DeferredUntil.Format(time.RFC3339)
+		}
+		items = append(items, item)
 	}
-
-	return nil, output, nil
+	return items
 }

@@ -4,12 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 16-09-26 — Activity status field (active/paused/finished/dropped) + deferred_until
-
-Add an explicit `status` column to `activities` (`active | paused | finished | dropped`) instead of inferring state purely from `started_at`/`ended_at`, plus a `deferred_until` timestamp usable when an activity is paused. Paused activities disappear from the e-ink dashboard (`dashboard_web.go`) and are shown in their own separate section on both the web browse view (`browse_web.go`) and MCP's `get_activity_list`.
-
-**Why:** `ended_at` alone can't distinguish "finished" (goal reached) from "dropped" (abandoned) — same field today, but different real outcomes with different meaning for stats. There's also no way to mark an in-progress activity as paused without abusing `started_at`/`ended_at`. Came out of a brainstorm on activities having too many implicit states packed into two timestamp fields.
-
 ## 16-09-26 — Add progress_points via web interface
 
 Add a web form/route to create `activity_progress` points directly from the browser (e.g. from `/web/progress/browse/{id}`), instead of requiring the MCP tool `create_progress_point` every time.

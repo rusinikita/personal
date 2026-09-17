@@ -130,6 +130,7 @@ func (s *IntegrationTestSuite) TestGetActivityList_OnlyActive() {
 		UserID:        userID,
 		Name:          "Finished Goal",
 		ProgressType:  domain.ProgressTypeMood,
+		Status:        domain.ActivityStatusFinished,
 		FrequencyDays: 1,
 		StartedAt:     time.Now().AddDate(0, 0, -30),
 		EndedAt:       &endedAt,
@@ -331,12 +332,11 @@ func (s *IntegrationTestSuite) TestGetActivityStats() {
 	assert.Equal(s.T(), 2, output.TrendLastWeek.Count)
 }
 
-func (s *IntegrationTestSuite) TestFinishActivity() {
+func (s *IntegrationTestSuite) TestEditActivity_MarkFinished() {
 	ctx := s.Context()
 	db := s.Repo()
 	userID := s.UserID()
 
-	// Create activity
 	activity := &domain.Activity{
 		UserID:        userID,
 		Name:          "Test Project",
@@ -347,51 +347,161 @@ func (s *IntegrationTestSuite) TestFinishActivity() {
 	activityID, err := db.CreateActivity(ctx, activity)
 	require.NoError(s.T(), err)
 
-	// Finish activity
-	input := progress.FinishActivityInput{
+	status := "finished"
+	endedAt := time.Now().UTC().Format(time.RFC3339)
+	_, output, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
 		ActivityID: activityID,
-	}
-	_, output, err := progress.FinishActivity(ctx, nil, input)
+		Status:     &status,
+		EndedAt:    &endedAt,
+	})
 	require.NoError(s.T(), err)
-	assert.True(s.T(), output.Success)
-	assert.Equal(s.T(), "Activity finished", output.Message)
+	assert.Equal(s.T(), "finished", output.Activity.Status)
 
-	// Verify activity is finished
-	finishedActivity, err := db.GetActivity(ctx, activityID, userID)
+	// Verify persisted
+	finished, err := db.GetActivity(ctx, activityID, userID)
 	require.NoError(s.T(), err)
-	assert.NotNil(s.T(), finishedActivity.EndedAt)
+	assert.Equal(s.T(), domain.ActivityStatusFinished, finished.Status)
+	require.NotNil(s.T(), finished.EndedAt)
 
-	// Verify it no longer appears in active list
+	// Verify it no longer appears in the active list
 	_, listOutput, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
 	require.NoError(s.T(), err)
 	assert.Empty(s.T(), listOutput.Activities)
 }
 
-func (s *IntegrationTestSuite) TestFinishActivity_AlreadyFinished() {
+func (s *IntegrationTestSuite) TestEditActivity_MarkPausedWithDeferredUntil() {
 	ctx := s.Context()
 	db := s.Repo()
 	userID := s.UserID()
 
-	// Create and finish activity
-	endedAt := time.Now()
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test Habit",
+		ProgressType:  domain.ProgressTypeHabitProgress,
+		FrequencyDays: 1,
+		StartedAt:     time.Now().AddDate(0, 0, -1),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	status := "paused"
+	deferredUntil := time.Now().AddDate(0, 0, 14).UTC().Format(time.RFC3339)
+	_, output, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID:    activityID,
+		Status:        &status,
+		DeferredUntil: &deferredUntil,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "paused", output.Activity.Status)
+	assert.NotEmpty(s.T(), output.Activity.DeferredUntil)
+
+	updated, err := db.GetActivity(ctx, activityID, userID)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), domain.ActivityStatusPaused, updated.Status)
+	require.NotNil(s.T(), updated.DeferredUntil)
+
+	// Paused activities are excluded from the active list...
+	_, listOutput, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
+	require.NoError(s.T(), err)
+	assert.Empty(s.T(), listOutput.Activities)
+	// ...but returned separately in paused_activities.
+	require.Len(s.T(), listOutput.PausedActivities, 1)
+	assert.Equal(s.T(), activityID, listOutput.PausedActivities[0].ID)
+	assert.NotEmpty(s.T(), listOutput.PausedActivities[0].DeferredUntil)
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_InvalidStatus() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	invalidStatus := "cancelled"
+	_, _, err = progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID: activityID,
+		Status:     &invalidStatus,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "invalid status")
+}
+
+func (s *IntegrationTestSuite) TestDeleteActivity_Success() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
 	activity := &domain.Activity{
 		UserID:        userID,
 		Name:          "Test Project",
 		ProgressType:  domain.ProgressTypeProjectProgress,
 		FrequencyDays: 1,
-		StartedAt:     time.Now().AddDate(0, 0, -30),
-		EndedAt:       &endedAt,
+		StartedAt:     time.Now(),
 	}
 	activityID, err := db.CreateActivity(ctx, activity)
 	require.NoError(s.T(), err)
 
-	// Try to finish again
-	input := progress.FinishActivityInput{
-		ActivityID: activityID,
-	}
-	_, _, err = progress.FinishActivity(ctx, nil, input)
+	_, output, err := progress.DeleteActivity(ctx, nil, progress.DeleteActivityInput{ActivityID: activityID})
+	require.NoError(s.T(), err)
+	assert.True(s.T(), output.Success)
+
+	deleted, err := db.GetActivity(ctx, activityID, userID)
+	require.NoError(s.T(), err)
+	assert.Nil(s.T(), deleted)
+}
+
+func (s *IntegrationTestSuite) TestDeleteActivity_NotFound() {
+	ctx := s.Context()
+
+	_, _, err := progress.DeleteActivity(ctx, nil, progress.DeleteActivityInput{ActivityID: 999999})
 	require.Error(s.T(), err)
-	assert.Contains(s.T(), err.Error(), "activity not found or already finished")
+	assert.Contains(s.T(), err.Error(), "activity not found")
+}
+
+func (s *IntegrationTestSuite) TestDeleteActivity_BlockedByGoalReference() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Meditation",
+		ProgressType:  domain.ProgressTypeHabitProgress,
+		FrequencyDays: 1,
+		StartedAt:     time.Now().AddDate(0, 0, -14),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	unit := "check-ins"
+	_, err = db.CreateGoal(ctx, &domain.Goal{
+		UserID:       userID,
+		Name:         "Meditate 30 Times",
+		GoalType:     domain.GoalTypeActivityOccurrenceCount,
+		ActivityID:   &activityID,
+		TargetValue:  30,
+		CurrentValue: 0,
+		Unit:         &unit,
+		StartsAt:     time.Now().AddDate(0, 0, -14),
+	})
+	require.NoError(s.T(), err)
+
+	_, _, err = progress.DeleteActivity(ctx, nil, progress.DeleteActivityInput{ActivityID: activityID})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "goal still references it")
+
+	// Verify the activity is still there.
+	stillThere, err := db.GetActivity(ctx, activityID, userID)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), stillThere)
 }
 
 func (s *IntegrationTestSuite) TestCreateActivity_Success() {
@@ -974,7 +1084,7 @@ func (s *IntegrationTestSuite) TestEditProgressPoint_RefreshesLastPointAt() {
 	})
 	require.NoError(s.T(), err)
 
-	activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, ActiveOnly: true})
+	activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, Statuses: []domain.ActivityStatus{domain.ActivityStatusActive}})
 	require.NoError(s.T(), err)
 	require.Len(s.T(), activities, 1)
 	require.NotNil(s.T(), activities[0].LastPointAt)
@@ -1070,7 +1180,7 @@ func (s *IntegrationTestSuite) TestDeleteProgressPoint_RefreshesLastPointAt() {
 	})
 	require.NoError(s.T(), err)
 
-	activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, ActiveOnly: true})
+	activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, Statuses: []domain.ActivityStatus{domain.ActivityStatusActive}})
 	require.NoError(s.T(), err)
 	require.Len(s.T(), activities, 1)
 	require.NotNil(s.T(), activities[0].LastPointAt)

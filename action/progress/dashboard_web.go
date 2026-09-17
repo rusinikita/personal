@@ -583,8 +583,8 @@ func buildDashboardDataFromDB(ctx context.Context, db gateways.DB) (DashboardDat
 
 	// Шаг 1: Получить топ-5 активностей
 	activities, err := db.ListActivities(ctx, domain.ActivityFilter{
-		UserID:     userID,
-		ActiveOnly: true,
+		UserID:   userID,
+		Statuses: []domain.ActivityStatus{domain.ActivityStatusActive},
 	})
 	if err != nil {
 		return DashboardData{}, fmt.Errorf("failed to list activities: %w", err)

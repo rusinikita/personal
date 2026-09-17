@@ -23,6 +23,9 @@ import (
 // pgUniqueViolation is the Postgres SQLSTATE code for a unique constraint/index violation.
 const pgUniqueViolation = "23505"
 
+// pgForeignKeyViolation is the Postgres SQLSTATE code for a foreign-key constraint violation.
+const pgForeignKeyViolation = "23503"
+
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
@@ -1545,12 +1548,15 @@ func (r *repository) ListSetsByExerciseAndWorkouts(ctx context.Context, userID i
 
 func (r *repository) CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error) {
 	query := `
-		INSERT INTO activities (user_id, life_part_ids, name, description, progress_type, frequency_days, started_at, ended_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO activities (user_id, life_part_ids, name, description, progress_type, status, deferred_until, frequency_days, started_at, ended_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id`
 
 	now := time.Now()
 	activity.CreatedAt = now
+	if activity.Status == "" {
+		activity.Status = domain.ActivityStatusActive
+	}
 
 	var id int64
 	err := r.db.QueryRow(ctx, query,
@@ -1559,6 +1565,8 @@ func (r *repository) CreateActivity(ctx context.Context, activity *domain.Activi
 		activity.Name,
 		activity.Description,
 		activity.ProgressType,
+		activity.Status,
+		activity.DeferredUntil,
 		activity.FrequencyDays,
 		activity.StartedAt,
 		activity.EndedAt,
@@ -1574,14 +1582,15 @@ func (r *repository) CreateActivity(ctx context.Context, activity *domain.Activi
 func applyActivityFilter(query squirrel.SelectBuilder, filter domain.ActivityFilter) squirrel.SelectBuilder {
 	query = query.Where(squirrel.Eq{"user_id": filter.UserID})
 
-	switch {
-	case filter.FutureOnly:
+	if filter.FutureOnly {
 		// Не начавшиеся активности: started_at ещё не наступил.
-		query = query.Where("started_at > NOW()").Where(squirrel.Eq{"ended_at": nil})
-	case filter.ActiveOnly:
-		query = query.Where(squirrel.Eq{"ended_at": nil}).Where("started_at <= NOW()")
-	default:
-		query = query.Where("ended_at IS NOT NULL").Where("started_at <= NOW()")
+		query = query.Where("started_at > NOW()")
+	} else {
+		query = query.Where("started_at <= NOW()")
+	}
+
+	if len(filter.Statuses) > 0 {
+		query = query.Where(squirrel.Eq{"status": filter.Statuses})
 	}
 
 	if len(filter.LifePartIDs) > 0 {
@@ -1595,21 +1604,33 @@ func applyActivityFilter(query squirrel.SelectBuilder, filter domain.ActivityFil
 	return query
 }
 
+// activityIsOngoing reports whether filter.Statuses is exactly the "still
+// going" statuses (active/paused) — used by ListActivities to pick the
+// check-in-urgency ordering instead of ended_at DESC.
+func activityIsOngoing(statuses []domain.ActivityStatus) bool {
+	for _, s := range statuses {
+		if s == domain.ActivityStatusActive || s == domain.ActivityStatusPaused {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error) {
 	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 	query := applyActivityFilter(psql.Select(
 		"id", "user_id", "life_part_ids", "name", "description",
-		"progress_type", "frequency_days", "started_at", "ended_at", "created_at", "last_point_at",
+		"progress_type", "status", "deferred_until", "frequency_days", "started_at", "ended_at", "created_at", "last_point_at",
 	).From("activities"), filter)
 
 	switch {
 	case filter.FutureOnly:
 		query = query.OrderBy("started_at ASC")
-	case filter.ActiveOnly:
+	case activityIsOngoing(filter.Statuses):
 		query = query.OrderBy("COALESCE((last_point_at::date + frequency_days) - CURRENT_DATE, 999999) ASC")
 	default:
-		// Finished activities: most recently finished first.
+		// Finished/dropped activities: most recently ended first.
 		query = query.OrderBy("ended_at DESC")
 	}
 
@@ -1641,6 +1662,8 @@ func (r *repository) ListActivities(ctx context.Context, filter domain.ActivityF
 			&a.Name,
 			&a.Description,
 			&a.ProgressType,
+			&a.Status,
+			&a.DeferredUntil,
 			&a.FrequencyDays,
 			&a.StartedAt,
 			&a.EndedAt,
@@ -1681,7 +1704,7 @@ func (r *repository) CountActivities(ctx context.Context, filter domain.Activity
 func (r *repository) GetActivity(ctx context.Context, activityID int64, userID int64) (*domain.Activity, error) {
 	query := `
 		SELECT id, user_id, life_part_ids, name, description,
-		       progress_type, frequency_days, started_at, ended_at, created_at
+		       progress_type, status, deferred_until, frequency_days, started_at, ended_at, created_at
 		FROM activities
 		WHERE id = $1 AND user_id = $2`
 
@@ -1693,6 +1716,8 @@ func (r *repository) GetActivity(ctx context.Context, activityID int64, userID i
 		&a.Name,
 		&a.Description,
 		&a.ProgressType,
+		&a.Status,
+		&a.DeferredUntil,
 		&a.FrequencyDays,
 		&a.StartedAt,
 		&a.EndedAt,
@@ -1711,8 +1736,9 @@ func (r *repository) GetActivity(ctx context.Context, activityID int64, userID i
 func (r *repository) UpdateActivity(ctx context.Context, activity *domain.Activity) error {
 	query := `
 		UPDATE activities
-		SET name = $1, description = $2, frequency_days = $3, life_part_ids = $4, progress_type = $5, started_at = $6, ended_at = $7
-		WHERE id = $8 AND user_id = $9`
+		SET name = $1, description = $2, frequency_days = $3, life_part_ids = $4, progress_type = $5,
+		    status = $6, deferred_until = $7, started_at = $8, ended_at = $9
+		WHERE id = $10 AND user_id = $11`
 
 	result, err := r.db.Exec(ctx, query,
 		activity.Name,
@@ -1720,6 +1746,8 @@ func (r *repository) UpdateActivity(ctx context.Context, activity *domain.Activi
 		activity.FrequencyDays,
 		activity.LifePartIDs,
 		activity.ProgressType,
+		activity.Status,
+		activity.DeferredUntil,
 		activity.StartedAt,
 		activity.EndedAt,
 		activity.ID,
@@ -1736,19 +1764,22 @@ func (r *repository) UpdateActivity(ctx context.Context, activity *domain.Activi
 	return nil
 }
 
-func (r *repository) FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error {
-	query := `
-		UPDATE activities
-		SET ended_at = $1
-		WHERE id = $2 AND user_id = $3 AND ended_at IS NULL`
-
-	result, err := r.db.Exec(ctx, query, endedAt, activityID, userID)
+// DeleteActivity hard-deletes an activity; its activity_progress rows
+// cascade via fk_progress_activity, but a goal still referencing it
+// (goals.activity_id has no ON DELETE clause) blocks the delete with a
+// foreign-key violation, surfaced here as a clear error.
+func (r *repository) DeleteActivity(ctx context.Context, activityID int64, userID int64) error {
+	result, err := r.db.Exec(ctx, `DELETE FROM activities WHERE id = $1 AND user_id = $2`, activityID, userID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation {
+			return fmt.Errorf("cannot delete activity: a goal still references it — delete or repoint the goal first")
+		}
 		return err
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("activity not found or already finished")
+		return fmt.Errorf("activity not found")
 	}
 
 	return nil

@@ -32,10 +32,10 @@ var BrowsePageSize = 20
 
 var browseNav = webui.BuildNav(webui.NavProgress)
 
-// browseCrossLinks is the small nav bar between the three activity lists.
+// browseCrossLinks is the small nav bar between the four activity lists.
 // The URLs are fixed route constants, not user data, so embedding them as
 // template.HTML directly (no templating) is safe.
-const browseCrossLinks template.HTML = `<p><a href="/web/progress/browse">Active</a> · <a href="/web/progress/browse/finished">Finished</a> · <a href="/web/progress/browse/future">Future</a></p>`
+const browseCrossLinks template.HTML = `<p><a href="/web/progress/browse">Active</a> · <a href="/web/progress/browse/finished">Finished</a> · <a href="/web/progress/browse/future">Future</a> · <a href="/web/progress/browse/paused">Paused</a></p>`
 
 // buildPagination computes prev/next links (each carrying ?page=N against
 // baseURL) from the current page and total row count. Returns nil when
@@ -177,7 +177,11 @@ func BrowseWebHandler(c *gin.Context) {
 	extra := func(a domain.Activity) string { return formatTimeAgoPtr(a.LastPointAt) }
 	content := browseCrossLinks + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles})
 	for _, section := range activeSectionOrder {
-		activities, err := db.ListActivities(ctx, domain.ActivityFilter{UserID: userID, ActiveOnly: true, ProgressType: section.Type})
+		activities, err := db.ListActivities(ctx, domain.ActivityFilter{
+			UserID:       userID,
+			Statuses:     []domain.ActivityStatus{domain.ActivityStatusActive},
+			ProgressType: section.Type,
+		})
 		if err != nil {
 			c.String(http.StatusInternalServerError, "Failed to list activities: %v", err)
 			return
@@ -199,17 +203,34 @@ func BrowseWebHandler(c *gin.Context) {
 }
 
 // BrowseFinishedWebHandler renders GET /web/progress/browse/finished:
-// activities with ended_at set.
+// activities with status finished or dropped.
 func BrowseFinishedWebHandler(c *gin.Context) {
-	renderActivityList(c, domain.ActivityFilter{ActiveOnly: false}, "Progress — Finished", "/web/progress/browse/finished",
+	renderActivityList(c, domain.ActivityFilter{Statuses: []domain.ActivityStatus{domain.ActivityStatusFinished, domain.ActivityStatusDropped}},
+		"Progress — Finished", "/web/progress/browse/finished",
 		"Finished", func(a domain.Activity) string { return formatTimeAgoPtr(a.EndedAt) })
 }
 
 // BrowseFutureWebHandler renders GET /web/progress/browse/future:
 // activities whose started_at is still in the future.
 func BrowseFutureWebHandler(c *gin.Context) {
-	renderActivityList(c, domain.ActivityFilter{FutureOnly: true}, "Progress — Future", "/web/progress/browse/future",
+	renderActivityList(c, domain.ActivityFilter{FutureOnly: true, Statuses: []domain.ActivityStatus{domain.ActivityStatusActive}},
+		"Progress — Future", "/web/progress/browse/future",
 		"Starts", func(a domain.Activity) string { return a.StartedAt.Format("2006-01-02") })
+}
+
+// BrowsePausedWebHandler renders GET /web/progress/browse/paused:
+// activities with status paused, all progress_types combined (same shape
+// as Finished/Future), with a "Deferred until" column instead of
+// Finished/Starts.
+func BrowsePausedWebHandler(c *gin.Context) {
+	renderActivityList(c, domain.ActivityFilter{Statuses: []domain.ActivityStatus{domain.ActivityStatusPaused}},
+		"Progress — Paused", "/web/progress/browse/paused",
+		"Deferred until", func(a domain.Activity) string {
+			if a.DeferredUntil == nil {
+				return "—"
+			}
+			return a.DeferredUntil.Format("2006-01-02")
+		})
 }
 
 // BrowseDetailWebHandler renders GET /web/progress/browse/{id}: a

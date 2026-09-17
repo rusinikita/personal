@@ -19,9 +19,11 @@ CREATE TABLE IF NOT EXISTS activities (
     progress_type VARCHAR(30) NOT NULL CHECK (progress_type IN ('mood', 'habit_progress', 'project_progress', 'promise_state')),
     frequency_days INT NOT NULL CHECK (frequency_days > 0),
     started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP, -- NULL means active
+    ended_at TIMESTAMP, -- NULL unless status is finished or dropped
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_point_at TIMESTAMP -- NULL means no points
+    last_point_at TIMESTAMP, -- NULL means no points
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'finished', 'dropped')),
+    deferred_until TIMESTAMP -- NULL unless paused with a resume date
 );
 
 CREATE INDEX idx_activities_user_id ON activities(user_id);

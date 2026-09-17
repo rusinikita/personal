@@ -15,13 +15,20 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **UTC Timezone**: all timestamps in UTC
 - **Browse view reuses the shared design system**: `/web/progress/browse` is built entirely from `action/webui` components (table, stat tiles, line chart, detail view — see `webui-spec.md`); it owns no CSS/JS of its own and adds no database tables
 - **Screenshot dashboard stays untouched**: `dashboard_web.go` (`GET /web/progress`) keeps its separate fixed-viewport, black-and-white, top-5-only implementation; the browse view is new, additional code, not a replacement
-- **Filter extended, not replaced**: `ActivityFilter` gains new fields (`FutureOnly`, `Limit`, `Offset`) instead of new query methods — `ListActivities` already branches on `ActiveOnly`, so the not-yet-started case is one more branch in the same query builder, and `LIMIT`/`OFFSET` are one more clause
+- **Filter extended, not replaced**: `ActivityFilter` gains new fields (`FutureOnly`, `Limit`, `Offset`) instead of new query methods — `applyActivityFilter` grows one more clause per field instead of a new method per query shape, and `LIMIT`/`OFFSET` are one more clause too
 - **Every browse list and the drill-down history are paginated**: fixed page size, `?page=N` query param (1-indexed, defaults to 1); each list handler calls a `Count*` repository method alongside the paginated `List*` call to build `webui.PaginationData` (see `webui-spec.md`)
 - **Browse view embeds its own goal tiles, built elsewhere**: `GET /web/progress/browse` shows an `activity_occurrence_count`/`activity_streak_count` tile grid above the activities table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/progress` owns no goal logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no activity goals (empty `EmptyMessage`, see `webui-spec.md`)
 - **Description shown, not just stored**: `Activity.Description` already rendered on the screenshot dashboard (`dashboard_web.go`'s `activity-desc` div) but was write-only on the browse view; the browse list's table now has a plain-text "Description" column (`webui.TableRow.Cells`, auto-escaped, no markdown rendering) and the drill-down detail view shows it as a paragraph under the title via `webui.DetailViewData.Description`, reusing the same `renderBoldMarkdown` helper the screenshot dashboard uses (see `webui-spec.md`)
 - **Active list is split by progress_type, finished/future are not**: `GET /web/progress/browse` (active only) renders four separate, unpaginated tables in fixed order — Habit, Promise, Project, Mood — each headed by its type name, via `ActivityFilter.ProgressType` (new field; empty = no filter, existing callers unaffected) added to the shared `applyActivityFilter`. A type with zero active activities still renders its heading with an empty table (`webui.TableData{Rows: nil}` renders a headers-only table), so the four-section layout stays predictable. Since each table is already scoped to one type, its "Type" column is dropped (`buildActivityTable`'s Type/`progressTypeLabel` column is only used by the still-combined finished/future tables). `GET /web/progress/browse/finished` and `/future` are untouched by this — single combined table across all types, same pagination as before — splitting was judged not worth the complexity for those lower-traffic views
 - **Progress point correction mirrors activity correction**: `edit_progress_point` follows the same partial-update pattern as `edit_activity` — pointer fields, at least one required, unspecified fields keep their current value — scoped to the point's owning activity/user the same way `create_progress_point` already verifies ownership before writing
 - **`progress_type` is just another editable field**: `edit_activity` gains `progress_type` alongside its existing pointer fields, same partial-update pattern (omit to keep current). No new remap mechanism — if old points need new values to match the new type's semantics, the AI calls the existing `edit_progress_point` tool per point, same as any other correction
+- **`status` is the explicit source of truth for lifecycle state**: activities gain a `status` column (`active|paused|finished|dropped`) instead of inferring state purely from `started_at`/`ended_at`. `ended_at` keeps its existing meaning (set once, timestamp of completion) and is only set together with `status` moving to `finished` or `dropped` — it is never set for `paused`. `status` and `deferred_until` are set the same way `progress_type` is: as two more pointer fields on `edit_activity`, no dedicated pause/resume/drop tool — reuses the existing partial-update pattern instead of inventing a new mechanism
+- **`delete_activity` is a new, separate hard delete — `status: "dropped"` is not a delete**: the two are easy to conflate now that both mean "this didn't work out", so they're kept clearly distinct. `status="dropped"`/`"finished"` (via `edit_activity`) keep the row and its `activity_progress` history, just marked over. `delete_activity` is the new tool that actually removes the row (progress points cascade via the existing `fk_progress_activity ON DELETE CASCADE`); it's blocked with a foreign-key error if a `goals` row still references the activity (`goals.activity_id` has no `ON DELETE` clause), since silently orphaning or cascading into a goal would be a worse surprise than a clear error asking to deal with the goal first
+- **`finish_activity` is removed, not extended**: completion was a dedicated tool only because `edit_activity` couldn't touch `ended_at`/status before this change — now that `edit_activity` has both `status` and `ended_at` as pointer fields, a separate finish tool is a redundant second way to do the same write. Finishing/dropping an activity is `edit_activity(status: "finished" | "dropped", ended_at: <time>)`; the repository's dedicated `FinishActivity` method goes too, folded into the existing `UpdateActivity` path
+- **`ActiveOnly`/`PausedOnly` booleans replaced by `Statuses []ActivityStatus`, not joined by a third bool**: a one-bool-per-status-value field doesn't scale (it was already awkward with two, a third for `PausedOnly` would be worse) and the whole point of adding the `status` column is that it's a real enum now, not a fact worth re-encoding as more booleans. `applyActivityFilter` drops its `ActiveOnly`/`PausedOnly`/default switch entirely: `started_at` gets one unconditional clause (`> NOW()` if `FutureOnly`, else `<= NOW()`), and `status IN (...)` is applied whenever `len(Statuses) > 0` — no branching left except that one `FutureOnly` if/else. Every call site now states its status filter explicitly instead of relying on a bool's implied meaning: active lists pass `Statuses: []ActivityStatus{ActivityStatusActive}`, the finished list passes `Statuses: []ActivityStatus{ActivityStatusFinished, ActivityStatusDropped}` (the old default branch, now explicit), paused passes `Statuses: []ActivityStatus{ActivityStatusPaused}`, and future passes `FutureOnly: true` together with `Statuses: []ActivityStatus{ActivityStatusActive}` to match the old `FutureOnly` behavior (a future activity that's already paused/dropped doesn't belong in the future list either)
+- **`ListActivities`'s `ORDER BY` follows what kind of status was asked for, not a specific bool**: the old switch (`FutureOnly` → `started_at ASC`, `ActiveOnly` → check-in urgency, default → `ended_at DESC`) becomes: `FutureOnly` → `started_at ASC` (unchanged); else if `Statuses` contains `active` or `paused` (an ongoing state) → the same check-in-urgency ordering; else (`finished`/`dropped`, a terminal state) → `ended_at DESC` (unchanged). A mixed `Statuses` list spanning both groups isn't a call any current caller makes, so it's not a case the ordering needs to handle
+- **Paused activities get their own page, not a section bolted onto Active**: `dashboard_web.go` needs no code change at all — since the active-list callers now filter `Statuses: [active]` explicitly, paused activities simply stop appearing there without dashboard code ever mentioning `paused`. `browse_web.go` gets a new `GET /web/progress/browse/paused` route, a fourth entry in `browseCrossLinks` alongside Active/Finished/Future, built with the same `renderActivityList` helper as Finished/Future (paginated, all `progress_type`s combined in one table) — not a fifth section appended to the active page's four `progress_type` tables. Its one differing column is "Deferred until" instead of Finished/Starts. `get_activity_list` returns a second output list, `paused_activities`, populated alongside `activities` when `active_only=true` — no new input parameter, so existing callers are unaffected
+- **Schema change follows the `last_point_at` precedent**: `status`/`deferred_until` are added to the `CREATE TABLE` block for fresh installs only, same as `last_point_at` was — no `ALTER TABLE` in this file. `CREATE TABLE IF NOT EXISTS` is a no-op against the already-deployed `activities` table, so on the live DB the column is added and backfilled (`UPDATE activities SET status = 'finished' WHERE ended_at IS NOT NULL`) by hand, once, out of band, exactly like `last_point_at` was — not through an automated migration statement that would otherwise re-run (and risk re-clobbering data) on every restart. No dedicated `status` index either — the table is small enough (personal, single-user) that one isn't worth the added migration surface
 
 ## Architecture Diagrams
 
@@ -47,9 +54,11 @@ erDiagram
         string name
         text description
         string progress_type "mood|habit_progress|project_progress|promise_state"
+        string status "active|paused|finished|dropped"
+        timestamp deferred_until "NULL unless paused with a resume date"
         int frequency_days "1 = daily, 7 = weekly, etc"
         timestamp started_at
-        timestamp ended_at "NULL if active"
+        timestamp ended_at "NULL unless status is finished or dropped"
         timestamp created_at
     }
 
@@ -80,13 +89,13 @@ graph TB
 
     User -->|create_activity| MCP
     User -->|edit_activity| MCP
+    User -->|delete_activity| MCP
     User -->|get_activity_list| MCP
     User -->|get_progress_type_examples| MCP
     User -->|get_activity_stats| MCP
     User -->|create_progress_point| MCP
     User -->|edit_progress_point| MCP
     User -->|delete_progress_point| MCP
-    User -->|finish_activity| MCP
     User -->|search_progress_notes| MCP
 
     DB -.->|life_parts table| DB
@@ -140,19 +149,24 @@ sequenceDiagram
     Handler->>DB: goals.BuildGoalTiles(userID, now, types=[activity_occurrence_count, activity_streak_count])<br/>(see goals-spec.md)
     DB-->>Handler: []webui.GoalTileData (may be empty)
     loop For each progress_type in [Habit, Promise, Project, Mood]
-        Handler->>DB: ListActivities(ActiveOnly: true, ProgressType: type)<br/>(no Limit/Offset — unpaginated)
+        Handler->>DB: ListActivities(Statuses: [active], ProgressType: type)<br/>(no Limit/Offset — unpaginated)
         DB-->>Handler: all active activities of that type (may be empty)
         Handler->>Webui: RenderTable(Rows, no Type column, no Pagination)
     end
     Webui-->>Browser: HTML: goal tiles, then 4 headed sections in order,<br/>rows link to /web/progress/browse/{id}
 
+    Browser->>Handler: GET /web/progress/browse/paused?page=1
+    Handler->>DB: CountActivities(Statuses: [paused]) + ListActivities(Statuses: [paused], Limit, Offset)
+    DB-->>Handler: total count + one page of paused activities (all types combined)
+    Handler-->>Browser: HTML paginated table, "Deferred until" column
+
     Browser->>Handler: GET /web/progress/browse/finished?page=1
-    Handler->>DB: CountActivities(ActiveOnly: false) + ListActivities(ActiveOnly: false, Limit, Offset)
-    DB-->>Handler: total count + one page of finished activities
+    Handler->>DB: CountActivities(Statuses: [finished, dropped]) + ListActivities(Statuses: [finished, dropped], Limit, Offset)
+    DB-->>Handler: total count + one page of finished/dropped activities
     Handler-->>Browser: HTML paginated table
 
     Browser->>Handler: GET /web/progress/browse/future?page=1
-    Handler->>DB: CountActivities(FutureOnly: true) + ListActivities(FutureOnly: true, Limit, Offset)
+    Handler->>DB: CountActivities(FutureOnly: true, Statuses: [active]) + ListActivities(FutureOnly: true, Statuses: [active], Limit, Offset)
     DB-->>Handler: total count + one page of not-yet-started activities
     Handler-->>Browser: HTML paginated table
 
@@ -191,8 +205,11 @@ CREATE TABLE IF NOT EXISTS activities (
     progress_type VARCHAR(30) NOT NULL CHECK (progress_type IN ('mood', 'habit_progress', 'project_progress', 'promise_state')),
     frequency_days INT NOT NULL CHECK (frequency_days > 0),
     started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP, -- NULL means active
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ended_at TIMESTAMP, -- NULL unless status is finished or dropped
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_point_at TIMESTAMP, -- NULL means no points
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'finished', 'dropped')),
+    deferred_until TIMESTAMP -- NULL unless paused with a resume date
 );
 
 CREATE INDEX idx_activities_user_id ON activities(user_id);
@@ -254,18 +271,31 @@ type LifePart struct {
     CreatedAt   time.Time `json:"created_at" db:"created_at"`
 }
 
+// ActivityStatus is the explicit lifecycle state of an activity — source of
+// truth going forward, instead of inferring state purely from started_at/ended_at.
+type ActivityStatus string
+
+const (
+    ActivityStatusActive   ActivityStatus = "active"
+    ActivityStatusPaused   ActivityStatus = "paused"
+    ActivityStatusFinished ActivityStatus = "finished" // goal reached
+    ActivityStatusDropped  ActivityStatus = "dropped"  // abandoned
+)
+
 // Activity represents a trackable goal or habit
 type Activity struct {
-    ID            int64        `json:"id" db:"id"`
-    UserID        int64        `json:"user_id" db:"user_id"`
-    LifePartIDs   []int64      `json:"life_part_ids,omitempty" db:"life_part_ids" jsonschema:"Array of life part IDs this activity belongs to"`
-    Name          string       `json:"name" db:"name" jsonschema:"Activity name"`
-    Description   string       `json:"description,omitempty" db:"description" jsonschema:"Activity description"`
-    ProgressType  ProgressType `json:"progress_type" db:"progress_type" jsonschema:"Progress value scale type (mood|habit_progress|project_progress|promise_state)"`
-    FrequencyDays int          `json:"frequency_days" db:"frequency_days" jsonschema:"Check-in frequency in days (1 = daily, 7 = weekly)"`
-    StartedAt     time.Time    `json:"started_at" db:"started_at"`
-    EndedAt       time.Time    `json:"ended_at,omitempty" db:"ended_at"` // Zero value if active
-    CreatedAt     time.Time    `json:"created_at" db:"created_at"`
+    ID            int64          `json:"id" db:"id"`
+    UserID        int64          `json:"user_id" db:"user_id"`
+    LifePartIDs   []int64        `json:"life_part_ids,omitempty" db:"life_part_ids" jsonschema:"Array of life part IDs this activity belongs to"`
+    Name          string         `json:"name" db:"name" jsonschema:"Activity name"`
+    Description   string         `json:"description,omitempty" db:"description" jsonschema:"Activity description"`
+    ProgressType  ProgressType   `json:"progress_type" db:"progress_type" jsonschema:"Progress value scale type (mood|habit_progress|project_progress|promise_state)"`
+    Status        ActivityStatus `json:"status" db:"status" jsonschema:"Lifecycle status (active|paused|finished|dropped)"`
+    DeferredUntil *time.Time     `json:"deferred_until,omitempty" db:"deferred_until" jsonschema:"When a paused activity should resume (null unless paused with a resume date)"`
+    FrequencyDays int            `json:"frequency_days" db:"frequency_days" jsonschema:"Check-in frequency in days (1 = daily, 7 = weekly)"`
+    StartedAt     time.Time      `json:"started_at" db:"started_at"`
+    EndedAt       time.Time      `json:"ended_at,omitempty" db:"ended_at"` // Zero value unless finished/dropped
+    CreatedAt     time.Time      `json:"created_at" db:"created_at"`
 }
 
 // ActivityPoint represents a single progress point
@@ -328,13 +358,13 @@ type MappingValue struct {
 
 // ActivityFilter defines query parameters for listing activities
 type ActivityFilter struct {
-    UserID       int64        `json:"user_id"`
-    ActiveOnly   bool         `json:"active_only" jsonschema:"Only return active activities (not finished)"`
-    FutureOnly   bool         `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future); overrides ActiveOnly's started_at<=NOW() clause"`
-    ProgressType ProgressType `json:"progress_type,omitempty" jsonschema:"Only return activities of this progress_type (empty = all types); used by the browse view's per-type active-list sections"`
-    LifePartIDs  []int64      `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
-    Limit        int64        `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit, existing MCP callers unaffected)"`
-    Offset       int64        `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
+    UserID       int64            `json:"user_id"`
+    Statuses     []ActivityStatus `json:"statuses,omitempty" jsonschema:"Only return activities whose status is one of these (empty = no status filter); replaces the old ActiveOnly/PausedOnly booleans — callers pass e.g. []ActivityStatus{ActivityStatusActive} or {ActivityStatusFinished, ActivityStatusDropped}"`
+    FutureOnly   bool             `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future) instead of started_at<=NOW(); status is still filtered separately via Statuses — the old FutureOnly behavior is Statuses:[active], FutureOnly:true"`
+    ProgressType ProgressType     `json:"progress_type,omitempty" jsonschema:"Only return activities of this progress_type (empty = all types); used by the browse view's per-type active-list sections"`
+    LifePartIDs  []int64          `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
+    Limit        int64            `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit, existing MCP callers unaffected)"`
+    Offset       int64            `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
 }
 
 // ProgressFilter defines query parameters for listing progress points
@@ -373,8 +403,8 @@ type ProgressRepository interface {
     GetActivity(ctx context.Context, activityID int64, userID int64) (*Activity, error)
     ListActivities(ctx context.Context, filter ActivityFilter) ([]Activity, error)
     CountActivities(ctx context.Context, filter ActivityFilter) (int, error) // same WHERE clauses as ListActivities, ignores Limit/Offset — for browse-view pagination
-    UpdateActivity(ctx context.Context, activity *Activity) error // now also writes progress_type
-    FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
+    UpdateActivity(ctx context.Context, activity *Activity) error // now also writes progress_type, status, deferred_until; finishing/dropping goes through here too, no separate FinishActivity method
+    DeleteActivity(ctx context.Context, activityID int64, userID int64) error // hard delete; activity_progress rows cascade via FK, but a goal still referencing this activity (goals.activity_id, no ON DELETE clause) blocks it with a foreign-key violation
 
     // Progress CRUD
     CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error)
@@ -395,10 +425,13 @@ type ProgressRepository interface {
 Creates a new trackable activity (name, progress_type, frequency_days, optional life_part_ids/description/started_at). Validates progress_type enum and frequency_days >= 1.
 
 ### edit_activity
-Updates mutable fields (name, description, frequency_days, life_part_ids, progress_type, started_at, ended_at) of an existing activity. At least one field required; unspecified fields keep their current value. Changing `progress_type` does not touch existing points — use `edit_progress_point` per point to remap stale values to the new type's semantics.
+Updates mutable fields (name, description, frequency_days, life_part_ids, progress_type, status, deferred_until, started_at, ended_at) of an existing activity. At least one field required; unspecified fields keep their current value. Changing `progress_type` does not touch existing points — use `edit_progress_point` per point to remap stale values to the new type's semantics. `status` moves an activity between active/paused/finished/dropped directly — this is also how an activity is marked complete (`status: "finished"` or `status: "dropped"`, together with `ended_at`) now that there's no separate `finish_activity` tool; `deferred_until` is only meaningful alongside `status=paused`.
+
+### delete_activity
+Permanently deletes an activity by ID, scoped to the owning user — including all its `activity_progress` history (`ON DELETE CASCADE`). This is different from `status: "dropped"` via `edit_activity`: dropping keeps the activity and its history around (just marked over, still shows in the finished/dropped list and in stats), while `delete_activity` erases the row and its progress points for good. Errors if the activity doesn't exist / isn't owned by the user, or if a goal still references it (`goals.activity_id` has no `ON DELETE CASCADE` — the goal must be deleted or repointed first). Cannot be undone.
 
 ### get_activity_list
-Lists active activities (ended_at IS NULL) ordered by frequency_days ASC, then name.
+Lists activities ordered by frequency_days ASC, then name. `active_only=true` returns `status='active'` activities in `activities` plus, separately, every `status='paused'` activity in `paused_activities` — so a paused activity is never silently missing, just shown in its own section. `active_only=false` returns finished/dropped activities (unchanged).
 
 ### get_progress_type_examples
 Returns hardcoded natural language ↔ numeric value mapping examples (multiple metaphors per progress_type, with emojis) — no input, no DB access. Canonical source for interpreting free-form user responses.
@@ -415,9 +448,6 @@ Updates mutable fields (value, note, hours_left, progress_at) of an existing pro
 ### delete_progress_point
 Deletes a progress point by ID, scoped to the owning user. Errors if the point doesn't exist or isn't owned by the user. Cannot be undone.
 
-### finish_activity
-Sets ended_at on an active activity, marking it complete. Errors if the activity is already finished or not owned by the user.
-
 ### search_progress_notes
 Searches `activity_progress.note` by 1-5 query variants (ILIKE), with optional activity_id/from/to/value_min/value_max filters. Same match_count ranking pattern as `resolve_food_id_by_name` and `search_exercises`.
 
@@ -429,13 +459,16 @@ Searches `activity_progress.note` by 1-5 query variants (ILIKE), with optional a
 Renders a read-only dashboard of all activities with recent progress, staleness indicators, and trend summaries. Protected by the same auth middleware as other `/web/*` routes. Purpose-built fixed-viewport/B&W/top-5-only screenshot page (`dashboard_web.go`) — untouched by the browse view below.
 
 ### GET /web/progress/browse
-New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity goal tile grid above the lists (see Best Practices), then **four separate, unpaginated tables**, one per `progress_type`, in fixed order — Habit, Promise, Project, Mood — each with a heading and columns Name, Description, Frequency, Last update (no Type column, redundant with the heading); a type with no active activities still renders its heading with an empty table. Links to the finished/future lists and to each activity's drill-down. Protected by `WebMiddleware` like every other `/web/*` route.
+New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity goal tile grid above the lists (see Best Practices), then **four separate, unpaginated tables**, one per `progress_type`, in fixed order — Habit, Promise, Project, Mood — each with a heading and columns Name, Description, Frequency, Last update (no Type column, redundant with the heading); a type with no active activities still renders its heading with an empty table. Links to the paused/finished/future lists (`browseCrossLinks`: Active · Finished · Future · Paused) and to each activity's drill-down. Protected by `WebMiddleware` like every other `/web/*` route.
+
+### GET /web/progress/browse/paused
+Lists activities where `status = 'paused'` (`ListActivities(Statuses: [paused])`), same combined-across-types table shape and pagination as `/finished` and `/future` (via `renderActivityList`), with a "Deferred until" column in place of Finished/Starts, and a back link.
 
 ### GET /web/progress/browse/finished
-Lists activities where `ended_at` is set (`ListActivities(ActiveOnly: false)`), same table shape (including the Description column) and pagination as the main browse view, with a back link.
+Lists activities where `status` is `finished` or `dropped` (`ListActivities(Statuses: [finished, dropped])`), same table shape (including the Description column) and pagination as the main browse view, with a back link.
 
 ### GET /web/progress/browse/future
-Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true)`), same table shape (including the Description column) and pagination, with a back link.
+Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true, Statuses: [active])`), same table shape (including the Description column) and pagination, with a back link.
 
 ### GET /web/progress/browse/{id}
 Drill-down for one activity: a `DetailView` with the activity's description (when set) shown as a paragraph under the title, stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), and a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1). Back link returns to wherever the user came from (main/finished/future list).
@@ -485,9 +518,9 @@ mappings.
 - **-1 (Rolled back)**: "setback", "rolled back", "step backward", "lost ground", "regressed", "went backwards"
 - **-2 (Plans changed)**: "changed plans", "pivoting", "complete restart", "abandoned approach", "new direction"
 
-**Special states** (use `finish_activity` instead of creating progress point):
-- "done", "finished", "completed", "achieved" → Mark activity as finished
-- "cancelled", "failed", "gave up permanently" → Mark activity as finished
+**Special states** (use `edit_activity` instead of creating a progress point — set `status` and `ended_at`, not a progress point):
+- "done", "finished", "completed", "achieved" → `status: "finished"`
+- "cancelled", "failed", "gave up permanently" → `status: "dropped"` (distinct outcome from `finished` — see the `status` field)
 
 #### Promise State Scale (progress_type: "promise_state")
 
@@ -495,9 +528,9 @@ mappings.
 - **0 (Remember)**: "I remember", "haven't started", "on my mind", "aware of it", "planning to", "thinking about it"
 - **-1 (Forgot)**: "I forgot", "didn't remember", "slipped my mind", "overlooked", "forgot about it"
 
-**Special states** (use `finish_activity` instead):
-- "I did it", "completed", "fulfilled", "kept my promise" → Mark as finished
-- "I failed", "broke the promise", "won't do it", "can't do it" → Mark as finished
+**Special states** (use `edit_activity` instead — set `status` and `ended_at`, not a progress point):
+- "I did it", "completed", "fulfilled", "kept my promise" → `status: "finished"`
+- "I failed", "broke the promise", "won't do it", "can't do it" → `status: "dropped"`
 
 ### Conversation Flow Guidelines
 
@@ -653,13 +686,13 @@ AI: [Maps "backtracking" → -1 from "project as journey" mapping]
 AI: "How's the trainer project going?"
 User: "I finished it! Deployed to production yesterday."
 AI: [Detects "finished" - special state]
-    [Calls finish_activity(trainer_project_id)]
+    [Calls edit_activity(trainer_project_id, status: "finished", ended_at: now)]
     "Congratulations on completing it! 🎉 Marking this as done."
 ```
 
 ### Session Summary
 
-The AI already has a full record of every `create_progress_point` / `finish_activity` call it made during the session — no separate tool call is needed to summarize. Present a recap directly from that record:
+The AI already has a full record of every `create_progress_point` / `edit_activity` call it made during the session — no separate tool call is needed to summarize. Present a recap directly from that record:
 
 ```
 AI: "Great reflection session! Here's what we captured:

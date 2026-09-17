@@ -21,19 +21,33 @@ type LifePart struct {
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
 }
 
+// ActivityStatus is the explicit lifecycle state of an activity — source of
+// truth going forward, instead of inferring state purely from
+// started_at/ended_at.
+type ActivityStatus string
+
+const (
+	ActivityStatusActive   ActivityStatus = "active"
+	ActivityStatusPaused   ActivityStatus = "paused"
+	ActivityStatusFinished ActivityStatus = "finished" // goal reached
+	ActivityStatusDropped  ActivityStatus = "dropped"  // abandoned
+)
+
 // Activity represents a trackable goal or habit
 type Activity struct {
-	ID            int64        `json:"id" db:"id"`
-	UserID        int64        `json:"user_id" db:"user_id"`
-	LifePartIDs   []int64      `json:"life_part_ids,omitempty" db:"life_part_ids" jsonschema:"Array of life part IDs this activity belongs to"`
-	Name          string       `json:"name" db:"name" jsonschema:"Activity name"`
-	Description   string       `json:"description,omitempty" db:"description" jsonschema:"Activity description"`
-	ProgressType  ProgressType `json:"progress_type" db:"progress_type" jsonschema:"Progress value scale type (mood|habit_progress|project_progress|promise_state)"`
-	FrequencyDays int          `json:"frequency_days" db:"frequency_days" jsonschema:"Check-in frequency in days (1 = daily, 7 = weekly)"`
-	StartedAt     time.Time    `json:"started_at" db:"started_at"`
-	EndedAt       *time.Time   `json:"ended_at,omitempty" db:"ended_at"` // NULL if active
-	LastPointAt   *time.Time   `json:"last_point_at,omitempty" db:"last_point_at"`
-	CreatedAt     time.Time    `json:"created_at" db:"created_at"`
+	ID            int64          `json:"id" db:"id"`
+	UserID        int64          `json:"user_id" db:"user_id"`
+	LifePartIDs   []int64        `json:"life_part_ids,omitempty" db:"life_part_ids" jsonschema:"Array of life part IDs this activity belongs to"`
+	Name          string         `json:"name" db:"name" jsonschema:"Activity name"`
+	Description   string         `json:"description,omitempty" db:"description" jsonschema:"Activity description"`
+	ProgressType  ProgressType   `json:"progress_type" db:"progress_type" jsonschema:"Progress value scale type (mood|habit_progress|project_progress|promise_state)"`
+	Status        ActivityStatus `json:"status" db:"status" jsonschema:"Lifecycle status (active|paused|finished|dropped)"`
+	DeferredUntil *time.Time     `json:"deferred_until,omitempty" db:"deferred_until" jsonschema:"When a paused activity should resume (null unless paused with a resume date)"`
+	FrequencyDays int            `json:"frequency_days" db:"frequency_days" jsonschema:"Check-in frequency in days (1 = daily, 7 = weekly)"`
+	StartedAt     time.Time      `json:"started_at" db:"started_at"`
+	EndedAt       *time.Time     `json:"ended_at,omitempty" db:"ended_at"` // NULL unless status is finished or dropped
+	LastPointAt   *time.Time     `json:"last_point_at,omitempty" db:"last_point_at"`
+	CreatedAt     time.Time      `json:"created_at" db:"created_at"`
 }
 
 // ActivityPoint represents a single progress point
@@ -66,13 +80,13 @@ type TrendStats struct {
 
 // ActivityFilter defines query parameters for listing activities
 type ActivityFilter struct {
-	UserID       int64        `json:"user_id"`
-	ActiveOnly   bool         `json:"active_only" jsonschema:"Only return active activities (not finished)"`
-	FutureOnly   bool         `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future); overrides ActiveOnly's started_at<=NOW() clause"`
-	ProgressType ProgressType `json:"progress_type,omitempty" jsonschema:"Only return activities of this progress_type (empty = all types)"`
-	LifePartIDs  []int64      `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
-	Limit        int64        `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit)"`
-	Offset       int64        `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
+	UserID       int64            `json:"user_id"`
+	Statuses     []ActivityStatus `json:"statuses,omitempty" jsonschema:"Only return activities whose status is one of these (empty = no status filter); replaces the old ActiveOnly/PausedOnly booleans — callers pass e.g. []ActivityStatus{ActivityStatusActive} or {ActivityStatusFinished, ActivityStatusDropped}"`
+	FutureOnly   bool             `json:"future_only,omitempty" jsonschema:"Only return not-yet-started activities (started_at in the future) instead of started_at<=NOW(); status is still filtered separately via Statuses"`
+	ProgressType ProgressType     `json:"progress_type,omitempty" jsonschema:"Only return activities of this progress_type (empty = all types)"`
+	LifePartIDs  []int64          `json:"life_part_ids,omitempty" jsonschema:"Filter by life part IDs"`
+	Limit        int64            `json:"limit,omitempty" jsonschema:"Page size for browse-view pagination (0 = no limit)"`
+	Offset       int64            `json:"offset,omitempty" jsonschema:"Row offset for browse-view pagination"`
 }
 
 // ProgressFilter defines query parameters for listing progress points

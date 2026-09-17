@@ -39,8 +39,21 @@ func (s *IntegrationTestSuite) browseRouter(ctx context.Context) *gin.Engine {
 	r.GET("/web/progress/browse", progress.BrowseWebHandler)
 	r.GET("/web/progress/browse/finished", progress.BrowseFinishedWebHandler)
 	r.GET("/web/progress/browse/future", progress.BrowseFutureWebHandler)
+	r.GET("/web/progress/browse/paused", progress.BrowsePausedWebHandler)
 	r.GET("/web/progress/browse/:id", progress.BrowseDetailWebHandler)
 	return r
+}
+
+// finishActivity marks an activity finished the way edit_activity does now
+// that repository.FinishActivity is gone — status is the source of truth,
+// ended_at is set alongside it.
+func (s *IntegrationTestSuite) finishActivity(ctx context.Context, activityID, userID int64, endedAt time.Time) {
+	a, err := s.Repo().GetActivity(ctx, activityID, userID)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), a)
+	a.Status = domain.ActivityStatusFinished
+	a.EndedAt = &endedAt
+	require.NoError(s.T(), s.Repo().UpdateActivity(ctx, a))
 }
 
 // withBrowsePageSize temporarily shrinks progress.BrowsePageSize so
@@ -90,7 +103,7 @@ func (s *IntegrationTestSuite) TestBrowse_ExcludesFinishedAndFutureActivities() 
 
 	s.createActivity(ctx, "Active one", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -5))
 	finishedID := s.createActivity(ctx, "Finished one", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -20))
-	require.NoError(s.T(), s.Repo().FinishActivity(ctx, finishedID, gateways.UserIDFromContext(ctx), now.AddDate(0, 0, -1)))
+	s.finishActivity(ctx, finishedID, gateways.UserIDFromContext(ctx), now.AddDate(0, 0, -1))
 	s.createActivity(ctx, "Future one", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, 5))
 
 	r := s.browseRouter(ctx)
@@ -134,6 +147,7 @@ func (s *IntegrationTestSuite) TestBrowse_HasCrossLinksToFinishedAndFuture() {
 	body := w.Body.String()
 	assert.Contains(s.T(), body, `href="/web/progress/browse/finished"`)
 	assert.Contains(s.T(), body, `href="/web/progress/browse/future"`)
+	assert.Contains(s.T(), body, `href="/web/progress/browse/paused"`)
 }
 
 // TestBrowse_SplitsActiveActivitiesByProgressTypeSections covers the
@@ -216,7 +230,7 @@ func (s *IntegrationTestSuite) TestBrowseFinished_Pagination() {
 	userID := gateways.UserIDFromContext(ctx)
 	for _, name := range []string{"Activity A", "Activity B", "Activity C"} {
 		id := s.createActivity(ctx, name, domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -10))
-		require.NoError(s.T(), s.Repo().FinishActivity(ctx, id, userID, now.AddDate(0, 0, -1)))
+		s.finishActivity(ctx, id, userID, now.AddDate(0, 0, -1))
 	}
 
 	r := s.browseRouter(ctx)
@@ -249,7 +263,7 @@ func (s *IntegrationTestSuite) TestBrowseFinished_ListsOnlyFinishedActivities() 
 
 	s.createActivity(ctx, "Still going", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -5))
 	finishedID := s.createActivity(ctx, "Wrapped up", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -20))
-	require.NoError(s.T(), s.Repo().FinishActivity(ctx, finishedID, userID, now.AddDate(0, 0, -1)))
+	s.finishActivity(ctx, finishedID, userID, now.AddDate(0, 0, -1))
 
 	r := s.browseRouter(ctx)
 	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse/finished", nil)
@@ -280,6 +294,37 @@ func (s *IntegrationTestSuite) TestBrowseFuture_ListsOnlyNotYetStartedActivities
 	body := w.Body.String()
 	assert.Contains(s.T(), body, "Starts next week")
 	assert.NotContains(s.T(), body, "Already running")
+}
+
+// --- GET /web/progress/browse/paused -----------------------------------------
+
+func (s *IntegrationTestSuite) TestBrowsePaused_ListsOnlyPausedActivitiesWithDeferredUntilColumn() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := gateways.UserIDFromContext(ctx)
+	now := time.Now()
+
+	s.createActivity(ctx, "Still going", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -5))
+
+	pausedID := s.createActivity(ctx, "On hold", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -20))
+	a, err := db.GetActivity(ctx, pausedID, userID)
+	require.NoError(s.T(), err)
+	deferredUntil := now.AddDate(0, 0, 14)
+	a.Status = domain.ActivityStatusPaused
+	a.DeferredUntil = &deferredUntil
+	require.NoError(s.T(), db.UpdateActivity(ctx, a))
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse/paused", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(s.T(), body, "On hold")
+	assert.NotContains(s.T(), body, "Still going")
+	assert.Contains(s.T(), body, "Deferred until")
+	assert.Contains(s.T(), body, deferredUntil.Format("2006-01-02"))
 }
 
 // --- GET /web/progress/browse/{id} -------------------------------------------

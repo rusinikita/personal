@@ -81,8 +81,8 @@ type DB interface {
 	ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error)
 	CountActivities(ctx context.Context, filter domain.ActivityFilter) (int, error)
 	GetActivity(ctx context.Context, activityID int64, userID int64) (*domain.Activity, error)
-	UpdateActivity(ctx context.Context, activity *domain.Activity) error
-	FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
+	UpdateActivity(ctx context.Context, activity *domain.Activity) error      // also writes progress_type, status, deferred_until
+	DeleteActivity(ctx context.Context, activityID int64, userID int64) error // hard delete; blocked if a goal still references the activity
 	CreateProgress(ctx context.Context, progress *domain.ActivityPoint) (int64, error)
 	GetProgress(ctx context.Context, progressID int64, userID int64) (*domain.ActivityPoint, error)
 	ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error)
