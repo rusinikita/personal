@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,8 @@ func (s *IntegrationTestSuite) browseRouter(ctx context.Context) *gin.Engine {
 	r.GET("/web/progress/browse/future", progress.BrowseFutureWebHandler)
 	r.GET("/web/progress/browse/paused", progress.BrowsePausedWebHandler)
 	r.GET("/web/progress/browse/:id", progress.BrowseDetailWebHandler)
+	r.GET("/web/progress/browse/:id/points/new", progress.BrowseNewPointWebHandler)
+	r.POST("/web/progress/browse/:id/points", progress.BrowseCreatePointWebHandler)
 	return r
 }
 
@@ -443,4 +446,145 @@ func (s *IntegrationTestSuite) TestBrowse_ShowsTrendStatTilesInDetail() {
 	assert.Contains(s.T(), body, "Last 30 days")
 	assert.Contains(s.T(), body, "Last 7 days")
 	assert.Contains(s.T(), body, "webui-stat-tile")
+}
+
+// TestBrowseDetail_HasAddPointButtonLinkingToStandalonePage covers the
+// drill-down page's "+ Add" button, which links to the standalone
+// log-a-point page instead of embedding the form inline.
+func (s *IntegrationTestSuite) TestBrowseDetail_HasAddPointButtonLinkingToStandalonePage() {
+	ctx := s.Context()
+	now := time.Now()
+	activityID := s.createActivity(ctx, "Gym", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -5))
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/progress/browse/%d", activityID), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, fmt.Sprintf(`href="/web/progress/browse/%d/points/new"`, activityID))
+	assert.Contains(s.T(), body, "+ Add")
+	assert.NotContains(s.T(), body, `name="value"`, "the form must no longer be embedded on the drill-down page")
+}
+
+// --- GET /web/progress/browse/{id}/points/new --------------------------------
+
+// TestBrowseNewPoint_ShowsWhichActivityAndEmojiRadiosPerProgressType covers
+// the standalone page's header (naming the activity) and its radio group:
+// 5 options for mood/habit_progress/project_progress, 3 for promise_state
+// (no ±2 in that domain).
+func (s *IntegrationTestSuite) TestBrowseNewPoint_ShowsWhichActivityAndEmojiRadiosPerProgressType() {
+	ctx := s.Context()
+	now := time.Now()
+
+	moodID := s.createActivity(ctx, "Daily mood", domain.ProgressTypeMood, now.AddDate(0, 0, -5))
+	promiseID := s.createActivity(ctx, "Call mom", domain.ProgressTypePromiseState, now.AddDate(0, 0, -5))
+
+	r := s.browseRouter(ctx)
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/progress/browse/%d/points/new", moodID), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	body := w.Body.String()
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	assert.Contains(s.T(), body, "Daily mood", "header must name which activity the point is for")
+	assert.Contains(s.T(), body, `action="/web/progress/browse/`+fmt.Sprint(moodID)+`/points"`)
+	assert.Contains(s.T(), body, fmt.Sprintf(`href="/web/progress/browse/%d"`, moodID), "must link back to the drill-down page")
+	assert.Equal(s.T(), 5, strings.Count(body, `name="value"`), "mood must offer 5 radio options")
+	assert.Contains(s.T(), body, "☀️")
+
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/progress/browse/%d/points/new", promiseID), nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	body = w.Body.String()
+	assert.Contains(s.T(), body, "Call mom")
+	assert.Equal(s.T(), 3, strings.Count(body, `name="value"`), "promise_state must offer only 3 radio options (no ±2)")
+}
+
+func (s *IntegrationTestSuite) TestBrowseNewPoint_UnknownOrForeignActivity_404s() {
+	r := s.browseRouter(s.Context())
+	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse/999999999/points/new", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusNotFound, w.Code)
+}
+
+// --- POST /web/progress/browse/{id}/points -----------------------------------
+
+func (s *IntegrationTestSuite) TestBrowseCreatePoint_LogsPointAndRedirectsToDetail() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	now := time.Now()
+	activityID := s.createActivity(ctx, "Gym", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -5))
+
+	r := s.browseRouter(ctx)
+	form := url.Values{"value": {"2"}, "note": {"crushed it"}}
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/web/progress/browse/%d/points", activityID), strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusFound, w.Code)
+	assert.Equal(s.T(), fmt.Sprintf("/web/progress/browse/%d", activityID), w.Header().Get("Location"))
+
+	points, err := s.Repo().ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), points, 1)
+	assert.Equal(s.T(), 2, points[0].Value)
+	assert.Equal(s.T(), "crushed it", points[0].Note)
+}
+
+func (s *IntegrationTestSuite) TestBrowseCreatePoint_RejectsOutOfRangeValue() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	now := time.Now()
+	activityID := s.createActivity(ctx, "Gym", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -5))
+
+	r := s.browseRouter(ctx)
+	form := url.Values{"value": {"5"}}
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/web/progress/browse/%d/points", activityID), strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code, "invalid input re-renders the detail page instead of redirecting")
+	assert.Contains(s.T(), w.Body.String(), "value must be between -2 and")
+
+	points, err := s.Repo().ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID})
+	require.NoError(s.T(), err)
+	assert.Empty(s.T(), points, "no point must be created on validation failure")
+}
+
+func (s *IntegrationTestSuite) TestBrowseCreatePoint_UnknownOrForeignActivity_ShowsError() {
+	r := s.browseRouter(s.Context())
+	form := url.Values{"value": {"1"}}
+	req := httptest.NewRequest(http.MethodPost, "/web/progress/browse/999999999/points", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusNotFound, w.Code, "renderNewPointPage 404s the same way the GET handler does for an unowned/missing activity")
+	assert.Contains(s.T(), w.Body.String(), "activity not found")
+}
+
+func (s *IntegrationTestSuite) TestBrowseCreatePoint_AcceptsBackdatedProgressAt() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	now := time.Now()
+	activityID := s.createActivity(ctx, "Gym", domain.ProgressTypeHabitProgress, now.AddDate(0, 0, -5))
+
+	r := s.browseRouter(ctx)
+	form := url.Values{"value": {"1"}, "progress_at": {"2026-01-02T15:04"}}
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/web/progress/browse/%d/points", activityID), strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusFound, w.Code)
+
+	points, err := s.Repo().ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), points, 1)
+	assert.Equal(s.T(), "2026-01-02 15:04", points[0].ProgressAt.Format("2006-01-02 15:04"))
 }

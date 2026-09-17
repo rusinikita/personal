@@ -72,50 +72,23 @@ func CreateProgressPoint(ctx context.Context, _ *mcp.CallToolRequest, input Crea
 		return nil, CreateProgressPointOutput{}, fmt.Errorf("user_id not available in context")
 	}
 
-	// Validate value range
-	if input.Value < -2 || input.Value > 2 {
-		return nil, CreateProgressPointOutput{}, fmt.Errorf("value must be between -2 and +2")
-	}
-
-	// Verify activity ownership
-	activity, err := db.GetActivity(ctx, input.ActivityID, userID)
-	if err != nil {
-		return nil, CreateProgressPointOutput{}, fmt.Errorf("database error: %w", err)
-	}
-	if activity == nil {
-		return nil, CreateProgressPointOutput{}, fmt.Errorf("activity not found or unauthorized")
-	}
-
-	// Parse progress_at or use now
 	var progressAt time.Time
 	if input.ProgressAt != "" {
+		var err error
 		progressAt, err = time.Parse(time.RFC3339, input.ProgressAt)
 		if err != nil {
 			return nil, CreateProgressPointOutput{}, fmt.Errorf("invalid progress_at format, expected RFC3339: %w", err)
 		}
-	} else {
-		progressAt = time.Now()
 	}
 
-	// Create progress point
-	point := &domain.ActivityPoint{
-		ActivityID: input.ActivityID,
-		UserID:     userID,
-		Value:      input.Value,
-		HoursLeft:  input.HoursLeft,
-		Note:       input.Note,
-		ProgressAt: progressAt,
-	}
-
-	id, err := db.CreateProgress(ctx, point)
+	point, err := createProgressPoint(ctx, db, userID, input.ActivityID, input.Value, input.Note, input.HoursLeft, progressAt)
 	if err != nil {
-		return nil, CreateProgressPointOutput{}, fmt.Errorf("failed to create progress point: %w", err)
+		return nil, CreateProgressPointOutput{}, err
 	}
 
-	// Return created point
 	output := CreateProgressPointOutput{
 		Progress: ProgressPoint{
-			ID:         id,
+			ID:         point.ID,
 			Value:      point.Value,
 			HoursLeft:  point.HoursLeft,
 			Note:       point.Note,
@@ -124,4 +97,44 @@ func CreateProgressPoint(ctx context.Context, _ *mcp.CallToolRequest, input Crea
 	}
 
 	return nil, output, nil
+}
+
+// createProgressPoint validates and writes one activity_progress row —
+// shared by the create_progress_point MCP tool above and the "log a point"
+// web form on /web/progress/browse/{id} (browse_web.go), so the two entry
+// points can't drift out of sync on value-range/ownership rules. A zero
+// progressAt defaults to now, same as the MCP tool's empty progress_at.
+func createProgressPoint(ctx context.Context, db gateways.DB, userID, activityID int64, value int, note string, hoursLeft *float64, progressAt time.Time) (*domain.ActivityPoint, error) {
+	if value < -2 || value > 2 {
+		return nil, fmt.Errorf("value must be between -2 and +2")
+	}
+
+	activity, err := db.GetActivity(ctx, activityID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	if activity == nil {
+		return nil, fmt.Errorf("activity not found or unauthorized")
+	}
+
+	if progressAt.IsZero() {
+		progressAt = time.Now()
+	}
+
+	point := &domain.ActivityPoint{
+		ActivityID: activityID,
+		UserID:     userID,
+		Value:      value,
+		HoursLeft:  hoursLeft,
+		Note:       note,
+		ProgressAt: progressAt,
+	}
+
+	id, err := db.CreateProgress(ctx, point)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create progress point: %w", err)
+	}
+	point.ID = id
+
+	return point, nil
 }

@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,6 +37,98 @@ var browseNav = webui.BuildNav(webui.NavProgress)
 // The URLs are fixed route constants, not user data, so embedding them as
 // template.HTML directly (no templating) is safe.
 const browseCrossLinks template.HTML = `<p><a href="/web/progress/browse">Active</a> · <a href="/web/progress/browse/finished">Finished</a> · <a href="/web/progress/browse/future">Future</a> · <a href="/web/progress/browse/paused">Paused</a></p>`
+
+// progressValueOption is one radio choice in the drill-down's "log a point"
+// form: a value paired with the one emoji chosen to represent it.
+type progressValueOption struct {
+	Value int
+	Emoji string
+}
+
+// progressValueOptions returns the radio group choices for pt, worst to
+// best, using one fixed emoji metaphor per progress_type (not the full
+// get_progress_type_examples set — a web form needs exactly one label per
+// value, see progress-spec.md Best Practices). promise_state has no ±2
+// anywhere in the domain, so it gets 3 options instead of 5.
+func progressValueOptions(pt domain.ProgressType) []progressValueOption {
+	switch pt {
+	case domain.ProgressTypeMood:
+		return []progressValueOption{{-2, "⛈️"}, {-1, "🌧️"}, {0, "☁️"}, {1, "⛅"}, {2, "☀️"}}
+	case domain.ProgressTypeHabitProgress:
+		return []progressValueOption{{-2, "❌"}, {-1, "😔"}, {0, "🤔"}, {1, "👍"}, {2, "💪"}}
+	case domain.ProgressTypeProjectProgress:
+		return []progressValueOption{{-2, "🔄"}, {-1, "↩️"}, {0, "⏸️"}, {1, "➡️"}, {2, "🚀"}}
+	case domain.ProgressTypePromiseState:
+		return []progressValueOption{{-1, "🤷"}, {0, "💭"}, {1, "✅"}}
+	default:
+		return []progressValueOption{{-2, "-2"}, {-1, "-1"}, {0, "0"}, {1, "1"}, {2, "2"}}
+	}
+}
+
+// pointFormData feeds pointFormTemplate for one activity's drill-down page.
+type pointFormData struct {
+	ActionURL string
+	Options   []progressValueOption
+	Error     string
+}
+
+// pointFormContentSrc is the "log a point" form on the standalone
+// /web/progress/browse/{id}/points/new page — a local html/template
+// constant, not a shared webui component (action/webui has no form
+// components at all), same convention as goalsRefreshFormSrc
+// (action/goals/dashboard_web.go) and importFormContentSrc
+// (action/money/import_web.go).
+const pointFormContentSrc = `{{if .Error}}<p style="color: var(--pico-del-color)">{{.Error}}</p>{{end}}
+<form method="POST" action="{{.ActionURL}}">
+    <fieldset>
+        <legend>Value</legend>
+        {{range .Options}}<label style="display:inline-block; margin-right: 1em"><input type="radio" name="value" value="{{.Value}}" required> {{.Emoji}} ({{.Value}})</label>
+        {{end}}
+    </fieldset>
+    <label for="point-note">Note</label>
+    <textarea id="point-note" name="note" rows="3" placeholder="optional"></textarea>
+    <label for="point-hours-left">Hours left</label>
+    <input type="number" id="point-hours-left" name="hours_left" step="0.5" placeholder="optional, for projects">
+    <label for="point-progress-at">When</label>
+    <input type="datetime-local" id="point-progress-at" name="progress_at" placeholder="optional, defaults to now">
+    <button type="submit">Log point</button>
+</form>`
+
+var pointFormTemplate = template.Must(template.New("pointForm").Parse(pointFormContentSrc))
+
+func renderPointForm(data pointFormData) (template.HTML, error) {
+	var b strings.Builder
+	if err := pointFormTemplate.Execute(&b, data); err != nil {
+		return "", err
+	}
+	return template.HTML(b.String()), nil
+}
+
+// newPointHeaderData feeds newPointHeaderTemplate — activity name and
+// progress_type go through html/template's auto-escaping (not
+// template.HTML) since they're user-entered data, unlike the fixed BackURL.
+type newPointHeaderData struct {
+	BackURL      string
+	ActivityName string
+	ProgressType string
+}
+
+// newPointHeaderSrc is the standalone "log a point" page's header: which
+// activity the point is being logged for, so it's unambiguous away from the
+// drill-down page's own context.
+const newPointHeaderSrc = `<a class="webui-detail-back" href="{{.BackURL}}">← Back to {{.ActivityName}}</a>
+<h2>Log a point — {{.ActivityName}}</h2>
+<p>{{.ProgressType}}</p>`
+
+var newPointHeaderTemplate = template.Must(template.New("newPointHeader").Parse(newPointHeaderSrc))
+
+func renderNewPointHeader(data newPointHeaderData) (template.HTML, error) {
+	var b strings.Builder
+	if err := newPointHeaderTemplate.Execute(&b, data); err != nil {
+		return "", err
+	}
+	return template.HTML(b.String()), nil
+}
 
 // buildPagination computes prev/next links (each carrying ?page=N against
 // baseURL) from the current page and total row count. Returns nil when
@@ -234,9 +327,41 @@ func BrowsePausedWebHandler(c *gin.Context) {
 }
 
 // BrowseDetailWebHandler renders GET /web/progress/browse/{id}: a
-// drill-down with trend stat tiles, a line chart of the full (unpaginated)
-// value-over-time series, and a paginated table of every progress point.
+// drill-down with a "+ Add" button to the standalone log-a-point page, trend
+// stat tiles, a line chart of the full (unpaginated) value-over-time
+// series, and a paginated table of every progress point.
 func BrowseDetailWebHandler(c *gin.Context) {
+	activityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.String(http.StatusBadRequest, "invalid activity id")
+		return
+	}
+	renderBrowseDetail(c, activityID)
+}
+
+// BrowseNewPointWebHandler renders GET /web/progress/browse/{id}/points/new:
+// the standalone "log a point" page reached via the drill-down's "+ Add"
+// button. Its header names the activity the point is being logged for, so
+// it stays unambiguous away from the drill-down's own context.
+func BrowseNewPointWebHandler(c *gin.Context) {
+	activityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.String(http.StatusBadRequest, "invalid activity id")
+		return
+	}
+	renderNewPointPage(c, activityID, "")
+}
+
+// BrowseCreatePointWebHandler handles POST /web/progress/browse/{id}/points:
+// logs a progress point from the standalone log-a-point page's form,
+// instead of requiring the MCP tool create_progress_point. Validation is
+// shared with that tool via createProgressPoint
+// (create_progress_point_mcp.go), so the two entry points can't drift
+// apart. On success it redirects to the GET drill-down (write-then-redirect,
+// same pattern as goals.RefreshWebHandler); on failure it re-renders the
+// same log-a-point page in place with an inline error, same pattern as
+// money's CSV import form.
+func BrowseCreatePointWebHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
 	if db == nil {
@@ -250,6 +375,105 @@ func BrowseDetailWebHandler(c *gin.Context) {
 		c.String(http.StatusBadRequest, "invalid activity id")
 		return
 	}
+
+	value, err := strconv.Atoi(c.PostForm("value"))
+	if err != nil {
+		renderNewPointPage(c, activityID, "value is required")
+		return
+	}
+
+	var hoursLeft *float64
+	if raw := strings.TrimSpace(c.PostForm("hours_left")); raw != "" {
+		hl, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			renderNewPointPage(c, activityID, "hours_left must be a number")
+			return
+		}
+		hoursLeft = &hl
+	}
+
+	var progressAt time.Time
+	if raw := strings.TrimSpace(c.PostForm("progress_at")); raw != "" {
+		progressAt, err = time.ParseInLocation("2006-01-02T15:04", raw, time.Local)
+		if err != nil {
+			renderNewPointPage(c, activityID, "when must be a valid date/time")
+			return
+		}
+	}
+
+	if _, err := createProgressPoint(ctx, db, userID, activityID, value, c.PostForm("note"), hoursLeft, progressAt); err != nil {
+		renderNewPointPage(c, activityID, err.Error())
+		return
+	}
+
+	c.Redirect(http.StatusFound, fmt.Sprintf("/web/progress/browse/%d", activityID))
+}
+
+// renderNewPointPage renders the standalone log-a-point page for
+// activityID, shared by BrowseNewPointWebHandler and the POST handler's
+// re-render-on-error path. formError is shown inline above the form when
+// non-empty.
+func renderNewPointPage(c *gin.Context, activityID int64, formError string) {
+	ctx := c.Request.Context()
+	db := gateways.DBFromContext(ctx)
+	if db == nil {
+		c.String(http.StatusInternalServerError, "Database not available")
+		return
+	}
+	userID := webui.CurrentUserID(c)
+
+	activity, err := db.GetActivity(ctx, activityID, userID)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to load activity: %v", err)
+		return
+	}
+	if activity == nil {
+		c.String(http.StatusNotFound, "activity not found")
+		return
+	}
+
+	backURL := fmt.Sprintf("/web/progress/browse/%d", activityID)
+	header, err := renderNewPointHeader(newPointHeaderData{
+		BackURL:      backURL,
+		ActivityName: activity.Name,
+		ProgressType: progressTypeLabel(activity.ProgressType),
+	})
+	if err != nil {
+		c.String(http.StatusInternalServerError, "render error: %v", err)
+		return
+	}
+
+	form, err := renderPointForm(pointFormData{
+		ActionURL: fmt.Sprintf("/web/progress/browse/%d/points", activityID),
+		Options:   progressValueOptions(activity.ProgressType),
+		Error:     formError,
+	})
+	if err != nil {
+		c.String(http.StatusInternalServerError, "render error: %v", err)
+		return
+	}
+
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Status(http.StatusOK)
+	if err := webui.RenderPage(c.Writer, webui.PageData{
+		Title:    "Progress — Log point — " + activity.Name,
+		Nav:      browseNav,
+		UserName: c.GetString("user_name"),
+		Content:  header + form,
+	}); err != nil {
+		c.String(http.StatusInternalServerError, "render error: %v", err)
+	}
+}
+
+// renderBrowseDetail renders the drill-down page for activityID.
+func renderBrowseDetail(c *gin.Context, activityID int64) {
+	ctx := c.Request.Context()
+	db := gateways.DBFromContext(ctx)
+	if db == nil {
+		c.String(http.StatusInternalServerError, "Database not available")
+		return
+	}
+	userID := webui.CurrentUserID(c)
 
 	activity, err := db.GetActivity(ctx, activityID, userID)
 	if err != nil {
@@ -344,7 +568,9 @@ func BrowseDetailWebHandler(c *gin.Context) {
 		Points:     chartPoints,
 	}
 
-	content := webui.RenderLineChart(chart) + webui.RenderDetailView(detail)
+	addPointButton := template.HTML(fmt.Sprintf(`<p><a href="/web/progress/browse/%d/points/new" role="button">+ Add</a></p>`, activityID))
+
+	content := addPointButton + webui.RenderLineChart(chart) + webui.RenderDetailView(detail)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)

@@ -4,12 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 16-09-26 — Add progress_points via web interface
-
-Add a web form/route to create `activity_progress` points directly from the browser (e.g. from `/web/progress/browse/{id}`), instead of requiring the MCP tool `create_progress_point` every time.
-
-**Why:** Right now the only way to log a check-in is through the MCP tool via the agent — a plain web form, same write-then-redirect pattern as `POST /web/goals/refresh`, would let quick logging happen without opening a chat session.
-
 ## 16-09-26 — Formalize activities & finance workflow, render as web doc, expose via MCP for session context
 
 Write up the actual process/conventions for how activities (`action/progress`) and finances (`action/money`) are meant to be used day-to-day — what the user does manually vs. what the agent does — as documentation, render it on the web, and expose it through MCP (e.g. a resource or a `get_workflow_docs`-style tool) so it can be injected into agent sessions as context.

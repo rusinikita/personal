@@ -29,6 +29,9 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **`ListActivities`'s `ORDER BY` follows what kind of status was asked for, not a specific bool**: the old switch (`FutureOnly` → `started_at ASC`, `ActiveOnly` → check-in urgency, default → `ended_at DESC`) becomes: `FutureOnly` → `started_at ASC` (unchanged); else if `Statuses` contains `active` or `paused` (an ongoing state) → the same check-in-urgency ordering; else (`finished`/`dropped`, a terminal state) → `ended_at DESC` (unchanged). A mixed `Statuses` list spanning both groups isn't a call any current caller makes, so it's not a case the ordering needs to handle
 - **Paused activities get their own page, not a section bolted onto Active**: `dashboard_web.go` needs no code change at all — since the active-list callers now filter `Statuses: [active]` explicitly, paused activities simply stop appearing there without dashboard code ever mentioning `paused`. `browse_web.go` gets a new `GET /web/progress/browse/paused` route, a fourth entry in `browseCrossLinks` alongside Active/Finished/Future, built with the same `renderActivityList` helper as Finished/Future (paginated, all `progress_type`s combined in one table) — not a fifth section appended to the active page's four `progress_type` tables. Its one differing column is "Deferred until" instead of Finished/Starts. `get_activity_list` returns a second output list, `paused_activities`, populated alongside `activities` when `active_only=true` — no new input parameter, so existing callers are unaffected
 - **Schema change follows the `last_point_at` precedent**: `status`/`deferred_until` are added to the `CREATE TABLE` block for fresh installs only, same as `last_point_at` was — no `ALTER TABLE` in this file. `CREATE TABLE IF NOT EXISTS` is a no-op against the already-deployed `activities` table, so on the live DB the column is added and backfilled (`UPDATE activities SET status = 'finished' WHERE ended_at IS NOT NULL`) by hand, once, out of band, exactly like `last_point_at` was — not through an automated migration statement that would otherwise re-run (and risk re-clobbering data) on every restart. No dedicated `status` index either — the table is small enough (personal, single-user) that one isn't worth the added migration surface
+- **Web point creation shares validation with the MCP tool, not a fork of it**: `POST /web/progress/browse/{id}/points` (new) and `create_progress_point` both funnel through the same internal validation (value range check, ownership via `GetActivity`, `progress_at` parse-or-default-to-now) before calling the shared `CreateProgress` repository method — one rule set, not two that can drift apart
+- **Logging a point is a standalone page, not a form bolted onto the drill-down**: `GET /web/progress/browse/{id}/points/new` is its own page, reached via a "+ Add" button at the top of the drill-down (`GET /web/progress/browse/{id}`) — it isn't embedded inline there, so it doesn't compete for space with the chart/history/stats and its header can clearly name which activity the point is for. The form has no `webui` equivalent to build on (`action/webui` has no form components at all), so it's a local `html/template` constant, matching the existing `goalsRefreshFormSrc` (`action/goals/dashboard_web.go`) / `importFormContentSrc` (`action/money/import_web.go`) convention — success redirects to `GET /web/progress/browse/{id}` (`RefreshWebHandler`-style write-then-redirect), a validation or DB failure re-renders the same standalone page in place with an inline error message instead (`import_web.go`-style)
+- **Value picked via a radio group with one fixed emoji-per-value metaphor per `progress_type`, not the full `get_progress_type_examples` set**: the MCP reflection flow benefits from offering several metaphors (weather/light/colors for mood, etc.) so the AI can pick whichever resonates, but a web form needs exactly one label per value, hardcoded per type in the web handler — mood uses "mood as weather" (☀️+2 ⛅+1 ☁️0 🌧️-1 ⛈️-2), habit_progress uses "habit consistency" (💪+2 👍+1 🤔0 😔-1 ❌-2), project_progress uses "project momentum" (🚀+2 ➡️+1 ⏸️0 ↩️-1 🔄-2), promise_state uses "promise awareness" with only 3 options since it has no ±2 anywhere in the domain (✅+1 💭0 🤷-1). No new domain model or MCP-facing change — `get_progress_type_examples`'s full multi-metaphor output is untouched, this is presentation-only data local to the web handler
 
 ## Architecture Diagrams
 
@@ -176,7 +179,22 @@ sequenceDiagram
     Handler->>DB: CountProgress(ActivityID: id) + ListProgress(ActivityID: id, Limit, Offset)
     DB-->>Handler: total count + one page of progress point history (value, note, progress_at)
     Handler->>Webui: RenderLineChart(full value-over-time series, unpaginated) + RenderTable(history page, Pagination) + RenderDetailView(Description: activity.Description)
-    Webui-->>Browser: HTML detail page with back link, description paragraph, and prev/next
+    Webui-->>Browser: HTML detail page with back link, description paragraph, prev/next,<br/>and a "+ Add" button
+
+    Browser->>Handler: GET /web/progress/browse/{id}/points/new
+    Handler->>DB: GetActivity(id) (ownership check)
+    Handler-->>Browser: standalone page: activity name + progress_type,<br/>radio-group form (emoji set picked by activity.progress_type)
+
+    Browser->>Handler: POST /web/progress/browse/{id}/points<br/>(value, note, hours_left, progress_at — form fields)
+    Handler->>DB: GetActivity(id) (ownership check)
+    Handler->>Handler: validate value range + parse/default progress_at<br/>(same rules as create_progress_point)
+    alt valid
+        Handler->>DB: CreateProgress(...)
+        DB-->>Handler: point id
+        Handler-->>Browser: 302 redirect to GET /web/progress/browse/{id}
+    else invalid / DB error
+        Handler-->>Browser: re-render the standalone points/new page in place with inline error message
+    end
 ```
 
 ## Database Schema
@@ -467,7 +485,13 @@ Lists activities where `status` is `finished` or `dropped` (`ListActivities(Stat
 Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true, Statuses: [active])`), same table shape (including the Description column) and pagination, with a back link.
 
 ### GET /web/progress/browse/{id}
-Drill-down for one activity: a `DetailView` with the activity's description (when set) shown as a paragraph under the title, stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), and a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1). Back link returns to wherever the user came from (main/finished/future list).
+Drill-down for one activity: a `DetailView` with the activity's description (when set) shown as a paragraph under the title, stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1), and a "+ Add" button at the top linking to `GET /web/progress/browse/{id}/points/new`. Back link returns to wherever the user came from (main/finished/future list).
+
+### GET /web/progress/browse/{id}/points/new
+Standalone "log a point" page, reached via the drill-down's "+ Add" button — not a form embedded on the drill-down itself. Header names the activity (name + `progress_type`) so it's unambiguous which activity the point is for. Form fields: `value` (radio group, one emoji per value, the set picked by the activity's `progress_type` — see Best Practices), `note` (optional text), `hours_left` (optional number), `progress_at` (optional datetime-local; blank defaults to now, same as the MCP tool). Posts to `POST /web/progress/browse/{id}/points` below. Back link returns to the drill-down.
+
+### POST /web/progress/browse/{id}/points
+Logs a progress point for the activity directly from the browser, instead of requiring the MCP tool `create_progress_point`. Runs the same value-range + ownership (`GetActivity`) validation as `create_progress_point` before calling `CreateProgress`. On success, redirects (302) to `GET /web/progress/browse/{id}` (write-then-redirect, same pattern as `POST /web/goals/refresh`); on validation or DB failure, re-renders the standalone `points/new` page in place with an inline error message instead of redirecting. Protected by `WebMiddleware` like the rest of `/web/progress/browse/*`.
 
 ## Dialog & Conversation Guidelines
 

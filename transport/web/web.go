@@ -52,6 +52,8 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/progress/browse/future", webAuth, dbMiddleware(db), progress.BrowseFutureWebHandler)
 	router.GET("/web/progress/browse/paused", webAuth, dbMiddleware(db), progress.BrowsePausedWebHandler)
 	router.GET("/web/progress/browse/:id", webAuth, dbMiddleware(db), progress.BrowseDetailWebHandler)
+	router.GET("/web/progress/browse/:id/points/new", webAuth, dbMiddleware(db), progress.BrowseNewPointWebHandler)
+	router.POST("/web/progress/browse/:id/points", webAuth, dbMiddleware(db), progress.BrowseCreatePointWebHandler)
 
 	// Workouts dashboard — read-only personal records list + per-exercise
 	// drill-down, built on the webui design system.
