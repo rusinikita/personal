@@ -204,44 +204,40 @@ sequenceDiagram
 
 ```sql
 -- Exercises table
-CREATE TABLE exercises (
+CREATE TABLE IF NOT EXISTS exercises (
     id SERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
     name VARCHAR(255) NOT NULL,
-    equipment_type VARCHAR(50) NOT NULL CHECK (equipment_type IN ('machine', 'barbell', 'dumbbells', 'bodyweight')),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    equipment_type VARCHAR(20) NOT NULL CHECK (equipment_type IN ('machine', 'barbell', 'dumbbells', 'bodyweight')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_exercises_name ON exercises(name);
+CREATE INDEX IF NOT EXISTS idx_exercises_user_id ON exercises(user_id);
 
 -- Workouts table
-CREATE TABLE workouts (
+CREATE TABLE IF NOT EXISTS workouts (
     id SERIAL PRIMARY KEY,
-    started_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    completed_at TIMESTAMP NULL,  -- NULL means active workout
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    user_id BIGINT NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL,
+    completed_at TIMESTAMPTZ NULL
 );
 
-CREATE INDEX idx_workouts_completed_at ON workouts(completed_at) WHERE completed_at IS NULL;
-CREATE INDEX idx_workouts_started_at ON workouts(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workouts_user_started ON workouts(user_id, started_at DESC);
 
 -- Sets table
-CREATE TABLE sets (
+CREATE TABLE IF NOT EXISTS sets (
     id SERIAL PRIMARY KEY,
-    workout_id INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
-    exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE RESTRICT,
-    reps INTEGER NULL,  -- For dynamic exercises
-    duration_seconds INTEGER NULL,  -- For static/isometric exercises
-    weight_kg DECIMAL(6,2) NULL,  -- NULL for bodyweight exercises
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    
-    CONSTRAINT chk_set_metrics CHECK (
-        reps IS NOT NULL OR duration_seconds IS NOT NULL
-    )
+    user_id BIGINT NOT NULL,
+    workout_id BIGINT NOT NULL REFERENCES workouts(id),
+    exercise_id BIGINT NOT NULL REFERENCES exercises(id),
+    reps BIGINT NULL,
+    duration_seconds BIGINT NULL,
+    weight_kg DECIMAL(5, 2) NULL,
+    created_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX idx_sets_workout_id ON sets(workout_id);
-CREATE INDEX idx_sets_exercise_id ON sets(exercise_id);
-CREATE INDEX idx_sets_created_at ON sets(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sets_user_created ON sets(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sets_exercise_user ON sets(exercise_id, user_id);
 ```
 
 ## Go Code Structure

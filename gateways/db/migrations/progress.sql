@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS life_parts (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_life_parts_user_id ON life_parts(user_id);
+CREATE INDEX IF NOT EXISTS idx_life_parts_user_id ON life_parts(user_id);
 
 -- Activities table
 CREATE TABLE IF NOT EXISTS activities (
@@ -26,10 +26,8 @@ CREATE TABLE IF NOT EXISTS activities (
     deferred_until TIMESTAMP -- NULL unless paused with a resume date
 );
 
-CREATE INDEX idx_activities_user_id ON activities(user_id);
-CREATE INDEX idx_activities_ended_at ON activities(ended_at) WHERE ended_at IS NULL;
-CREATE INDEX idx_activities_frequency ON activities(frequency_days);
-CREATE INDEX idx_activities_life_part_ids ON activities USING GIN(life_part_ids);
+CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id);
+CREATE INDEX IF NOT EXISTS idx_activities_life_part_ids ON activities USING GIN(life_part_ids);
 
 -- Activity progress table
 CREATE TABLE IF NOT EXISTS activity_progress (
@@ -45,7 +43,5 @@ CREATE TABLE IF NOT EXISTS activity_progress (
     CONSTRAINT fk_progress_activity FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_progress_activity_id ON activity_progress(activity_id);
-CREATE INDEX idx_progress_user_id ON activity_progress(user_id);
-CREATE INDEX idx_progress_progress_at ON activity_progress(progress_at DESC);
-CREATE INDEX idx_progress_created_at ON activity_progress(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_progress_activity_progress_at ON activity_progress(activity_id, progress_at DESC);
+CREATE INDEX IF NOT EXISTS idx_progress_user_progress_at ON activity_progress(user_id, progress_at DESC);
