@@ -4,12 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 16-09-26 — MCP tool to edit activity's progress_type (and remap existing point values)
-
-Extend `edit_activity` (or add a dedicated tool) to let `progress_type` of an existing activity be changed after creation, together with a way to rewrite the `value` of its existing `activity_progress` points to match the new type's -2..+2 semantics (see `get_progress_type_examples`) instead of leaving them stale under the old type's meaning.
-
-**Why:** `edit_activity` currently can't touch `progress_type` at all (`edit_activity_mcp.go` only accepts name/description/frequency_days/life_part_ids/started_at/ended_at) — activities created under the wrong type can't be reclassified without losing history. Real case: "Менторинг и консультации" and "Разговаривать с мамой и сестрой" are filed as `habit_progress` but are recurring commitments that fit `promise_state` much better. Goal is to give the agent a tool to do the reclassification itself, including remapping existing point values, not just a raw column update.
-
 ## 16-09-26 — Activity status field (active/paused/finished/dropped) + deferred_until
 
 Add an explicit `status` column to `activities` (`active | paused | finished | dropped`) instead of inferring state purely from `started_at`/`ended_at`, plus a `deferred_until` timestamp usable when an activity is paused. Paused activities disappear from the e-ink dashboard (`dashboard_web.go`) and are shown in their own separate section on both the web browse view (`browse_web.go`) and MCP's `get_activity_list`.

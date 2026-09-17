@@ -21,6 +21,7 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **Description shown, not just stored**: `Activity.Description` already rendered on the screenshot dashboard (`dashboard_web.go`'s `activity-desc` div) but was write-only on the browse view; the browse list's table now has a plain-text "Description" column (`webui.TableRow.Cells`, auto-escaped, no markdown rendering) and the drill-down detail view shows it as a paragraph under the title via `webui.DetailViewData.Description`, reusing the same `renderBoldMarkdown` helper the screenshot dashboard uses (see `webui-spec.md`)
 - **Active list is split by progress_type, finished/future are not**: `GET /web/progress/browse` (active only) renders four separate, unpaginated tables in fixed order — Habit, Promise, Project, Mood — each headed by its type name, via `ActivityFilter.ProgressType` (new field; empty = no filter, existing callers unaffected) added to the shared `applyActivityFilter`. A type with zero active activities still renders its heading with an empty table (`webui.TableData{Rows: nil}` renders a headers-only table), so the four-section layout stays predictable. Since each table is already scoped to one type, its "Type" column is dropped (`buildActivityTable`'s Type/`progressTypeLabel` column is only used by the still-combined finished/future tables). `GET /web/progress/browse/finished` and `/future` are untouched by this — single combined table across all types, same pagination as before — splitting was judged not worth the complexity for those lower-traffic views
 - **Progress point correction mirrors activity correction**: `edit_progress_point` follows the same partial-update pattern as `edit_activity` — pointer fields, at least one required, unspecified fields keep their current value — scoped to the point's owning activity/user the same way `create_progress_point` already verifies ownership before writing
+- **`progress_type` is just another editable field**: `edit_activity` gains `progress_type` alongside its existing pointer fields, same partial-update pattern (omit to keep current). No new remap mechanism — if old points need new values to match the new type's semantics, the AI calls the existing `edit_progress_point` tool per point, same as any other correction
 
 ## Architecture Diagrams
 
@@ -372,7 +373,7 @@ type ProgressRepository interface {
     GetActivity(ctx context.Context, activityID int64, userID int64) (*Activity, error)
     ListActivities(ctx context.Context, filter ActivityFilter) ([]Activity, error)
     CountActivities(ctx context.Context, filter ActivityFilter) (int, error) // same WHERE clauses as ListActivities, ignores Limit/Offset — for browse-view pagination
-    UpdateActivity(ctx context.Context, activity *Activity) error
+    UpdateActivity(ctx context.Context, activity *Activity) error // now also writes progress_type
     FinishActivity(ctx context.Context, activityID int64, userID int64, endedAt time.Time) error
 
     // Progress CRUD
@@ -394,7 +395,7 @@ type ProgressRepository interface {
 Creates a new trackable activity (name, progress_type, frequency_days, optional life_part_ids/description/started_at). Validates progress_type enum and frequency_days >= 1.
 
 ### edit_activity
-Updates mutable fields (name, description, frequency_days, life_part_ids) of an existing activity. At least one field required; unspecified fields keep their current value.
+Updates mutable fields (name, description, frequency_days, life_part_ids, progress_type, started_at, ended_at) of an existing activity. At least one field required; unspecified fields keep their current value. Changing `progress_type` does not touch existing points — use `edit_progress_point` per point to remap stale values to the new type's semantics.
 
 ### get_activity_list
 Lists active activities (ended_at IS NULL) ordered by frequency_days ASC, then name.

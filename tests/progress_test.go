@@ -695,6 +695,59 @@ func (s *IntegrationTestSuite) TestEditActivity_InvalidFrequencyDays() {
 	assert.Contains(s.T(), err.Error(), "frequency_days must be at least 1")
 }
 
+func (s *IntegrationTestSuite) TestEditActivity_UpdateProgressType() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Менторинг и консультации",
+		ProgressType:  domain.ProgressTypeHabitProgress,
+		FrequencyDays: 7,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	newType := string(domain.ProgressTypePromiseState)
+	_, output, err := progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID:   activityID,
+		ProgressType: &newType,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "promise_state", output.Activity.ProgressType)
+
+	// Verify persisted
+	updated, err := db.GetActivity(ctx, activityID, userID)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), domain.ProgressTypePromiseState, updated.ProgressType)
+}
+
+func (s *IntegrationTestSuite) TestEditActivity_InvalidProgressType() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+
+	activity := &domain.Activity{
+		UserID:        userID,
+		Name:          "Test",
+		ProgressType:  domain.ProgressTypeMood,
+		FrequencyDays: 1,
+		StartedAt:     time.Now(),
+	}
+	activityID, err := db.CreateActivity(ctx, activity)
+	require.NoError(s.T(), err)
+
+	invalidType := "not_a_real_type"
+	_, _, err = progress.EditActivity(ctx, nil, progress.EditActivityInput{
+		ActivityID:   activityID,
+		ProgressType: &invalidType,
+	})
+	require.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "invalid progress_type")
+}
+
 func (s *IntegrationTestSuite) TestEditProgressPoint_UpdateValue() {
 	ctx := s.Context()
 	db := s.Repo()
