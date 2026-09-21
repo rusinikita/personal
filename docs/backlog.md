@@ -28,30 +28,6 @@ Add workout-logging web pages under the existing Workouts section:
 - Start a workout screen mid-session and only have it become a real workout once a set is actually logged.
 - Pick the next exercise quickly from a frequency-sorted list instead of scanning the full exercise list.
 
-## 21-09-26 — Steps: formalize near-term tasks currently scattered in notes/descriptions
-
-Add a `steps` entity for the concrete, short-horizon tasks (days to a couple weeks out) that currently live informally in progress notes or activity descriptions.
-
-**Properties:** name, created_at, started_at, closed_at, activity_id (which activity it belongs to), created_by_progress_point_id (the progress point whose text spawned the step), completed_by_progress_point_id (the progress point whose checkbox closed it — null while active), type (`one_time`/`repeatable`), status (`active`/`finished`/`dropped`).
-
-- `one_time`: closed for good once checked off — a single next-action like "book the dentist appointment".
-- `repeatable`: a recurring next-action like "go for a run" or "grocery run" — closing it (via a progress-point checkbox) sets closed_at/completed_by_progress_point_id and status `finished` just like a one-time step; whether/how a finished repeatable step becomes actionable again (re-open it, or the user just re-adds it via the new-step text field next time) is a Stage 1 design question, not decided here.
-- `dropped` covers abandoning a step without ever completing it (no longer relevant, superseded, etc.), distinct from `finished`.
-
-**MCP tools:** `create_step`, `delete_step`, `edit_step` (rename, change status).
-
-**Display:** show each activity's open (`active`) steps on the active-projects page (compact, e.g. under the activity name) and in full on the single-project page.
-
-**Progress-point form integration:** when logging a new progress point for an activity, the form also shows a checkbox per currently-open step for that activity (checking one closes it, stamping completed_by_progress_point_id with the point being created) plus two `;`-separated text fields — one for new one-time steps, one for new repeatable steps — so a single "log progress" submission can close finished steps and queue the next ones in one action, instead of a separate edit afterward.
-
-**Why:** Near-term next-actions are currently unstructured (buried in note text or activity descriptions), so there's no way to see "what's next" for an activity without re-reading prose, no way to mark a step done, and no history of which progress point created or resolved which step. Formalizing this into its own entity, tied to the progress point that created/resolved it, makes next-actions queryable and keeps the progress-logging workflow (log a point, close done steps, queue new ones) in a single form.
-
-**Use cases:**
-- Open an activity and see its next 1-3 concrete actions without re-reading old notes.
-- Check off a done step and queue the next one(s) in the same form used to log the check-in itself.
-- Keep recurring next-actions (repeatable steps) visible across check-ins instead of retyping them each time.
-- Audit which progress point created a step and which one resolved it.
-
 ## 16-09-26 — Formalize activities & finance workflow, render as web doc, expose via MCP for session context
 
 Write up the actual process/conventions for how activities (`action/progress`) and finances (`action/money`) are meant to be used day-to-day — what the user does manually vs. what the agent does — as documentation, render it on the web, and expose it through MCP (e.g. a resource or a `get_workflow_docs`-style tool) so it can be injected into agent sessions as context.

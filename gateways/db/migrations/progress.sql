@@ -45,3 +45,24 @@ CREATE TABLE IF NOT EXISTS activity_progress (
 
 CREATE INDEX IF NOT EXISTS idx_progress_activity_progress_at ON activity_progress(activity_id, progress_at DESC);
 CREATE INDEX IF NOT EXISTS idx_progress_user_progress_at ON activity_progress(user_id, progress_at DESC);
+
+-- Steps table
+CREATE TABLE IF NOT EXISTS steps (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    activity_id BIGINT NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(20) NOT NULL CHECK (type IN ('one_time', 'repeatable')),
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'finished')),
+    created_by_progress_point_id BIGINT,
+    completed_by_progress_point_id BIGINT,
+    closed_at TIMESTAMP, -- NULL while status is active
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_step_activity FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE,
+    CONSTRAINT fk_step_created_by_point FOREIGN KEY (created_by_progress_point_id) REFERENCES activity_progress(id) ON DELETE SET NULL,
+    CONSTRAINT fk_step_completed_by_point FOREIGN KEY (completed_by_progress_point_id) REFERENCES activity_progress(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_steps_user_id ON steps(user_id);
+CREATE INDEX IF NOT EXISTS idx_steps_activity_id ON steps(activity_id);

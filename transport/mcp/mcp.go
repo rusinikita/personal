@@ -216,6 +216,10 @@ func Server(db gateways.DB, tg gateways.Telegram) *mcp.Server {
 	mcp.AddTool(server, &progress.DeleteProgressPointMCPDefinition, progress.DeleteProgressPoint)
 	mcp.AddTool(server, &progress.DeleteActivityMCPDefinition, progress.DeleteActivity)
 	mcp.AddTool(server, &progress.SearchProgressNotesMCPDefinition, progress.SearchProgressNotes)
+	mcp.AddTool(server, &progress.CreateStepMCPDefinition, progress.CreateStep)
+	mcp.AddTool(server, &progress.EditStepMCPDefinition, progress.EditStep)
+	mcp.AddTool(server, &progress.DeleteStepMCPDefinition, progress.DeleteStep)
+	mcp.AddTool(server, &progress.GetStepListMCPDefinition, progress.GetStepList)
 
 	// Money tracking tools
 	mcp.AddTool(server, &money.AddTransactionsMCPDefinition, money.AddTransactions)

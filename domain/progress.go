@@ -115,3 +115,47 @@ type ProgressNoteSearchFilter struct {
 	ValueMin   *int      `json:"value_min,omitempty"`
 	ValueMax   *int      `json:"value_max,omitempty"`
 }
+
+// StepType distinguishes a single next-action from a recurring one
+type StepType string
+
+const (
+	StepTypeOneTime    StepType = "one_time"
+	StepTypeRepeatable StepType = "repeatable"
+)
+
+// StepStatus is the lifecycle state of a step
+type StepStatus string
+
+const (
+	StepStatusActive   StepStatus = "active"
+	StepStatusFinished StepStatus = "finished"
+)
+
+// Step represents a concrete, short-horizon next-action tied to an activity
+type Step struct {
+	ID                         int64      `json:"id" db:"id"`
+	UserID                     int64      `json:"user_id" db:"user_id"`
+	ActivityID                 int64      `json:"activity_id" db:"activity_id" jsonschema:"Activity this step belongs to"`
+	Name                       string     `json:"name" db:"name" jsonschema:"Short next-action description"`
+	Type                       StepType   `json:"type" db:"type" jsonschema:"one_time|repeatable"`
+	Status                     StepStatus `json:"status" db:"status" jsonschema:"active|finished"`
+	CreatedByProgressPointID   *int64     `json:"created_by_progress_point_id,omitempty" db:"created_by_progress_point_id" jsonschema:"Progress point whose text spawned this step (null if created via create_step directly)"`
+	CompletedByProgressPointID *int64     `json:"completed_by_progress_point_id,omitempty" db:"completed_by_progress_point_id" jsonschema:"Progress point whose checkbox closed this step (null while active)"`
+	ClosedAt                   *time.Time `json:"closed_at,omitempty" db:"closed_at"`
+	CreatedAt                  time.Time  `json:"created_at" db:"created_at"`
+}
+
+// StepFilter defines query parameters for listing steps
+type StepFilter struct {
+	UserID     int64        `json:"user_id"`
+	ActivityID int64        `json:"activity_id,omitempty" jsonschema:"Filter by activity ID (0 = all activities)"`
+	Statuses   []StepStatus `json:"statuses,omitempty" jsonschema:"Only return steps whose status is one of these (empty = no status filter)"`
+}
+
+// StepWithActivity is Step enriched with activity name, used by get_step_list.
+// Only ever contains steps whose activity is status=active — see ListStepsWithActivity.
+type StepWithActivity struct {
+	Step
+	ActivityName string `json:"activity_name" db:"activity_name"`
+}

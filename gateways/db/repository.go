@@ -2062,6 +2062,230 @@ func (r *repository) SearchProgressNotes(ctx context.Context, filter domain.Prog
 	return results, nil
 }
 
+func (r *repository) CreateStep(ctx context.Context, step *domain.Step) (int64, error) {
+	query := `
+		INSERT INTO steps (user_id, activity_id, name, type, status, created_by_progress_point_id, completed_by_progress_point_id, closed_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id`
+
+	now := time.Now()
+	step.CreatedAt = now
+	if step.Status == "" {
+		step.Status = domain.StepStatusActive
+	}
+
+	var id int64
+	err := r.db.QueryRow(ctx, query,
+		step.UserID,
+		step.ActivityID,
+		step.Name,
+		step.Type,
+		step.Status,
+		step.CreatedByProgressPointID,
+		step.CompletedByProgressPointID,
+		step.ClosedAt,
+		step.CreatedAt,
+	).Scan(&id)
+
+	return id, err
+}
+
+func (r *repository) GetStep(ctx context.Context, stepID int64, userID int64) (*domain.Step, error) {
+	query := `
+		SELECT id, user_id, activity_id, name, type, status, created_by_progress_point_id, completed_by_progress_point_id, closed_at, created_at
+		FROM steps
+		WHERE id = $1 AND user_id = $2`
+
+	var st domain.Step
+	err := r.db.QueryRow(ctx, query, stepID, userID).Scan(
+		&st.ID,
+		&st.UserID,
+		&st.ActivityID,
+		&st.Name,
+		&st.Type,
+		&st.Status,
+		&st.CreatedByProgressPointID,
+		&st.CompletedByProgressPointID,
+		&st.ClosedAt,
+		&st.CreatedAt,
+	)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &st, nil
+}
+
+// applyStepFilter adds the WHERE clauses shared by ListSteps and
+// ListStepsWithActivity's step-side filtering.
+func applyStepFilter(query squirrel.SelectBuilder, filter domain.StepFilter) squirrel.SelectBuilder {
+	query = query.Where(squirrel.Eq{"user_id": filter.UserID})
+
+	if filter.ActivityID != 0 {
+		query = query.Where(squirrel.Eq{"activity_id": filter.ActivityID})
+	}
+
+	if len(filter.Statuses) > 0 {
+		query = query.Where(squirrel.Eq{"status": filter.Statuses})
+	}
+
+	return query
+}
+
+func (r *repository) ListSteps(ctx context.Context, filter domain.StepFilter) ([]domain.Step, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := applyStepFilter(psql.Select(
+		"id", "user_id", "activity_id", "name", "type", "status",
+		"created_by_progress_point_id", "completed_by_progress_point_id", "closed_at", "created_at",
+	).From("steps"), filter).OrderBy("created_at ASC")
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query steps: %w", err)
+	}
+	defer rows.Close()
+
+	var steps []domain.Step
+	for rows.Next() {
+		var st domain.Step
+		err := rows.Scan(
+			&st.ID,
+			&st.UserID,
+			&st.ActivityID,
+			&st.Name,
+			&st.Type,
+			&st.Status,
+			&st.CreatedByProgressPointID,
+			&st.CompletedByProgressPointID,
+			&st.ClosedAt,
+			&st.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan step: %w", err)
+		}
+		steps = append(steps, st)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return steps, nil
+}
+
+// ListStepsWithActivity always forces activities.status='active', regardless
+// of filter.Statuses (which still filters steps.status) — a step whose
+// activity is paused/finished/dropped must never be visible via
+// get_step_list, matching the web browse/drill-down visibility rule.
+func (r *repository) ListStepsWithActivity(ctx context.Context, filter domain.StepFilter) ([]domain.StepWithActivity, error) {
+	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	query := psql.Select(
+		"s.id", "s.user_id", "s.activity_id", "s.name", "s.type", "s.status",
+		"s.created_by_progress_point_id", "s.completed_by_progress_point_id", "s.closed_at", "s.created_at",
+		"a.name AS activity_name",
+	).
+		From("steps s").
+		Join("activities a ON a.id = s.activity_id").
+		Where(squirrel.Eq{"s.user_id": filter.UserID}).
+		Where(squirrel.Eq{"a.status": domain.ActivityStatusActive}).
+		OrderBy("s.created_at ASC")
+
+	if filter.ActivityID != 0 {
+		query = query.Where(squirrel.Eq{"s.activity_id": filter.ActivityID})
+	}
+
+	if len(filter.Statuses) > 0 {
+		query = query.Where(squirrel.Eq{"s.status": filter.Statuses})
+	}
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query steps: %w", err)
+	}
+	defer rows.Close()
+
+	var results []domain.StepWithActivity
+	for rows.Next() {
+		var st domain.StepWithActivity
+		err := rows.Scan(
+			&st.ID,
+			&st.UserID,
+			&st.ActivityID,
+			&st.Name,
+			&st.Type,
+			&st.Status,
+			&st.CreatedByProgressPointID,
+			&st.CompletedByProgressPointID,
+			&st.ClosedAt,
+			&st.CreatedAt,
+			&st.ActivityName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan step: %w", err)
+		}
+		results = append(results, st)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return results, nil
+}
+
+func (r *repository) UpdateStep(ctx context.Context, step *domain.Step) error {
+	query := `
+		UPDATE steps
+		SET name = $1, status = $2, closed_at = $3, completed_by_progress_point_id = $4
+		WHERE id = $5 AND user_id = $6`
+
+	result, err := r.db.Exec(ctx, query,
+		step.Name,
+		step.Status,
+		step.ClosedAt,
+		step.CompletedByProgressPointID,
+		step.ID,
+		step.UserID,
+	)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("step not found")
+	}
+
+	return nil
+}
+
+func (r *repository) DeleteStep(ctx context.Context, stepID int64, userID int64) error {
+	result, err := r.db.Exec(ctx, `DELETE FROM steps WHERE id = $1 AND user_id = $2`, stepID, userID)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("step not found")
+	}
+
+	return nil
+}
+
 func (r *repository) GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error) {
 	query := `
 		SELECT COUNT(*) as count,

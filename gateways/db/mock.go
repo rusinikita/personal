@@ -32,10 +32,10 @@ func (m *MockRepository) ListActivities(_ context.Context, filter domain.Activit
 	now := time.Now()
 	yesterday := now.Add(-20 * time.Hour)
 	activities := []domain.Activity{
-		{ID: 1, UserID: filter.UserID, Name: "Ship personal tracker", Description: "**Refactor** web transport to the shared `action/webui` design system, replace the ad-hoc screenshot dashboards one subdomain at a time, and retire the old per-page CSS/JS once every view has a browse/detail equivalent built on the new components.", ProgressType: domain.ProgressTypeProjectProgress, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -14), LastPointAt: &yesterday},
-		{ID: 2, UserID: filter.UserID, Name: "Gym", Description: "Push/pull/legs", ProgressType: domain.ProgressTypeHabitProgress, FrequencyDays: 2, StartedAt: now.AddDate(0, 0, -60), LastPointAt: &yesterday},
-		{ID: 3, UserID: filter.UserID, Name: "Mood check-in", ProgressType: domain.ProgressTypeMood, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -90), LastPointAt: &now},
-		{ID: 4, UserID: filter.UserID, Name: "Call mom", ProgressType: domain.ProgressTypePromiseState, FrequencyDays: 7, StartedAt: now.AddDate(0, 0, -30), LastPointAt: &yesterday},
+		{ID: 1, UserID: filter.UserID, Name: "Ship personal tracker", Description: "**Refactor** web transport to the shared `action/webui` design system, replace the ad-hoc screenshot dashboards one subdomain at a time, and retire the old per-page CSS/JS once every view has a browse/detail equivalent built on the new components.", ProgressType: domain.ProgressTypeProjectProgress, Status: domain.ActivityStatusActive, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -14), LastPointAt: &yesterday},
+		{ID: 2, UserID: filter.UserID, Name: "Gym", Description: "Push/pull/legs", ProgressType: domain.ProgressTypeHabitProgress, Status: domain.ActivityStatusActive, FrequencyDays: 2, StartedAt: now.AddDate(0, 0, -60), LastPointAt: &yesterday},
+		{ID: 3, UserID: filter.UserID, Name: "Mood check-in", ProgressType: domain.ProgressTypeMood, Status: domain.ActivityStatusActive, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -90), LastPointAt: &now},
+		{ID: 4, UserID: filter.UserID, Name: "Call mom", ProgressType: domain.ProgressTypePromiseState, Status: domain.ActivityStatusActive, FrequencyDays: 7, StartedAt: now.AddDate(0, 0, -30), LastPointAt: &yesterday},
 	}
 	if filter.ProgressType == "" {
 		return activities, nil
@@ -80,6 +80,67 @@ func (m *MockRepository) CountProgress(_ context.Context, _ domain.ProgressFilte
 
 func (m *MockRepository) GetTrendStats(_ context.Context, _ int64, _ int64, _ time.Time, _ time.Time) (domain.TrendStats, error) {
 	return domain.TrendStats{Count: 5, Average: 1.2, Percentile80: 2}, nil
+}
+
+// ListSteps returns fixture steps for activities 1 ("Ship personal tracker")
+// and 2 ("Gym") so the browse list, drill-down, and "log a point" form all
+// have something to render in the preview — filtered the same way the real
+// repository filters by ActivityID/Statuses.
+func (m *MockRepository) ListSteps(_ context.Context, filter domain.StepFilter) ([]domain.Step, error) {
+	now := time.Now()
+	all := []domain.Step{
+		{ID: 1, UserID: filter.UserID, ActivityID: 1, Name: "Wire up steps UI", Type: domain.StepTypeOneTime, Status: domain.StepStatusActive, CreatedAt: now.AddDate(0, 0, -2)},
+		{ID: 2, UserID: filter.UserID, ActivityID: 1, Name: "Write E2E tests", Type: domain.StepTypeOneTime, Status: domain.StepStatusActive, CreatedAt: now.AddDate(0, 0, -1)},
+		{ID: 3, UserID: filter.UserID, ActivityID: 2, Name: "Buy protein powder", Type: domain.StepTypeRepeatable, Status: domain.StepStatusActive, CreatedAt: now.AddDate(0, 0, -3)},
+	}
+
+	steps := make([]domain.Step, 0, len(all))
+	for _, st := range all {
+		if filter.ActivityID != 0 && st.ActivityID != filter.ActivityID {
+			continue
+		}
+		if len(filter.Statuses) > 0 && !stepStatusIn(st.Status, filter.Statuses) {
+			continue
+		}
+		steps = append(steps, st)
+	}
+	return steps, nil
+}
+
+// CreateProgress, CreateStep and UpdateStep are write no-ops (the mock has
+// no state to persist into) — added so BrowseCreatePointWebHandler's POST
+// (which calls all three: the point itself, then closing/queuing steps)
+// doesn't panic on the embedded repository's nil db connection, same
+// "deliberate signal" pattern as every other MockRepository override here.
+func (m *MockRepository) CreateProgress(_ context.Context, _ *domain.ActivityPoint) (int64, error) {
+	return 999, nil
+}
+
+func (m *MockRepository) CreateStep(_ context.Context, _ *domain.Step) (int64, error) {
+	return 999, nil
+}
+
+func (m *MockRepository) UpdateStep(_ context.Context, _ *domain.Step) error {
+	return nil
+}
+
+func stepStatusIn(status domain.StepStatus, statuses []domain.StepStatus) bool {
+	for _, s := range statuses {
+		if s == status {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *MockRepository) GetStep(ctx context.Context, stepID int64, userID int64) (*domain.Step, error) {
+	steps, _ := m.ListSteps(ctx, domain.StepFilter{UserID: userID})
+	for _, st := range steps {
+		if st.ID == stepID {
+			return &st, nil
+		}
+	}
+	return nil, nil
 }
 
 // mockExercises is the fixed set of exercises the workouts dashboard mock

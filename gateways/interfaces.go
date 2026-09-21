@@ -92,6 +92,14 @@ type DB interface {
 	GetTrendStats(ctx context.Context, activityID int64, userID int64, from time.Time, to time.Time) (domain.TrendStats, error)
 	SearchProgressNotes(ctx context.Context, filter domain.ProgressNoteSearchFilter) ([]domain.ActivityPointWithActivity, error)
 
+	// Step CRUD (next-action steps owned by an activity, see progress-spec.md)
+	CreateStep(ctx context.Context, step *domain.Step) (int64, error)
+	GetStep(ctx context.Context, stepID int64, userID int64) (*domain.Step, error)
+	ListSteps(ctx context.Context, filter domain.StepFilter) ([]domain.Step, error)                         // used for progress-point form checkboxes and browse/drill-down display; caller is expected to only call this for an activity it already knows is status=active
+	ListStepsWithActivity(ctx context.Context, filter domain.StepFilter) ([]domain.StepWithActivity, error) // used by get_step_list; joins to activities and always filters activities.status='active' server-side, regardless of filter.Statuses
+	UpdateStep(ctx context.Context, step *domain.Step) error                                                // rename, status, closed_at, completed_by_progress_point_id — caller has already merged partial-update fields onto a fetched step
+	DeleteStep(ctx context.Context, stepID int64, userID int64) error
+
 	// Goals tracking methods (see docs/functions/goals-spec.md)
 
 	// CreateGoal and UpdateGoal are the only two write methods on the whole

@@ -6,6 +6,7 @@
 package progress
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -65,10 +66,17 @@ func progressValueOptions(pt domain.ProgressType) []progressValueOption {
 	}
 }
 
+// pointFormStepOption is one open-step checkbox in the "log a point" form.
+type pointFormStepOption struct {
+	ID   int64
+	Name string
+}
+
 // pointFormData feeds pointFormTemplate for one activity's drill-down page.
 type pointFormData struct {
 	ActionURL string
 	Options   []progressValueOption
+	Steps     []pointFormStepOption
 	Error     string
 }
 
@@ -87,10 +95,22 @@ const pointFormContentSrc = `{{if .Error}}<p style="color: var(--pico-del-color)
     </fieldset>
     <label for="point-note">Note</label>
     <textarea id="point-note" name="note" rows="3" placeholder="optional"></textarea>
-    <label for="point-hours-left">Hours left</label>
-    <input type="number" id="point-hours-left" name="hours_left" step="0.5" placeholder="optional, for projects">
-    <label for="point-progress-at">When</label>
-    <input type="datetime-local" id="point-progress-at" name="progress_at" placeholder="optional, defaults to now">
+    {{if .Steps}}<fieldset>
+        <legend>Close steps</legend>
+        {{range .Steps}}<label style="display:block"><input type="checkbox" name="close_step_ids" value="{{.ID}}"> {{.Name}}</label>
+        {{end}}
+    </fieldset>{{end}}
+    <details>
+        <summary>More options</summary>
+        <label for="point-hours-left">Hours left</label>
+        <input type="number" id="point-hours-left" name="hours_left" step="0.5" placeholder="optional, for projects">
+        <label for="point-progress-at">When</label>
+        <input type="datetime-local" id="point-progress-at" name="progress_at" placeholder="optional, defaults to now">
+        <label for="point-new-one-time-steps">New one-time steps</label>
+        <input type="text" id="point-new-one-time-steps" name="new_one_time_steps" placeholder="separate multiple with ;">
+        <label for="point-new-repeatable-steps">New repeatable steps</label>
+        <input type="text" id="point-new-repeatable-steps" name="new_repeatable_steps" placeholder="separate multiple with ;">
+    </details>
     <button type="submit">Log point</button>
 </form>`
 
@@ -144,11 +164,64 @@ func buildPagination(page, totalCount int, baseURL string) *webui.PaginationData
 // column (last update / finished / starts).
 type activityExtraColumn func(a domain.Activity) string
 
+// stepsCompactCell formats an activity's open steps for their own "Steps"
+// table column — TableRow.Cells is plain []string (no webui component
+// renders rich HTML per-cell), so this stays plain text: one line per step,
+// joined with "\n" (components/table.html renders cells with
+// white-space:pre-line so the breaks actually show instead of collapsing
+// into one run of text), ☑️ marking each and 🔁 added only for repeatable
+// ones (one_time is the unmarked default).
+func stepsCompactCell(steps []domain.Step) string {
+	if len(steps) == 0 {
+		return ""
+	}
+	names := make([]string, len(steps))
+	for i, st := range steps {
+		name := "☑️ " + st.Name
+		if st.Type == domain.StepTypeRepeatable {
+			name += " 🔁"
+		}
+		names[i] = name
+	}
+	return strings.Join(names, "\n")
+}
+
+// renderStepsList renders an activity's open steps as a labeled list for the
+// drill-down page (unlike stepsCompactCell's one-line browse summary) —
+// a heading plus one row per step marked with ☑️, styled by .webui-steps* in
+// layout.html so it reads as a real checklist instead of blending into the
+// description paragraph. one_time is the unmarked default (most steps are),
+// so only repeatable gets a 🔁 marker — no badge text, since the emoji alone
+// reads clearly next to a short step name. Empty when there are no open
+// steps, so it's safe to append unconditionally.
+func renderStepsList(steps []domain.Step) template.HTML {
+	if len(steps) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="webui-steps-heading">Open steps</div><ul class="webui-steps">`)
+	for _, st := range steps {
+		b.WriteString("<li>☑️ ")
+		b.WriteString(template.HTMLEscapeString(st.Name))
+		if st.Type == domain.StepTypeRepeatable {
+			b.WriteString(` <span class="webui-step-type" title="repeatable">🔁</span>`)
+		}
+		b.WriteString("</li>")
+	}
+	b.WriteString("</ul>")
+	return template.HTML(b.String())
+}
+
 // buildActivityTable builds one list's table. includeType is false for the
 // active list's per-progress_type sections (see activeSectionOrder), where
 // the section heading already says the type — a Type column there would
 // just repeat it. The still-combined finished/future lists pass true.
-func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, includeType bool, pagination *webui.PaginationData) webui.TableData {
+// stepsByActivity being non-nil (only the active list passes one — see
+// stepsCompactCell) adds a trailing "Steps" column; passing nil (finished/
+// future/paused) omits it entirely, since those activities never have
+// visible steps.
+func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, includeType bool, stepsByActivity map[int64][]domain.Step, pagination *webui.PaginationData) webui.TableData {
+	showSteps := stepsByActivity != nil
 	rows := make([]webui.TableRow, 0, len(activities))
 	for _, a := range activities {
 		cells := []string{a.Name, a.Description}
@@ -156,6 +229,9 @@ func buildActivityTable(activities []domain.Activity, extraLabel string, extra a
 			cells = append(cells, progressTypeLabel(a.ProgressType))
 		}
 		cells = append(cells, formatFrequency(a.FrequencyDays), extra(a))
+		if showSteps {
+			cells = append(cells, stepsCompactCell(stepsByActivity[a.ID]))
+		}
 		rows = append(rows, webui.TableRow{
 			Cells:   cells,
 			LinkURL: fmt.Sprintf("/web/progress/browse/%d", a.ID),
@@ -166,6 +242,9 @@ func buildActivityTable(activities []domain.Activity, extraLabel string, extra a
 		columns = append(columns, webui.TableColumn{Label: "Type"})
 	}
 	columns = append(columns, webui.TableColumn{Label: "Frequency"}, webui.TableColumn{Label: extraLabel})
+	if showSteps {
+		columns = append(columns, webui.TableColumn{Label: "Steps"})
+	}
 	return webui.TableData{
 		Columns:    columns,
 		Rows:       rows,
@@ -219,7 +298,7 @@ func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, bas
 		return
 	}
 
-	table := buildActivityTable(activities, extraLabel, extra, true, buildPagination(page, total, baseURL))
+	table := buildActivityTable(activities, extraLabel, extra, true, nil, buildPagination(page, total, baseURL))
 	content := browseCrossLinks + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
@@ -279,7 +358,18 @@ func BrowseWebHandler(c *gin.Context) {
 			c.String(http.StatusInternalServerError, "Failed to list activities: %v", err)
 			return
 		}
-		table := buildActivityTable(activities, "Last update", extra, false, nil)
+		stepsByActivity := make(map[int64][]domain.Step, len(activities))
+		for _, a := range activities {
+			steps, err := db.ListSteps(ctx, domain.StepFilter{UserID: userID, ActivityID: a.ID, Statuses: []domain.StepStatus{domain.StepStatusActive}})
+			if err != nil {
+				c.String(http.StatusInternalServerError, "Failed to list steps: %v", err)
+				return
+			}
+			if len(steps) > 0 {
+				stepsByActivity[a.ID] = steps
+			}
+		}
+		table := buildActivityTable(activities, "Last update", extra, false, stepsByActivity, nil)
 		content += template.HTML(fmt.Sprintf("<h3>%s</h3>", section.Heading)) + webui.RenderTable(table)
 	}
 
@@ -401,12 +491,72 @@ func BrowseCreatePointWebHandler(c *gin.Context) {
 		}
 	}
 
-	if _, err := createProgressPoint(ctx, db, userID, activityID, value, c.PostForm("note"), hoursLeft, progressAt); err != nil {
+	point, err := createProgressPoint(ctx, db, userID, activityID, value, c.PostForm("note"), hoursLeft, progressAt)
+	if err != nil {
+		renderNewPointPage(c, activityID, err.Error())
+		return
+	}
+
+	if err := applyStepFormActions(ctx, db, userID, activityID, point.ID,
+		c.PostFormArray("close_step_ids"), c.PostForm("new_one_time_steps"), c.PostForm("new_repeatable_steps")); err != nil {
 		renderNewPointPage(c, activityID, err.Error())
 		return
 	}
 
 	c.Redirect(http.StatusFound, fmt.Sprintf("/web/progress/browse/%d", activityID))
+}
+
+// applyStepFormActions closes every checked step and queues new steps from
+// the two ";"-split text fields, after a progress point is logged from the
+// web form — one form submission, one redirect, same requirement as the
+// point itself (see progress-spec.md Best Practices).
+func applyStepFormActions(ctx context.Context, db gateways.DB, userID, activityID, pointID int64, closeStepIDs []string, newOneTime, newRepeatable string) error {
+	now := time.Now()
+	for _, raw := range closeStepIDs {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid step id %q", raw)
+		}
+		step, err := db.GetStep(ctx, id, userID)
+		if err != nil {
+			return fmt.Errorf("database error: %w", err)
+		}
+		if step == nil {
+			return fmt.Errorf("step not found")
+		}
+		step.Status = domain.StepStatusFinished
+		step.ClosedAt = &now
+		step.CompletedByProgressPointID = &pointID
+		if err := db.UpdateStep(ctx, step); err != nil {
+			return fmt.Errorf("failed to close step: %w", err)
+		}
+	}
+
+	if err := queueNewSteps(ctx, db, userID, activityID, pointID, newOneTime, domain.StepTypeOneTime); err != nil {
+		return err
+	}
+	return queueNewSteps(ctx, db, userID, activityID, pointID, newRepeatable, domain.StepTypeRepeatable)
+}
+
+// queueNewSteps splits raw on ";" and creates one active step per non-empty
+// entry, tied back to pointID via CreatedByProgressPointID.
+func queueNewSteps(ctx context.Context, db gateways.DB, userID, activityID, pointID int64, raw string, stepType domain.StepType) error {
+	for _, name := range strings.Split(raw, ";") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, err := db.CreateStep(ctx, &domain.Step{
+			UserID:                   userID,
+			ActivityID:               activityID,
+			Name:                     name,
+			Type:                     stepType,
+			CreatedByProgressPointID: &pointID,
+		}); err != nil {
+			return fmt.Errorf("failed to create step: %w", err)
+		}
+	}
+	return nil
 }
 
 // renderNewPointPage renders the standalone log-a-point page for
@@ -443,9 +593,22 @@ func renderNewPointPage(c *gin.Context, activityID int64, formError string) {
 		return
 	}
 
+	var stepOptions []pointFormStepOption
+	if activity.Status == domain.ActivityStatusActive {
+		steps, err := db.ListSteps(ctx, domain.StepFilter{UserID: userID, ActivityID: activityID, Statuses: []domain.StepStatus{domain.StepStatusActive}})
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Failed to load steps: %v", err)
+			return
+		}
+		for _, st := range steps {
+			stepOptions = append(stepOptions, pointFormStepOption{ID: st.ID, Name: st.Name})
+		}
+	}
+
 	form, err := renderPointForm(pointFormData{
 		ActionURL: fmt.Sprintf("/web/progress/browse/%d/points", activityID),
 		Options:   progressValueOptions(activity.ProgressType),
+		Steps:     stepOptions,
 		Error:     formError,
 	})
 	if err != nil {
@@ -516,6 +679,16 @@ func renderBrowseDetail(c *gin.Context, activityID int64) {
 		chartPoints[len(allPoints)-1-i] = webui.LineChartPoint{Label: point.ProgressAt.Format("2006-01-02"), Value: float64(point.Value)}
 	}
 
+	var stepsHTML template.HTML
+	if activity.Status == domain.ActivityStatusActive {
+		steps, err := db.ListSteps(ctx, domain.StepFilter{UserID: userID, ActivityID: activityID, Statuses: []domain.StepStatus{domain.StepStatusActive}})
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Failed to load steps: %v", err)
+			return
+		}
+		stepsHTML = renderStepsList(steps)
+	}
+
 	total, err := db.CountProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID})
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to count progress history: %v", err)
@@ -542,7 +715,7 @@ func renderBrowseDetail(c *gin.Context, activityID int64) {
 
 	detail := webui.DetailViewData{
 		Title:       activity.Name,
-		Description: renderBoldMarkdown(activity.Description),
+		Description: renderBoldMarkdown(activity.Description) + stepsHTML,
 		BackURL:     "/web/progress/browse",
 		BackText:    "Back to active list",
 		Stats: []webui.StatTileData{
