@@ -77,6 +77,7 @@ type DB interface {
 	GetDailyTransactionSummary(ctx context.Context, userID int64, from, to time.Time) ([]domain.DailySummary, error)
 
 	// Progress tracking methods
+	ListLifeParts(ctx context.Context, userID int64) ([]domain.LifePart, error) // read-only; life_parts rows are inserted by hand, no write method yet
 	CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error)
 	ListActivities(ctx context.Context, filter domain.ActivityFilter) ([]domain.Activity, error)
 	CountActivities(ctx context.Context, filter domain.ActivityFilter) (int, error)

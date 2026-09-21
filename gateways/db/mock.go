@@ -32,10 +32,10 @@ func (m *MockRepository) ListActivities(_ context.Context, filter domain.Activit
 	now := time.Now()
 	yesterday := now.Add(-20 * time.Hour)
 	activities := []domain.Activity{
-		{ID: 1, UserID: filter.UserID, Name: "Ship personal tracker", Description: "**Refactor** web transport to the shared `action/webui` design system, replace the ad-hoc screenshot dashboards one subdomain at a time, and retire the old per-page CSS/JS once every view has a browse/detail equivalent built on the new components.", ProgressType: domain.ProgressTypeProjectProgress, Status: domain.ActivityStatusActive, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -14), LastPointAt: &yesterday},
-		{ID: 2, UserID: filter.UserID, Name: "Gym", Description: "Push/pull/legs", ProgressType: domain.ProgressTypeHabitProgress, Status: domain.ActivityStatusActive, FrequencyDays: 2, StartedAt: now.AddDate(0, 0, -60), LastPointAt: &yesterday},
+		{ID: 1, UserID: filter.UserID, LifePartIDs: []int64{1}, Name: "Ship personal tracker", Description: "**Refactor** web transport to the shared `action/webui` design system, replace the ad-hoc screenshot dashboards one subdomain at a time, and retire the old per-page CSS/JS once every view has a browse/detail equivalent built on the new components.", ProgressType: domain.ProgressTypeProjectProgress, Status: domain.ActivityStatusActive, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -14), LastPointAt: &yesterday},
+		{ID: 2, UserID: filter.UserID, LifePartIDs: []int64{2}, Name: "Gym", Description: "Push/pull/legs", ProgressType: domain.ProgressTypeHabitProgress, Status: domain.ActivityStatusActive, FrequencyDays: 2, StartedAt: now.AddDate(0, 0, -60), LastPointAt: &yesterday},
 		{ID: 3, UserID: filter.UserID, Name: "Mood check-in", ProgressType: domain.ProgressTypeMood, Status: domain.ActivityStatusActive, FrequencyDays: 1, StartedAt: now.AddDate(0, 0, -90), LastPointAt: &now},
-		{ID: 4, UserID: filter.UserID, Name: "Call mom", ProgressType: domain.ProgressTypePromiseState, Status: domain.ActivityStatusActive, FrequencyDays: 7, StartedAt: now.AddDate(0, 0, -30), LastPointAt: &yesterday},
+		{ID: 4, UserID: filter.UserID, LifePartIDs: []int64{2, 3}, Name: "Call mom", ProgressType: domain.ProgressTypePromiseState, Status: domain.ActivityStatusActive, FrequencyDays: 7, StartedAt: now.AddDate(0, 0, -30), LastPointAt: &yesterday},
 	}
 	if filter.ProgressType == "" {
 		return activities, nil
@@ -62,6 +62,18 @@ func (m *MockRepository) ListProgress(_ context.Context, filter domain.ProgressF
 
 func (m *MockRepository) CountActivities(_ context.Context, _ domain.ActivityFilter) (int, error) {
 	return 4, nil
+}
+
+// ListLifeParts returns fixture life parts referenced by ListActivities'
+// fixture activities (1: "Ship personal tracker", 2: "Gym" and "Call mom",
+// 3: "Call mom" also) so the browse list's life_part chips have something to
+// render in the preview.
+func (m *MockRepository) ListLifeParts(_ context.Context, userID int64) ([]domain.LifePart, error) {
+	return []domain.LifePart{
+		{ID: 1, UserID: userID, Name: "Career", Description: "Work, side projects, professional growth"},
+		{ID: 2, UserID: userID, Name: "Health", Description: "Physical fitness, sleep, nutrition"},
+		{ID: 3, UserID: userID, Name: "Family", Description: "Parents, siblings, extended family"},
+	}, nil
 }
 
 func (m *MockRepository) GetActivity(_ context.Context, activityID int64, userID int64) (*domain.Activity, error) {

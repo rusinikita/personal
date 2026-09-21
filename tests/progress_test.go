@@ -19,6 +19,74 @@ func (s *IntegrationTestSuite) TestGetActivityList_Empty() {
 	assert.Empty(s.T(), output.Activities)
 }
 
+// TestGetActivityList_IncludesLifePartIDs covers the life_part_ids field
+// added to get_activity_list's per-activity output — previously
+// create_activity/edit_activity could write life_part_ids but nothing let
+// the AI read them back.
+func (s *IntegrationTestSuite) TestGetActivityList_IncludesLifePartIDs() {
+	ctx := s.Context()
+	db := s.Repo()
+	userID := s.UserID()
+	now := time.Now()
+
+	careerID := s.createLifePart(ctx, "Career", "Work and professional growth")
+
+	categorized, err := db.CreateActivity(ctx, &domain.Activity{
+		UserID:        userID,
+		Name:          "Ship personal tracker",
+		LifePartIDs:   []int64{careerID},
+		ProgressType:  domain.ProgressTypeProjectProgress,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -5),
+	})
+	require.NoError(s.T(), err)
+	uncategorized, err := db.CreateActivity(ctx, &domain.Activity{
+		UserID:        userID,
+		Name:          "Uncategorized",
+		ProgressType:  domain.ProgressTypeProjectProgress,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -5),
+	})
+	require.NoError(s.T(), err)
+
+	_, output, err := progress.GetActivityList(ctx, nil, progress.GetActivityListInput{ActiveOnly: true})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), output.Activities, 2)
+
+	byID := map[int64]progress.ActivityItem{}
+	for _, a := range output.Activities {
+		byID[a.ID] = a
+	}
+	assert.Equal(s.T(), []int64{careerID}, byID[categorized].LifePartIDs)
+	assert.Empty(s.T(), byID[uncategorized].LifePartIDs)
+}
+
+// --- list_life_parts -----------------------------------------------------
+
+func (s *IntegrationTestSuite) TestListLifeParts_Empty() {
+	ctx := s.Context()
+
+	_, output, err := progress.ListLifeParts(ctx, nil, progress.ListLifePartsInput{})
+	require.NoError(s.T(), err)
+	assert.Empty(s.T(), output.LifeParts)
+}
+
+func (s *IntegrationTestSuite) TestListLifeParts_ReturnsSeededRowsSortedByName() {
+	ctx := s.Context()
+
+	s.createLifePart(ctx, "Health", "Fitness and wellbeing")
+	careerID := s.createLifePart(ctx, "Career", "Work and professional growth")
+
+	_, output, err := progress.ListLifeParts(ctx, nil, progress.ListLifePartsInput{})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), output.LifeParts, 2)
+
+	assert.Equal(s.T(), careerID, output.LifeParts[0].ID)
+	assert.Equal(s.T(), "Career", output.LifeParts[0].Name)
+	assert.Equal(s.T(), "Work and professional growth", output.LifeParts[0].Description)
+	assert.Equal(s.T(), "Health", output.LifeParts[1].Name)
+}
+
 func (s *IntegrationTestSuite) TestGetActivityList_WithActivities() {
 	ctx := s.Context()
 	db := s.Repo()

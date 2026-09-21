@@ -7,7 +7,8 @@
 <tbody>
 {{range .Rows}}<tr>
 {{$link := .LinkURL}}
-{{range $i, $cell := .Cells}}<td style="text-align:{{$cell.Align}};white-space:pre-line">{{if and (eq $i 0) $link}}<a href="{{$link}}">{{$cell.Text}}</a>{{else}}{{$cell.Text}}{{end}}</td>
+{{$tags := .Tags}}
+{{range $i, $cell := .Cells}}<td style="text-align:{{$cell.Align}};white-space:pre-line">{{if and (eq $i 0) $link}}<a href="{{$link}}">{{$cell.Text}}</a>{{else}}{{$cell.Text}}{{end}}{{if and (eq $i 0) $tags}}{{range $tags}} <span role="button" class="outline contrast webui-tag"{{if .Tooltip}} data-tooltip="{{.Tooltip}}"{{end}}>{{.Label}}</span>{{end}}{{end}}</td>
 {{end}}</tr>
 {{end}}</tbody>
 </table>

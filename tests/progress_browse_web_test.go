@@ -68,6 +68,18 @@ func withBrowsePageSize(t *testing.T, size int) {
 	t.Cleanup(func() { progress.BrowsePageSize = original })
 }
 
+// createLifePart inserts a life_parts row directly via SQL — there is no
+// CreateLifePart repository method or MCP tool (rows are inserted by hand,
+// see progress-spec.md), so tests exercising ListLifeParts/list_life_parts
+// or the browse view's life_part chips need to seed one this way.
+func (s *IntegrationTestSuite) createLifePart(ctx context.Context, name, description string) int64 {
+	var id int64
+	err := s.DB().QueryRow(ctx, `INSERT INTO life_parts (user_id, name, description) VALUES ($1, $2, $3) RETURNING id`,
+		gateways.UserIDFromContext(ctx), name, description).Scan(&id)
+	require.NoError(s.T(), err)
+	return id
+}
+
 func (s *IntegrationTestSuite) createActivity(ctx context.Context, name string, progressType domain.ProgressType, startedAt time.Time) int64 {
 	id, err := s.Repo().CreateActivity(ctx, &domain.Activity{
 		UserID:        gateways.UserIDFromContext(ctx),
@@ -255,6 +267,41 @@ func (s *IntegrationTestSuite) TestBrowseFinished_Pagination() {
 	assert.Contains(s.T(), body, "Page 2 of 2")
 	assert.Contains(s.T(), body, `href="/web/progress/browse/finished?page=1"`)
 	assert.NotContains(s.T(), body, "Next →</a>")
+}
+
+// TestBrowse_ShowsLifePartChipWithTooltip covers the life_part tag added to
+// each row: an activity with life_part_ids gets one Pico contrast-button-styled
+// span per ID (role="button" class="outline contrast webui-tag"), labeled with the
+// life part's name and carrying its description as a Pico data-tooltip
+// attribute; an uncategorized activity gets none.
+func (s *IntegrationTestSuite) TestBrowse_ShowsLifePartChipWithTooltip() {
+	ctx := s.Context()
+	now := time.Now()
+
+	careerID := s.createLifePart(ctx, "Career", "Work and professional growth")
+
+	_, err := s.Repo().CreateActivity(ctx, &domain.Activity{
+		UserID:        gateways.UserIDFromContext(ctx),
+		Name:          "Ship personal tracker",
+		LifePartIDs:   []int64{careerID},
+		ProgressType:  domain.ProgressTypeProjectProgress,
+		FrequencyDays: 1,
+		StartedAt:     now.AddDate(0, 0, -10),
+	})
+	require.NoError(s.T(), err)
+	s.createActivity(ctx, "Uncategorized activity", domain.ProgressTypeProjectProgress, now.AddDate(0, 0, -3))
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/progress/browse", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, `<span role="button" class="outline contrast webui-tag" data-tooltip="Work and professional growth">Career</span>`)
+
+	uncategorizedIdx := strings.Index(body, "Uncategorized activity")
+	require.True(s.T(), uncategorizedIdx >= 0)
+	assert.NotContains(s.T(), body[uncategorizedIdx:uncategorizedIdx+300], "webui-tag", "an activity with no life parts must get no tag")
 }
 
 // --- GET /web/progress/browse/finished --------------------------------------

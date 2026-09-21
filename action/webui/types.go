@@ -34,7 +34,19 @@ type TableColumn struct {
 // TableRow is one row's cells plus an optional drill-down link.
 type TableRow struct {
 	Cells   []string
-	LinkURL string // empty = not clickable
+	LinkURL string        // empty = not clickable
+	Tags    []TableRowTag // optional tags rendered after the first cell, e.g. Progress browse's life_part tags; nil = none
+}
+
+// TableRowTag is one small tag shown next to a table row's first cell (e.g.
+// a life_part tag on the Progress browse table), styled as a Pico CSS
+// contrast button (role="button" class="contrast") — no custom color CSS of
+// ours. Tooltip renders via Pico's own data-tooltip attribute (pure CSS, no
+// JS) instead of the native HTML title attribute — Chrome's native title
+// tooltip proved unreliable in practice.
+type TableRowTag struct {
+	Label   string
+	Tooltip string // shown on hover via Pico's data-tooltip attribute; empty = no tooltip
 }
 
 // TableData is a full table component.

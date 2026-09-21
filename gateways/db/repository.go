@@ -1550,6 +1550,31 @@ func (r *repository) ListSetsByExerciseAndWorkouts(ctx context.Context, userID i
 	return sets, rows.Err()
 }
 
+func (r *repository) ListLifeParts(ctx context.Context, userID int64) ([]domain.LifePart, error) {
+	query := `
+		SELECT id, user_id, name, description, created_at
+		FROM life_parts
+		WHERE user_id = $1
+		ORDER BY name`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query life parts: %w", err)
+	}
+	defer rows.Close()
+
+	var lifeParts []domain.LifePart
+	for rows.Next() {
+		var lp domain.LifePart
+		if err := rows.Scan(&lp.ID, &lp.UserID, &lp.Name, &lp.Description, &lp.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan life part: %w", err)
+		}
+		lifeParts = append(lifeParts, lp)
+	}
+
+	return lifeParts, rows.Err()
+}
+
 func (r *repository) CreateActivity(ctx context.Context, activity *domain.Activity) (int64, error) {
 	query := `
 		INSERT INTO activities (user_id, life_part_ids, name, description, progress_type, status, deferred_until, frequency_days, started_at, ended_at, created_at)

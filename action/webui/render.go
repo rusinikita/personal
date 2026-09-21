@@ -44,6 +44,7 @@ type tableCellRenderData struct {
 type tableRowRenderData struct {
 	Cells   []tableCellRenderData
 	LinkURL string
+	Tags    []TableRowTag
 }
 
 type tableRenderData struct {
@@ -67,7 +68,7 @@ func RenderTable(data TableData) template.HTML {
 			}
 			cells[j] = tableCellRenderData{Text: cell, Align: align}
 		}
-		rows[i] = tableRowRenderData{Cells: cells, LinkURL: row.LinkURL}
+		rows[i] = tableRowRenderData{Cells: cells, LinkURL: row.LinkURL, Tags: row.Tags}
 	}
 	return execToHTML("components/table", tableRenderData{
 		Columns:    data.Columns,

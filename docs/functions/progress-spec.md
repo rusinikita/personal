@@ -41,6 +41,9 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **No `started_at` on steps — visibility is derived from the activity's status, not a step-level date**: a step is only shown in any listing (browse compact list, drill-down full list, progress-point form checkboxes) while its owning activity's `status = active`; a step belonging to a paused/finished/dropped activity is simply not rendered anywhere, with no separate flag or date field on `steps` itself needed to achieve that
 - **`edit_step` also takes `completed_by_progress_point_id` as a pointer field**, alongside name/status — same partial-update pattern as the rest of the subdomain. This lets the AI link a step's closure to a progress point it just created in the same chat turn (not only the web form's same-POST flow)
 - **`get_step_list` reuses the same visibility rule as the web display listings, not a second mechanism**: it only returns steps belonging to an activity with `status = active` — a step whose activity is paused/finished/dropped is invisible everywhere, chat included, not just on the web pages. Backed by a new `ListStepsWithActivity` repository method that joins `steps` to `activities` (filtering `activities.status = 'active'`, also giving the activity's name for context), following the same enrichment pattern `SearchProgressNotes`/`ActivityPointWithActivity` already established in this subdomain
+- **`ListLifeParts` is finally implemented, read-only**: `life_parts` has had a table and an `Activity.LifePartIDs` column since this subdomain's first version, but no repository method ever read it — the browse view now calls `ListLifeParts(ctx, userID)` (plain `SELECT ... ORDER BY name`, no filter beyond `user_id`) to resolve each activity's `LifePartIDs` into names/descriptions for the tag display below. Still no write path (`CreateLifePart` stays undocumented/unbuilt) — rows are inserted by hand, same as before; this only adds the read side, shared by the web browse view and the new `list_life_parts` MCP tool
+- **`life_part_ids` was previously write-only over MCP**: `create_activity`/`edit_activity` have always accepted `life_part_ids`, but nothing let the AI resolve an ID to a name or read back what's already set — it could write an opaque ID blind and never see it again. `list_life_parts` (new, read-only, backed by the same `ListLifeParts`) and `life_part_ids` added to `get_activity_list`'s per-activity output close that loop; `create_activity`/`edit_activity`'s input shape is unchanged
+- **Life parts shown as tags with a hover tooltip, not a second grouping axis**: activities stay grouped exactly as they are today (`activeSectionOrder`'s four progress_type sections on the main browse page; combined single tables on finished/future/paused) — life_part membership is surfaced *within* each existing row instead of introducing a life_part-grouped view. Each row whose activity has a non-empty `LifePartIDs` gets one `webui.TableRowTag` per ID (`Label` = the life part's name, `Tooltip` = its description) via the new `TableRow.Tags` field (see `webui-spec.md`); an activity with no life parts gets no tags, same as before this change. Built once per handler call: each of `BrowseWebHandler`/`renderActivityList` calls `ListLifeParts` once, builds an `id → LifePart` map, and passes it to `buildActivityTable`, which does the `LifePartIDs` → `[]TableRowTag` lookup for every row — one query per page render, not one per activity. Each tag renders as a Pico CSS contrast button (`role="button" class="outline contrast webui-tag"`, see `webui-spec.md`) — no custom chip CSS of our own. The tooltip itself renders via Pico's `data-tooltip` attribute, not the native HTML `title` attribute — `title` proved unreliable in practice (no tooltip on hover in Chrome/Mac)
 
 ## Architecture Diagrams
 
@@ -119,6 +122,7 @@ graph TB
     User -->|edit_activity| MCP
     User -->|delete_activity| MCP
     User -->|get_activity_list| MCP
+    User -->|list_life_parts| MCP
     User -->|get_progress_type_examples| MCP
     User -->|get_activity_stats| MCP
     User -->|create_progress_point| MCP
@@ -518,8 +522,7 @@ type StepWithActivity struct {
 ```go
 // gateways/progress_repository.go
 type ProgressRepository interface {
-    // Life Part CRUD (seeded via repository/script, no MCP tool)
-    CreateLifePart(ctx context.Context, lifePart LifePart) (int64, error)
+    // Life Part (read-only; rows are inserted by hand via SQL, no write method/tool — see list_life_parts MCP tool below for the read side)
     ListLifeParts(ctx context.Context, userID int64) ([]LifePart, error)
 
     // Activity CRUD
@@ -562,7 +565,10 @@ Updates mutable fields (name, description, frequency_days, life_part_ids, progre
 Permanently deletes an activity by ID, scoped to the owning user — including all its `activity_progress` history (`ON DELETE CASCADE`). This is different from `status: "dropped"` via `edit_activity`: dropping keeps the activity and its history around (just marked over, still shows in the finished/dropped list and in stats), while `delete_activity` erases the row and its progress points for good. Errors if the activity doesn't exist / isn't owned by the user, or if a goal still references it (`goals.activity_id` has no `ON DELETE CASCADE` — the goal must be deleted or repointed first). Cannot be undone.
 
 ### get_activity_list
-Lists activities ordered by frequency_days ASC, then name. `active_only=true` returns `status='active'` activities in `activities` plus, separately, every `status='paused'` activity in `paused_activities` — so a paused activity is never silently missing, just shown in its own section. `active_only=false` returns finished/dropped activities (unchanged).
+Lists activities ordered by frequency_days ASC, then name. `active_only=true` returns `status='active'` activities in `activities` plus, separately, every `status='paused'` activity in `paused_activities` — so a paused activity is never silently missing, just shown in its own section. `active_only=false` returns finished/dropped activities (unchanged). Each returned activity now also includes `life_part_ids` (empty if uncategorized) — cross-reference against `list_life_parts` for names.
+
+### list_life_parts
+Lists the calling user's life parts (id, name, description), ordered by name. Read-only — there's still no way to create a life part via MCP (rows are inserted by hand via SQL); this tool exists purely so the AI can resolve the `life_part_ids` it sees on `create_activity`/`edit_activity` input and `get_activity_list` output into actual names instead of writing/reading opaque IDs blind.
 
 ### get_progress_type_examples
 Returns hardcoded natural language ↔ numeric value mapping examples (multiple metaphors per progress_type, with emojis) — no input, no DB access. Canonical source for interpreting free-form user responses.
@@ -602,16 +608,16 @@ Lists steps, each with its activity's name, optionally filtered to one activity_
 Renders a read-only dashboard of all activities with recent progress, staleness indicators, and trend summaries. Protected by the same auth middleware as other `/web/*` routes. Purpose-built fixed-viewport/B&W/top-5-only screenshot page (`dashboard_web.go`) — untouched by the browse view below.
 
 ### GET /web/progress/browse
-New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity goal tile grid above the lists (see Best Practices), then **four separate, unpaginated tables**, one per `progress_type`, in fixed order — Habit, Promise, Project, Mood — each with a heading and columns Name, Description, Frequency, Last update (no Type column, redundant with the heading); a type with no active activities still renders its heading with an empty table. Each (active) activity's open steps (`status=active`) are shown compact under its name within the Name/Description cell — this section only lists active activities to begin with, so steps naturally never show for a paused/finished/dropped activity. Links to the paused/finished/future lists (`browseCrossLinks`: Active · Finished · Future · Paused) and to each activity's drill-down. Protected by `WebMiddleware` like every other `/web/*` route.
+New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity goal tile grid above the lists (see Best Practices), then **four separate, unpaginated tables**, one per `progress_type`, in fixed order — Habit, Promise, Project, Mood — each with a heading and columns Name, Description, Frequency, Last update (no Type column, redundant with the heading); a type with no active activities still renders its heading with an empty table. Each (active) activity's open steps (`status=active`) are shown compact under its name within the Name/Description cell — this section only lists active activities to begin with, so steps naturally never show for a paused/finished/dropped activity. Each row whose activity has one or more `LifePartIDs` also gets a life_part tag per ID next to its name (name + hover tooltip showing the life part's description — see Best Practices); an activity with no life parts gets none. Links to the paused/finished/future lists (`browseCrossLinks`: Active · Finished · Future · Paused) and to each activity's drill-down. Protected by `WebMiddleware` like every other `/web/*` route.
 
 ### GET /web/progress/browse/paused
-Lists activities where `status = 'paused'` (`ListActivities(Statuses: [paused])`), same combined-across-types table shape and pagination as `/finished` and `/future` (via `renderActivityList`), with a "Deferred until" column in place of Finished/Starts, and a back link.
+Lists activities where `status = 'paused'` (`ListActivities(Statuses: [paused])`), same combined-across-types table shape and pagination as `/finished` and `/future` (via `renderActivityList`), with a "Deferred until" column in place of Finished/Starts, life_part tags per row (same as the main browse page), and a back link.
 
 ### GET /web/progress/browse/finished
-Lists activities where `status` is `finished` or `dropped` (`ListActivities(Statuses: [finished, dropped])`), same table shape (including the Description column) and pagination as the main browse view, with a back link.
+Lists activities where `status` is `finished` or `dropped` (`ListActivities(Statuses: [finished, dropped])`), same table shape (including the Description column), pagination, and life_part tags per row as the main browse view, with a back link.
 
 ### GET /web/progress/browse/future
-Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true, Statuses: [active])`), same table shape (including the Description column) and pagination, with a back link.
+Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true, Statuses: [active])`), same table shape (including the Description column), pagination, and life_part tags per row, with a back link.
 
 ### GET /web/progress/browse/{id}
 Drill-down for one activity: a `DetailView` with the activity's description (when set) shown as a paragraph under the title, its open steps shown in full (`ListSteps(ActivityID: id, Statuses: [active])`, only fetched/rendered when the activity itself is `status=active` — a drill-down for a paused/finished/dropped activity shows no steps section), stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1), and a "+ Add" button at the top linking to `GET /web/progress/browse/{id}/points/new`. Back link returns to wherever the user came from (main/finished/future list).

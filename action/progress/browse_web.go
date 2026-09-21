@@ -212,6 +212,25 @@ func renderStepsList(steps []domain.Step) template.HTML {
 	return template.HTML(b.String())
 }
 
+// lifePartTags resolves an activity's LifePartIDs into chip data via
+// lifePartsByID — an ID with no matching life part (e.g. one deleted by hand
+// after being assigned) is silently skipped rather than erroring, since
+// this is read-only display.
+func lifePartTags(lifePartIDs []int64, lifePartsByID map[int64]domain.LifePart) []webui.TableRowTag {
+	if len(lifePartIDs) == 0 {
+		return nil
+	}
+	tags := make([]webui.TableRowTag, 0, len(lifePartIDs))
+	for _, id := range lifePartIDs {
+		lp, ok := lifePartsByID[id]
+		if !ok {
+			continue
+		}
+		tags = append(tags, webui.TableRowTag{Label: lp.Name, Tooltip: lp.Description})
+	}
+	return tags
+}
+
 // buildActivityTable builds one list's table. includeType is false for the
 // active list's per-progress_type sections (see activeSectionOrder), where
 // the section heading already says the type — a Type column there would
@@ -219,8 +238,10 @@ func renderStepsList(steps []domain.Step) template.HTML {
 // stepsByActivity being non-nil (only the active list passes one — see
 // stepsCompactCell) adds a trailing "Steps" column; passing nil (finished/
 // future/paused) omits it entirely, since those activities never have
-// visible steps.
-func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, includeType bool, stepsByActivity map[int64][]domain.Step, pagination *webui.PaginationData) webui.TableData {
+// visible steps. lifePartsByID resolves each row's life_part chips (see
+// progress-spec.md); every caller passes one, built once per handler call
+// from ListLifeParts.
+func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, includeType bool, stepsByActivity map[int64][]domain.Step, lifePartsByID map[int64]domain.LifePart, pagination *webui.PaginationData) webui.TableData {
 	showSteps := stepsByActivity != nil
 	rows := make([]webui.TableRow, 0, len(activities))
 	for _, a := range activities {
@@ -235,6 +256,7 @@ func buildActivityTable(activities []domain.Activity, extraLabel string, extra a
 		rows = append(rows, webui.TableRow{
 			Cells:   cells,
 			LinkURL: fmt.Sprintf("/web/progress/browse/%d", a.ID),
+			Tags:    lifePartTags(a.LifePartIDs, lifePartsByID),
 		})
 	}
 	columns := []webui.TableColumn{{Label: "Name"}, {Label: "Description"}}
@@ -265,6 +287,21 @@ func progressTypeLabel(pt domain.ProgressType) string {
 	default:
 		return string(pt)
 	}
+}
+
+// lifePartsByIDMap fetches every life part for userID and indexes it by ID,
+// so a page render does one ListLifeParts query instead of one per activity
+// row (see progress-spec.md Best Practices).
+func lifePartsByIDMap(ctx context.Context, db gateways.DB, userID int64) (map[int64]domain.LifePart, error) {
+	lifeParts, err := db.ListLifeParts(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list life parts: %w", err)
+	}
+	byID := make(map[int64]domain.LifePart, len(lifeParts))
+	for _, lp := range lifeParts {
+		byID[lp.ID] = lp
+	}
+	return byID, nil
 }
 
 // renderActivityList is shared by the finished/future list handlers: it
@@ -298,7 +335,13 @@ func renderActivityList(c *gin.Context, filter domain.ActivityFilter, title, bas
 		return
 	}
 
-	table := buildActivityTable(activities, extraLabel, extra, true, nil, buildPagination(page, total, baseURL))
+	lifePartsByID, err := lifePartsByIDMap(ctx, db, filter.UserID)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "%v", err)
+		return
+	}
+
+	table := buildActivityTable(activities, extraLabel, extra, true, nil, lifePartsByID, buildPagination(page, total, baseURL))
 	content := browseCrossLinks + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
@@ -346,6 +389,12 @@ func BrowseWebHandler(c *gin.Context) {
 		return
 	}
 
+	lifePartsByID, err := lifePartsByIDMap(ctx, db, userID)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "%v", err)
+		return
+	}
+
 	extra := func(a domain.Activity) string { return formatTimeAgoPtr(a.LastPointAt) }
 	content := browseCrossLinks + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles})
 	for _, section := range activeSectionOrder {
@@ -369,7 +418,7 @@ func BrowseWebHandler(c *gin.Context) {
 				stepsByActivity[a.ID] = steps
 			}
 		}
-		table := buildActivityTable(activities, "Last update", extra, false, stepsByActivity, nil)
+		table := buildActivityTable(activities, "Last update", extra, false, stepsByActivity, lifePartsByID, nil)
 		content += template.HTML(fmt.Sprintf("<h3>%s</h3>", section.Heading)) + webui.RenderTable(table)
 	}
 

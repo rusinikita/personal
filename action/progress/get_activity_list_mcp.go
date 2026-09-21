@@ -42,15 +42,16 @@ type GetActivityListInput struct {
 }
 
 type ActivityItem struct {
-	ID            int64  `json:"id" jsonschema:"Activity ID"`
-	Name          string `json:"name" jsonschema:"Activity name"`
-	ProgressType  string `json:"progress_type" jsonschema:"Progress type (mood|habit_progress|project_progress|promise_state)"`
-	Status        string `json:"status" jsonschema:"Lifecycle status (active|paused|finished|dropped)"`
-	FrequencyDays int    `json:"frequency_days" jsonschema:"Check-in frequency in days"`
-	Description   string `json:"description,omitempty" jsonschema:"Activity description"`
-	StartedAt     string `json:"started_at" jsonschema:"When activity was started (RFC3339)"`
-	EndedAt       string `json:"ended_at,omitempty" jsonschema:"When activity was finished/dropped (RFC3339), only set for finished/dropped activities"`
-	DeferredUntil string `json:"deferred_until,omitempty" jsonschema:"When a paused activity should resume (RFC3339), only set for paused activities with a resume date"`
+	ID            int64   `json:"id" jsonschema:"Activity ID"`
+	Name          string  `json:"name" jsonschema:"Activity name"`
+	ProgressType  string  `json:"progress_type" jsonschema:"Progress type (mood|habit_progress|project_progress|promise_state)"`
+	Status        string  `json:"status" jsonschema:"Lifecycle status (active|paused|finished|dropped)"`
+	FrequencyDays int     `json:"frequency_days" jsonschema:"Check-in frequency in days"`
+	Description   string  `json:"description,omitempty" jsonschema:"Activity description"`
+	LifePartIDs   []int64 `json:"life_part_ids,omitempty" jsonschema:"Life area IDs this activity belongs to (empty if uncategorized); cross-reference against list_life_parts for names"`
+	StartedAt     string  `json:"started_at" jsonschema:"When activity was started (RFC3339)"`
+	EndedAt       string  `json:"ended_at,omitempty" jsonschema:"When activity was finished/dropped (RFC3339), only set for finished/dropped activities"`
+	DeferredUntil string  `json:"deferred_until,omitempty" jsonschema:"When a paused activity should resume (RFC3339), only set for paused activities with a resume date"`
 }
 
 type GetActivityListOutput struct {
@@ -104,6 +105,7 @@ func toActivityItems(activities []domain.Activity) []ActivityItem {
 			Status:        string(a.Status),
 			FrequencyDays: a.FrequencyDays,
 			Description:   a.Description,
+			LifePartIDs:   a.LifePartIDs,
 			StartedAt:     a.StartedAt.Format(time.RFC3339),
 		}
 		if a.EndedAt != nil {

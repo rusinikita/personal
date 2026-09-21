@@ -209,6 +209,7 @@ func Server(db gateways.DB, tg gateways.Telegram) *mcp.Server {
 	mcp.AddTool(server, &progress.CreateActivityMCPDefinition, progress.CreateActivity)
 	mcp.AddTool(server, &progress.EditActivityMCPDefinition, progress.EditActivity)
 	mcp.AddTool(server, &progress.GetActivityListMCPDefinition, progress.GetActivityList)
+	mcp.AddTool(server, &progress.ListLifePartsMCPDefinition, progress.ListLifeParts)
 	mcp.AddTool(server, &progress.GetProgressTypeExamplesMCPDefinition, progress.GetProgressTypeExamples)
 	mcp.AddTool(server, &progress.GetActivityStatsMCPDefinition, progress.GetActivityStats)
 	mcp.AddTool(server, &progress.CreateProgressPointMCPDefinition, progress.CreateProgressPoint)

@@ -26,20 +26,6 @@ Write up the actual process/conventions for how activities (`action/progress`) a
 
 **Why:** Goal is mostly for the user's own clarity — working through this system keeps surfacing confusion about what belongs where (activity vs. idea vs. journal note, which progress_type fits what, etc.); writing the process down forces that decision, and exposing it to the agent keeps every session consistent with it instead of re-deriving conventions ad hoc each time.
 
-## 21-09-26 — Web page: active activities grouped by life_part
-
-Add a web page that lists currently active activities grouped under their `life_part` (one section per life part, activities with no life part in their own group), instead of the current flat browse view.
-
-**Why:** Right now there's no way to see "what am I actively working on in each area of life" at a glance — activities are a flat list, so answering that requires scanning names and mentally sorting them by area every time.
-
-**Depends on:** 16-09-26 — Reconsider life_parts: unused in MCP tools, web UI, and actual usage (this page is the "build real usage" resolution of that item — grouping/display by life part is exactly what's currently missing).
-
-## 16-09-26 — Reconsider life_parts: unused in MCP tools, web UI, and actual usage
-
-`life_parts` (categorization table + `life_part_ids` on activities) exists in the schema and can be set via `create_activity`/`edit_activity`, but nothing reads or filters by it in the web browse view or in any MCP tool output, and it isn't part of the user's actual workflow. Decide whether to build real usage (filtering, display, stats grouped by life part) or drop the concept entirely.
-
-**Why:** Unused categorization is dead weight — it should either earn its place with real filtering/display, or be removed rather than left as schema noise nobody looks at.
-
 ## 16-09-26 — Ideas table + MCP tools (separate from activities)
 
 Add a new table (e.g. `ideas`: id, user_id, title, description, created_at, updated_at) plus MCP tools (`create_idea`, `edit_idea` to append/grow the description over time, `list_ideas`) for unformed thoughts that aren't ready to become an activity — no `progress_type`, no `frequency_days`, no progress points. Not auto-converted into an activity — promoting an idea is a manual action (create a new activity referencing the idea's text); the idea stays in its list afterward as a historical record.

@@ -34,6 +34,7 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Every shell-rendered page carries a username**: `action/auth`'s `WebMiddleware` (see `auth-spec.md`) puts the logged-in username on the gin context; every `/web/*` handler (including this package's own `GET /web/design-system`) reads it and sets `PageData.UserName` before calling `RenderPage`
 - **Calendar is Go-computed weeks, not template date math**: `CalendarData.Weeks` is a pre-built `[][]CalendarDay` (7 columns per week, including the leading/trailing days of adjacent months needed to fill the grid) — the template just ranges over rows and cells, it never computes a weekday or month boundary itself (`html/template` has no date arithmetic to do that safely anyway)
 - **Calendar cells link like table rows do**: `CalendarDay.LinkURL` is empty for a day with nothing to show (mirrors `TableRow.LinkURL`'s "empty = not clickable" convention) instead of a separate boolean flag
+- **Row tags are the one place a table cell carries more than plain text**: `TableRow.Cells` stays `[]string` (auto-escaped, no per-cell HTML) everywhere else, but `TableRow.Tags []TableRowTag` adds small tags after the first cell — e.g. Progress browse's life_part tags — each with a `Label` and an optional `Tooltip`. Each tag is styled with Pico's own `.contrast` button class (`role="button" class="outline contrast webui-tag"`) instead of custom chip CSS — `.webui-tag` only overrides padding/font-size to fit inline, no color of our own. Tooltip renders via Pico CSS's own `data-tooltip` attribute (pure CSS, already loaded on every page), not the native HTML `title` attribute — the native browser tooltip proved unreliable in practice (Chrome/Mac showed nothing on hover). `Tags` is nil for every existing caller (Money, Workouts, Progress finished/future/paused lists), so nothing else changes
 
 ## Architecture Diagrams
 
@@ -205,7 +206,8 @@ type TableColumn struct {
 // TableRow is one row's cells plus an optional drill-down link.
 type TableRow struct {
     Cells   []string
-    LinkURL string // empty = not clickable
+    LinkURL string        // empty = not clickable
+    Tags    []TableRowTag // optional tags rendered after the first cell, e.g. Progress browse's life_part tags; nil = none
 }
 
 // TableData is a full table component.
@@ -281,6 +283,17 @@ type ComboChartData struct {
     Title      string
     SeriesName string // e.g. "Balance (EUR)" — shown in the tooltip, no legend (see Best Practices)
     Points     []ComboChartPoint
+}
+
+// TableRowTag is one small tag shown next to a table row's first cell (e.g.
+// a life_part tag on the Progress browse table), styled as a Pico CSS
+// contrast button (role="button" class="contrast") — no custom color CSS of
+// ours. Tooltip renders via Pico's own data-tooltip attribute (pure CSS, no
+// JS) instead of the native HTML title attribute — Chrome's native title
+// tooltip proved unreliable in practice.
+type TableRowTag struct {
+    Label   string
+    Tooltip string // shown on hover via Pico's data-tooltip attribute; empty = no tooltip
 }
 
 // CalendarDay is one cell in a month-grid calendar.
@@ -374,7 +387,7 @@ Everything else is a Go function, not a route — called from other subdomains' 
 Executes the shared shell template (head/nav/footer + design tokens, light/dark via `prefers-color-scheme`) with `data.Content` dropped into the content slot. When `data.UserName` is set, the header also renders it as a `<details class="dropdown">` menu (Pico CSS's built-in disclosure pattern, no custom JS) containing one item: a "Logout" link to `GET /web/logout` (see `auth-spec.md`). Used by every `/web/*` handler, including the demo page above.
 
 ### `webui.RenderTable(data TableData) template.HTML`
-Renders a `TableData` as a Pico CSS card (`<article>` — no extra class needed, Pico styles a bare `<article>` as a card) containing the `<table>`, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template). When `data.Pagination` is non-nil, also renders the pagination controls (prev/next links, "page X of Y") inside a card `<footer>` below the rows — callers needing a paginated list (e.g. Progress browse/finished/future lists, or a drill-down's history table) just set `TableData.Pagination` instead of calling a separate render function.
+Renders a `TableData` as a Pico CSS card (`<article>` — no extra class needed, Pico styles a bare `<article>` as a card) containing the `<table>`, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template). When `data.Pagination` is non-nil, also renders the pagination controls (prev/next links, "page X of Y") inside a card `<footer>` below the rows — callers needing a paginated list (e.g. Progress browse/finished/future lists, or a drill-down's history table) just set `TableData.Pagination` instead of calling a separate render function. When a row's `Tags` is non-empty, each tag renders as a small `<span role="button" class="outline contrast webui-tag">` after the first cell's text (inside the same `<a>` when that cell is also a link) — Pico's own `.contrast` button styling (dark background/border, no custom color CSS of ours), sized down to fit inline via `.webui-tag` (padding/font-size only, no color) — with `data-tooltip="{{.Tooltip}}"` set when `Tooltip` is non-empty for Pico's own CSS-only tooltip on hover, no extra script.
 
 ### `webui.RenderStatTiles(data []StatTileData) template.HTML`
 Renders a row of summary/stat tiles, each its own Pico card (`<article class="webui-stat-tile">`).
