@@ -69,3 +69,13 @@ New subdomain (`action/learning`) for structured, long-running study tracking â€
 - Track a Greek study plan broken into skills (grammar topics, tenses) plus a running vocabulary list with recall/review state.
 - Track a Kubernetes study plan broken into skills (networking, workloads, storage) practiced via hands-on exercises, without a vocabulary component.
 - See progress per skill within a plan rather than one flat undifferentiated activity.
+
+## 21-09-26 â€” Split notes out of activity_progress into their own table
+
+Move `activity_progress.note` (free-text, variable-length) out of the progress-point row into a separate table referencing the progress point it belongs to, instead of a column mixed in with `activity_progress`'s otherwise narrow, structured numeric/timestamp data.
+
+**Why:** `activity_progress` should stay a uniform table of point-per-progress_type values; a prose-heavy `note` column sitting alongside it doesn't belong there and blocks giving notes their own index strategy. A dedicated notes table can carry a full-text index (`search_progress_notes` today does a plain `ILIKE` scan) or a vector/embedding index for semantic search, without either concern touching the core points table.
+
+**Use cases:**
+- Full-text or semantic (vector) search over notes without scanning/indexing the whole `activity_progress` table.
+- Keep `activity_progress` lean if it ever needs its own indexing/partitioning strategy independent of note content.
