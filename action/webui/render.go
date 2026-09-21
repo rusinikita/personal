@@ -48,9 +48,10 @@ type tableRowRenderData struct {
 }
 
 type tableRenderData struct {
-	Columns    []TableColumn
-	Rows       []tableRowRenderData
-	Pagination *PaginationData
+	Columns         []TableColumn
+	Rows            []tableRowRenderData
+	Pagination      *PaginationData
+	TagsColumnLabel string
 }
 
 // RenderTable renders a TableData into the shared table component markup.
@@ -71,9 +72,10 @@ func RenderTable(data TableData) template.HTML {
 		rows[i] = tableRowRenderData{Cells: cells, LinkURL: row.LinkURL, Tags: row.Tags}
 	}
 	return execToHTML("components/table", tableRenderData{
-		Columns:    data.Columns,
-		Rows:       rows,
-		Pagination: data.Pagination,
+		Columns:         data.Columns,
+		Rows:            rows,
+		Pagination:      data.Pagination,
+		TagsColumnLabel: data.TagsColumnLabel,
 	})
 }
 

@@ -269,12 +269,14 @@ func (s *IntegrationTestSuite) TestBrowseFinished_Pagination() {
 	assert.NotContains(s.T(), body, "Next →</a>")
 }
 
-// TestBrowse_ShowsLifePartChipWithTooltip covers the life_part tag added to
-// each row: an activity with life_part_ids gets one Pico contrast-button-styled
-// span per ID (role="button" class="outline contrast webui-tag"), labeled with the
-// life part's name and carrying its description as a Pico data-tooltip
-// attribute; an uncategorized activity gets none.
-func (s *IntegrationTestSuite) TestBrowse_ShowsLifePartChipWithTooltip() {
+// TestBrowse_ShowsLifePartTagInDedicatedColumn covers the "Life parts"
+// column added to each activity table, right after Name: an activity with
+// life_part_ids gets one Pico contrast-button-styled span per ID
+// (role="button" class="outline contrast webui-tag") in its own cell in
+// that column, labeled with the life part's name and carrying its
+// description as a Pico data-tooltip attribute; an uncategorized activity's
+// cell in that column is empty.
+func (s *IntegrationTestSuite) TestBrowse_ShowsLifePartTagInDedicatedColumn() {
 	ctx := s.Context()
 	now := time.Now()
 
@@ -297,11 +299,18 @@ func (s *IntegrationTestSuite) TestBrowse_ShowsLifePartChipWithTooltip() {
 	r.ServeHTTP(w, req)
 
 	body := w.Body.String()
+	nameHeaderIdx := strings.Index(body, ">Name</th>")
+	lifePartsHeaderIdx := strings.Index(body, ">Life parts</th>")
+	descriptionHeaderIdx := strings.Index(body, ">Description</th>")
+	require.True(s.T(), nameHeaderIdx >= 0 && lifePartsHeaderIdx >= 0 && descriptionHeaderIdx >= 0, "must render Name, Life parts, and Description column headers")
+	assert.True(s.T(), nameHeaderIdx < lifePartsHeaderIdx && lifePartsHeaderIdx < descriptionHeaderIdx, "Life parts column must come right after Name, before Description")
 	assert.Contains(s.T(), body, `<span role="button" class="outline contrast webui-tag" data-tooltip="Work and professional growth">Career</span>`)
 
 	uncategorizedIdx := strings.Index(body, "Uncategorized activity")
 	require.True(s.T(), uncategorizedIdx >= 0)
-	assert.NotContains(s.T(), body[uncategorizedIdx:uncategorizedIdx+300], "webui-tag", "an activity with no life parts must get no tag")
+	rowEndIdx := strings.Index(body[uncategorizedIdx:], "</tr>")
+	require.True(s.T(), rowEndIdx >= 0, "must find the end of the uncategorized activity's row")
+	assert.NotContains(s.T(), body[uncategorizedIdx:uncategorizedIdx+rowEndIdx], "webui-tag", "an activity with no life parts must get an empty Life parts cell")
 }
 
 // --- GET /web/progress/browse/finished --------------------------------------

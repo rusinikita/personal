@@ -2,13 +2,16 @@
 <article>
 <table>
 <thead><tr>
-{{range .Columns}}<th style="text-align:{{if eq .Align "right"}}right{{else}}left{{end}}">{{.Label}}</th>
+{{$topLabel := .TagsColumnLabel}}
+{{range $i, $col := .Columns}}<th style="text-align:{{if eq $col.Align "right"}}right{{else}}left{{end}}">{{$col.Label}}</th>
+{{if and (eq $i 0) $topLabel}}<th style="text-align:left">{{$topLabel}}</th>{{end}}
 {{end}}</tr></thead>
 <tbody>
 {{range .Rows}}<tr>
 {{$link := .LinkURL}}
-{{$tags := .Tags}}
-{{range $i, $cell := .Cells}}<td style="text-align:{{$cell.Align}};white-space:pre-line">{{if and (eq $i 0) $link}}<a href="{{$link}}">{{$cell.Text}}</a>{{else}}{{$cell.Text}}{{end}}{{if and (eq $i 0) $tags}}{{range $tags}} <span role="button" class="outline contrast webui-tag"{{if .Tooltip}} data-tooltip="{{.Tooltip}}"{{end}}>{{.Label}}</span>{{end}}{{end}}</td>
+{{$rowTags := .Tags}}
+{{range $i, $cell := .Cells}}<td style="text-align:{{$cell.Align}};white-space:pre-line">{{if and (eq $i 0) $link}}<a href="{{$link}}">{{$cell.Text}}</a>{{else}}{{$cell.Text}}{{end}}</td>
+{{if and (eq $i 0) $.TagsColumnLabel}}<td style="text-align:left">{{range $rowTags}}<span role="button" class="outline contrast webui-tag"{{if .Tooltip}} data-tooltip="{{.Tooltip}}"{{end}}>{{.Label}}</span> {{end}}</td>{{end}}
 {{end}}</tr>
 {{end}}</tbody>
 </table>

@@ -238,7 +238,8 @@ func lifePartTags(lifePartIDs []int64, lifePartsByID map[int64]domain.LifePart) 
 // stepsByActivity being non-nil (only the active list passes one — see
 // stepsCompactCell) adds a trailing "Steps" column; passing nil (finished/
 // future/paused) omits it entirely, since those activities never have
-// visible steps. lifePartsByID resolves each row's life_part chips (see
+// visible steps. lifePartsByID resolves each row's life_part tags into a
+// trailing "Life parts" column (webui.TableData.TagsColumnLabel, see
 // progress-spec.md); every caller passes one, built once per handler call
 // from ListLifeParts.
 func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, includeType bool, stepsByActivity map[int64][]domain.Step, lifePartsByID map[int64]domain.LifePart, pagination *webui.PaginationData) webui.TableData {
@@ -268,9 +269,10 @@ func buildActivityTable(activities []domain.Activity, extraLabel string, extra a
 		columns = append(columns, webui.TableColumn{Label: "Steps"})
 	}
 	return webui.TableData{
-		Columns:    columns,
-		Rows:       rows,
-		Pagination: pagination,
+		Columns:         columns,
+		Rows:            rows,
+		Pagination:      pagination,
+		TagsColumnLabel: "Life parts",
 	}
 }
 

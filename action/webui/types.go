@@ -35,7 +35,7 @@ type TableColumn struct {
 type TableRow struct {
 	Cells   []string
 	LinkURL string        // empty = not clickable
-	Tags    []TableRowTag // optional tags rendered after the first cell, e.g. Progress browse's life_part tags; nil = none
+	Tags    []TableRowTag // this row's tags, rendered in the table's trailing tags column (see TableData.TagsColumnLabel); nil = none, only meaningful when TagsColumnLabel is set
 }
 
 // TableRowTag is one small tag shown next to a table row's first cell (e.g.
@@ -51,9 +51,10 @@ type TableRowTag struct {
 
 // TableData is a full table component.
 type TableData struct {
-	Columns    []TableColumn
-	Rows       []TableRow
-	Pagination *PaginationData // nil = no pagination controls rendered
+	Columns         []TableColumn
+	Rows            []TableRow
+	Pagination      *PaginationData // nil = no pagination controls rendered
+	TagsColumnLabel string          // header for a trailing column rendering each row's Tags; empty = no tags column at all
 }
 
 // PaginationData drives the prev/next + "page X of Y" controls RenderTable
