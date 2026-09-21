@@ -19,9 +19,9 @@ var EditExerciseMCPDefinition = mcp.Tool{
 		IdempotentHint:  true,
 		Title:           "Edit exercise",
 	},
-	Description: `Edit the name and/or equipment type of an existing exercise.
+	Description: `Edit the name, equipment type, and/or description of an existing exercise.
 
-At least one of name or equipment_type must be provided.
+At least one of name, equipment_type, or description must be provided.
 
 Equipment types: machine, barbell, dumbbells, bodyweight
 
@@ -29,14 +29,16 @@ Parameters:
 - exercise_id: ID of the exercise to edit
 - name: New name (optional)
 - equipment_type: New equipment type (optional)
+- description: New description of form/setup notes (optional); pass an empty string to clear it
 
 Returns the updated exercise object.`,
 }
 
 type EditExerciseInput struct {
-	ExerciseID    int64  `json:"exercise_id" jsonschema:"Exercise ID"`
-	Name          string `json:"name,omitempty" jsonschema:"New exercise name (optional)"`
-	EquipmentType string `json:"equipment_type,omitempty" jsonschema:"New equipment type (optional): machine|barbell|dumbbells|bodyweight"`
+	ExerciseID    int64   `json:"exercise_id" jsonschema:"Exercise ID"`
+	Name          string  `json:"name,omitempty" jsonschema:"New exercise name (optional)"`
+	EquipmentType string  `json:"equipment_type,omitempty" jsonschema:"New equipment type (optional): machine|barbell|dumbbells|bodyweight"`
+	Description   *string `json:"description,omitempty" jsonschema:"New description of form/setup notes (optional); empty string clears it"`
 }
 
 type EditExerciseOutput struct {
@@ -44,6 +46,7 @@ type EditExerciseOutput struct {
 	UserID        int64   `json:"user_id"`
 	Name          string  `json:"name"`
 	EquipmentType string  `json:"equipment_type"`
+	Description   string  `json:"description,omitempty"`
 	CreatedAt     string  `json:"created_at"`
 	LastUsedAt    *string `json:"last_used_at"`
 }
@@ -59,8 +62,8 @@ func EditExercise(ctx context.Context, _ *mcp.CallToolRequest, input EditExercis
 		return nil, EditExerciseOutput{}, fmt.Errorf("user_id not available in context")
 	}
 
-	if strings.TrimSpace(input.Name) == "" && strings.TrimSpace(input.EquipmentType) == "" {
-		return nil, EditExerciseOutput{}, fmt.Errorf("at least one of name or equipment_type must be provided")
+	if strings.TrimSpace(input.Name) == "" && strings.TrimSpace(input.EquipmentType) == "" && input.Description == nil {
+		return nil, EditExerciseOutput{}, fmt.Errorf("at least one of name, equipment_type, or description must be provided")
 	}
 
 	if input.EquipmentType != "" && !domain.EquipmentType(input.EquipmentType).IsValid() {
@@ -81,6 +84,9 @@ func EditExercise(ctx context.Context, _ *mcp.CallToolRequest, input EditExercis
 	if input.EquipmentType != "" {
 		ex.EquipmentType = domain.EquipmentType(input.EquipmentType)
 	}
+	if input.Description != nil {
+		ex.Description = strings.TrimSpace(*input.Description)
+	}
 
 	if err := db.UpdateExercise(ctx, ex); err != nil {
 		return nil, EditExerciseOutput{}, fmt.Errorf("failed to update exercise: %w", err)
@@ -96,6 +102,7 @@ func EditExercise(ctx context.Context, _ *mcp.CallToolRequest, input EditExercis
 		UserID:        updated.UserID,
 		Name:          updated.Name,
 		EquipmentType: string(updated.EquipmentType),
+		Description:   updated.Description,
 		CreatedAt:     updated.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	if updated.LastUsedAt != nil {

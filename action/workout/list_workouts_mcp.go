@@ -22,7 +22,7 @@ var ListWorkoutsMCPDefinition = mcp.Tool{
 This tool returns recent workouts (last 30 days) with complete details:
 - Workouts sorted by start time (most recent first)
 - Each workout includes all sets grouped by exercise
-- Exercise details (name, equipment type) included for each set
+- Exercise details (name, equipment type, description) included for each set
 - Shows active workouts (completed_at = null) and completed workouts
 
 Returns an array of workouts with nested exercises and sets.`,
@@ -44,6 +44,7 @@ type ExerciseWithSets struct {
 	ExerciseID    int64     `json:"exercise_id" jsonschema:"Exercise ID"`
 	ExerciseName  string    `json:"exercise_name" jsonschema:"Exercise name"`
 	EquipmentType string    `json:"equipment_type" jsonschema:"Equipment type"`
+	Description   string    `json:"description,omitempty" jsonschema:"Notes on form/setup"`
 	Sets          []SetItem `json:"sets" jsonschema:"List of sets for this exercise"`
 }
 
@@ -166,6 +167,7 @@ func ListWorkouts(ctx context.Context, _ *mcp.CallToolRequest, input ListWorkout
 				ExerciseID:    exercise.ID,
 				ExerciseName:  exercise.Name,
 				EquipmentType: string(exercise.EquipmentType),
+				Description:   exercise.Description,
 				Sets:          make([]SetItem, 0, len(sets)),
 			}
 

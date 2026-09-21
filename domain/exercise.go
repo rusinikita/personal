@@ -7,6 +7,7 @@ type Exercise struct {
 	UserID        int64         `json:"user_id"`
 	Name          string        `json:"name"`
 	EquipmentType EquipmentType `json:"equipment_type"`
+	Description   string        `json:"description,omitempty"`
 	CreatedAt     time.Time     `json:"created_at"`
 	LastUsedAt    *time.Time    `json:"last_used_at,omitempty"` // Computed from sets
 }

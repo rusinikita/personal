@@ -6,6 +6,7 @@ package workout
 
 import (
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"time"
@@ -86,6 +87,7 @@ func PersonalRecordsWebHandler(c *gin.Context) {
 			Cells: []string{
 				r.Exercise.Name,
 				string(r.Exercise.EquipmentType),
+				r.Exercise.Description,
 				strconv.FormatInt(r.SetCount, 10),
 				formatWeight(r.Records.MaxWeight),
 				formatReps(r.Records.MaxReps),
@@ -99,6 +101,7 @@ func PersonalRecordsWebHandler(c *gin.Context) {
 		Columns: []webui.TableColumn{
 			{Label: "Name"},
 			{Label: "Equipment"},
+			{Label: "Description"},
 			{Label: "Times performed", Align: "right"},
 			{Label: "Max weight (kg)", Align: "right"},
 			{Label: "Max reps", Align: "right"},
@@ -195,10 +198,11 @@ func ExerciseDetailWebHandler(c *gin.Context) {
 	}
 
 	detail := webui.DetailViewData{
-		Title:    exercise.Name,
-		BackURL:  "/web/workouts",
-		BackText: "Back to personal records",
-		Stats:    stats,
+		Title:       exercise.Name,
+		Description: template.HTML(template.HTMLEscapeString(exercise.Description)),
+		BackURL:     "/web/workouts",
+		BackText:    "Back to personal records",
+		Stats:       stats,
 	}
 
 	weightChart := webui.LineChartData{

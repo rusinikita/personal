@@ -4,14 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 21-09-26 — Exercise description field
-
-Add a `description` field to `exercises` (currently only `name` and `equipment_type`), settable via `create_exercise`/`edit_exercise` and shown wherever exercises are listed (exercise list, workout-logging exercise selector, history).
-
-**Why:** Exercise names alone aren't enough to remember exact form/setup (machine seat height, grip width, which variant of a movement) between sessions — a description field gives somewhere to note that instead of relying on memory.
-
-**Depends on:** 21-09-26 — Web UI for logging workout sets (new page under Workouts) (the description is most useful surfaced in the exercise selector on that screen; not a hard blocker, just where it matters most).
-
 ## 21-09-26 — Web UI for logging workout sets (new page under Workouts)
 
 Add workout-logging web pages under the existing Workouts section:

@@ -67,6 +67,32 @@ func (s *IntegrationTestSuite) TestEditExercise_UpdatesBothFields() {
 	assert.Equal(s.T(), "dumbbells", output.EquipmentType)
 }
 
+func (s *IntegrationTestSuite) TestEditExercise_UpdatesDescription() {
+	ctx := s.Context()
+
+	_, ex, err := workout.CreateExercise(ctx, nil, workout.CreateExerciseInput{
+		Name: "Cable Fly", EquipmentType: "machine",
+	})
+	require.NoError(s.T(), err)
+
+	desc := "Pulley at chest height"
+	_, output, err := workout.EditExercise(ctx, nil, workout.EditExerciseInput{
+		ExerciseID:  ex.ID,
+		Description: &desc,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "Pulley at chest height", output.Description)
+	assert.Equal(s.T(), "Cable Fly", output.Name, "name should be unchanged")
+
+	empty := ""
+	_, cleared, err := workout.EditExercise(ctx, nil, workout.EditExerciseInput{
+		ExerciseID:  ex.ID,
+		Description: &empty,
+	})
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "", cleared.Description, "empty string should clear the description")
+}
+
 func (s *IntegrationTestSuite) TestEditExercise_NotFound() {
 	ctx := s.Context()
 

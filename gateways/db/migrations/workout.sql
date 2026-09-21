@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS exercises (
 
 CREATE INDEX IF NOT EXISTS idx_exercises_user_id ON exercises(user_id);
 
+ALTER TABLE exercises ADD COLUMN IF NOT EXISTS description TEXT;
+
 -- =====================================================
 -- WORKOUTS - Таблица тренировок
 -- =====================================================

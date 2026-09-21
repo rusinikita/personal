@@ -883,8 +883,8 @@ func (r *repository) GetTopProducts(ctx context.Context, userID int64, from time
 
 func (r *repository) CreateExercise(ctx context.Context, exercise *domain.Exercise) (int64, error) {
 	query := `
-		INSERT INTO exercises (user_id, name, equipment_type, created_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO exercises (user_id, name, equipment_type, description, created_at)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id`
 
 	now := time.Now()
@@ -895,6 +895,7 @@ func (r *repository) CreateExercise(ctx context.Context, exercise *domain.Exerci
 		exercise.UserID,
 		exercise.Name,
 		exercise.EquipmentType,
+		exercise.Description,
 		exercise.CreatedAt,
 	).Scan(&id)
 
@@ -903,12 +904,12 @@ func (r *repository) CreateExercise(ctx context.Context, exercise *domain.Exerci
 
 func (r *repository) ListWithLastUsed(ctx context.Context, userID int64) ([]domain.Exercise, error) {
 	query := `
-		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
+		SELECT e.id, e.user_id, e.name, e.equipment_type, COALESCE(e.description, ''), e.created_at,
 		       MAX(s.created_at) as last_used_at
 		FROM exercises e
 		LEFT JOIN sets s ON e.id = s.exercise_id
 		WHERE e.user_id = $1
-		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.description, e.created_at
 		ORDER BY e.created_at DESC`
 
 	rows, err := r.db.Query(ctx, query, userID)
@@ -925,6 +926,7 @@ func (r *repository) ListWithLastUsed(ctx context.Context, userID int64) ([]doma
 			&ex.UserID,
 			&ex.Name,
 			&ex.EquipmentType,
+			&ex.Description,
 			&ex.CreatedAt,
 			&ex.LastUsedAt,
 		)
@@ -943,12 +945,12 @@ func (r *repository) ListWithLastUsed(ctx context.Context, userID int64) ([]doma
 
 func (r *repository) ListExercises(ctx context.Context, userID int64, limit int64) ([]domain.Exercise, error) {
 	query := `
-		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
+		SELECT e.id, e.user_id, e.name, e.equipment_type, COALESCE(e.description, ''), e.created_at,
 		       MAX(s.created_at) as last_used_at
 		FROM exercises e
 		LEFT JOIN sets s ON e.id = s.exercise_id AND s.user_id = $1
 		WHERE e.user_id = $1
-		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.description, e.created_at
 		ORDER BY last_used_at DESC NULLS LAST, e.name ASC
 		LIMIT $2`
 
@@ -966,6 +968,7 @@ func (r *repository) ListExercises(ctx context.Context, userID int64, limit int6
 			&ex.UserID,
 			&ex.Name,
 			&ex.EquipmentType,
+			&ex.Description,
 			&ex.CreatedAt,
 			&ex.LastUsedAt,
 		)
@@ -984,16 +987,16 @@ func (r *repository) ListExercises(ctx context.Context, userID int64, limit int6
 
 func (r *repository) GetExercise(ctx context.Context, exerciseID int64, userID int64) (*domain.Exercise, error) {
 	query := `
-		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
+		SELECT e.id, e.user_id, e.name, e.equipment_type, COALESCE(e.description, ''), e.created_at,
 		       MAX(s.created_at) as last_used_at
 		FROM exercises e
 		LEFT JOIN sets s ON e.id = s.exercise_id AND s.user_id = $2
 		WHERE e.id = $1 AND e.user_id = $2
-		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at`
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.description, e.created_at`
 
 	var ex domain.Exercise
 	err := r.db.QueryRow(ctx, query, exerciseID, userID).Scan(
-		&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.CreatedAt, &ex.LastUsedAt,
+		&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.Description, &ex.CreatedAt, &ex.LastUsedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -1005,8 +1008,8 @@ func (r *repository) GetExercise(ctx context.Context, exerciseID int64, userID i
 }
 
 func (r *repository) UpdateExercise(ctx context.Context, exercise *domain.Exercise) error {
-	query := `UPDATE exercises SET name = $1, equipment_type = $2 WHERE id = $3 AND user_id = $4`
-	tag, err := r.db.Exec(ctx, query, exercise.Name, exercise.EquipmentType, exercise.ID, exercise.UserID)
+	query := `UPDATE exercises SET name = $1, equipment_type = $2, description = $3 WHERE id = $4 AND user_id = $5`
+	tag, err := r.db.Exec(ctx, query, exercise.Name, exercise.EquipmentType, exercise.Description, exercise.ID, exercise.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to update exercise: %w", err)
 	}
@@ -1043,12 +1046,12 @@ func (r *repository) DeleteExercise(ctx context.Context, exerciseID int64, userI
 
 func (r *repository) SearchExercises(ctx context.Context, userID int64, query string) ([]domain.Exercise, error) {
 	sql := `
-		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at,
+		SELECT e.id, e.user_id, e.name, e.equipment_type, COALESCE(e.description, ''), e.created_at,
 		       MAX(s.created_at) as last_used_at
 		FROM exercises e
 		LEFT JOIN sets s ON e.id = s.exercise_id AND s.user_id = $1
 		WHERE e.user_id = $1 AND e.name ILIKE $2
-		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.description, e.created_at
 		ORDER BY last_used_at DESC NULLS LAST, e.name ASC`
 
 	rows, err := r.db.Query(ctx, sql, userID, "%"+query+"%")
@@ -1060,7 +1063,7 @@ func (r *repository) SearchExercises(ctx context.Context, userID int64, query st
 	var exercises []domain.Exercise
 	for rows.Next() {
 		var ex domain.Exercise
-		if err := rows.Scan(&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.CreatedAt, &ex.LastUsedAt); err != nil {
+		if err := rows.Scan(&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.Description, &ex.CreatedAt, &ex.LastUsedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan exercise: %w", err)
 		}
 		exercises = append(exercises, ex)
@@ -1308,7 +1311,7 @@ func (r *repository) GetExercisesByIDs(ctx context.Context, userID int64, exerci
 	// Build query using squirrel for proper IN clause
 	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 	selectBuilder := psql.Select(
-		"id", "user_id", "name", "equipment_type", "created_at",
+		"id", "user_id", "name", "equipment_type", "COALESCE(description, '')", "created_at",
 	).From("exercises").
 		Where(squirrel.Eq{"user_id": userID}).
 		Where(squirrel.Eq{"id": exerciseIDs})
@@ -1332,6 +1335,7 @@ func (r *repository) GetExercisesByIDs(ctx context.Context, userID int64, exerci
 			&ex.UserID,
 			&ex.Name,
 			&ex.EquipmentType,
+			&ex.Description,
 			&ex.CreatedAt,
 		)
 		if err != nil {
@@ -1474,11 +1478,11 @@ func (r *repository) GetPersonalRecords(ctx context.Context, userID int64, exerc
 // dashboard's list view.
 func (r *repository) ListPersonalRecords(ctx context.Context, userID int64) ([]domain.ExercisePersonalRecords, error) {
 	query := `
-		SELECT e.id, e.user_id, e.name, e.equipment_type, e.created_at, COUNT(s.id) AS set_count
+		SELECT e.id, e.user_id, e.name, e.equipment_type, COALESCE(e.description, ''), e.created_at, COUNT(s.id) AS set_count
 		FROM exercises e
 		JOIN sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
 		WHERE e.user_id = $1
-		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.created_at
+		GROUP BY e.id, e.user_id, e.name, e.equipment_type, e.description, e.created_at
 		ORDER BY set_count DESC, e.name ASC`
 
 	rows, err := r.db.Query(ctx, query, userID)
@@ -1491,7 +1495,7 @@ func (r *repository) ListPersonalRecords(ctx context.Context, userID int64) ([]d
 	for rows.Next() {
 		var ex domain.Exercise
 		var setCount int64
-		if err := rows.Scan(&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.CreatedAt, &setCount); err != nil {
+		if err := rows.Scan(&ex.ID, &ex.UserID, &ex.Name, &ex.EquipmentType, &ex.Description, &ex.CreatedAt, &setCount); err != nil {
 			return nil, fmt.Errorf("failed to scan exercise usage: %w", err)
 		}
 		results = append(results, domain.ExercisePersonalRecords{Exercise: ex, SetCount: setCount})

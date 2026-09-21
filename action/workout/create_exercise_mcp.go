@@ -29,12 +29,15 @@ Equipment types:
 - dumbbells: Dumbbell exercises
 - bodyweight: Bodyweight exercises (push-ups, pull-ups, etc.)
 
-Returns the created exercise with ID, user_id, name, equipment_type, created_at, and last_used_at (initially null).`,
+An optional description can note form/setup details (e.g. machine seat height, grip width, movement variant) to remember between sessions.
+
+Returns the created exercise with ID, user_id, name, equipment_type, description, created_at, and last_used_at (initially null).`,
 }
 
 type CreateExerciseInput struct {
 	Name          string `json:"name" jsonschema:"Exercise name"`
 	EquipmentType string `json:"equipment_type" jsonschema:"Equipment type (machine|barbell|dumbbells|bodyweight)"`
+	Description   string `json:"description,omitempty" jsonschema:"Optional notes on form/setup (optional)"`
 }
 
 type CreateExerciseOutput struct {
@@ -42,6 +45,7 @@ type CreateExerciseOutput struct {
 	UserID        int64   `json:"user_id" jsonschema:"User ID"`
 	Name          string  `json:"name" jsonschema:"Exercise name"`
 	EquipmentType string  `json:"equipment_type" jsonschema:"Equipment type"`
+	Description   string  `json:"description,omitempty" jsonschema:"Notes on form/setup"`
 	CreatedAt     string  `json:"created_at" jsonschema:"Creation timestamp (ISO8601)"`
 	LastUsedAt    *string `json:"last_used_at" jsonschema:"Last used timestamp (ISO8601), null for new exercises"`
 }
@@ -69,6 +73,7 @@ func CreateExercise(ctx context.Context, _ *mcp.CallToolRequest, input CreateExe
 		UserID:        userID,
 		Name:          input.Name,
 		EquipmentType: domain.EquipmentType(input.EquipmentType),
+		Description:   strings.TrimSpace(input.Description),
 	}
 
 	// 3. Save to database
@@ -83,6 +88,7 @@ func CreateExercise(ctx context.Context, _ *mcp.CallToolRequest, input CreateExe
 		UserID:        exercise.UserID,
 		Name:          exercise.Name,
 		EquipmentType: string(exercise.EquipmentType),
+		Description:   exercise.Description,
 		CreatedAt:     exercise.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		LastUsedAt:    nil,
 	}, nil

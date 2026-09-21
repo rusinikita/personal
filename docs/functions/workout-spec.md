@@ -22,6 +22,7 @@ A **read-only** web dashboard (`GET /web/workouts`, `GET /web/workouts/:id`) sit
 - **Est. 1RM computed in the handler, not stored**: same Epley formula (`weight × (1 + reps/30)`) `get_personal_records_mcp.go` already computes from `MaxWeight`, kept out of `domain.PersonalRecords` so the DB layer stays formula-agnostic
 - **Drill-down page has no table, only charts**: unlike the Progress browse drill-down (which pairs a chart with a paginated point-history table), the exercise drill-down is stat tiles + two line charts only — `webui.RenderDetailView` is adjusted to skip rendering the table section when `DetailViewData.Table.Columns` is empty (mirrors its existing "skip stat tiles when `Stats` is empty" behavior), instead of showing an empty table box
 - **List view embeds its own goal tiles, built elsewhere**: `GET /web/workouts` shows an `exercise_max_weight`/`exercise_total_volume` tile grid above the exercise table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/workout` owns no goal logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no exercise goals (empty `EmptyMessage`, see `webui-spec.md`)
+- **Exercise `description` is free-text, nullable at the column level but always read back as `""`**: every read query wraps it in `COALESCE(description, '')` so `domain.Exercise.Description` is a plain `string`, never a pointer — existing rows predating the column get `''` instead of `NULL` on first read. `edit_exercise` takes `description` as `*string` specifically so "omitted" (keep current value) is distinguishable from "explicit empty string" (clear it), unlike `name`/`equipment_type` which use the zero-value-means-omitted convention
 
 ## Architecture Diagrams
 
@@ -37,6 +38,7 @@ erDiagram
         int user_id FK
         string name
         string equipment_type "machine|barbell|dumbbells|bodyweight"
+        string description "nullable free-text form/setup notes"
         timestamp created_at
     }
     
@@ -214,6 +216,8 @@ CREATE TABLE IF NOT EXISTS exercises (
 
 CREATE INDEX IF NOT EXISTS idx_exercises_user_id ON exercises(user_id);
 
+ALTER TABLE exercises ADD COLUMN IF NOT EXISTS description TEXT;
+
 -- Workouts table
 CREATE TABLE IF NOT EXISTS workouts (
     id SERIAL PRIMARY KEY,
@@ -267,6 +271,7 @@ type Exercise struct {
 	UserID        int64           `json:"user_id"`
 	Name          string        `json:"name"`
 	EquipmentType EquipmentType `json:"equipment_type"`
+	Description   string        `json:"description,omitempty"` // Free-text form/setup notes; "" if unset
 	CreatedAt     time.Time     `json:"created_at"`
 	LastUsedAt    *time.Time    `json:"last_used_at,omitempty"` // Computed from sets
 }
@@ -387,16 +392,16 @@ type VolumeRecord struct {
 ## MCP Tools
 
 ### create_exercise
-Creates a new exercise with name and equipment_type (machine/barbell/dumbbells/bodyweight). Validates equipment_type against allowed values.
+Creates a new exercise with name, equipment_type (machine/barbell/dumbbells/bodyweight), and an optional description (free-text form/setup notes, e.g. machine seat height, grip width, movement variant). Validates equipment_type against allowed values.
 
 ### edit_exercise
-Updates name and/or equipment_type of an existing exercise. At least one field required; unspecified fields keep their current value.
+Updates name, equipment_type, and/or description of an existing exercise. At least one field required; unspecified fields keep their current value. `description` is a pointer field: omit it to leave unchanged, pass `""` to clear it.
 
 ### search_exercises
-Searches ALL exercises (not just the 20 most recent) by 1-5 name variants, case-insensitive ILIKE match. Ranks results by match_count (variants matched) DESC, then exercise_id ASC — same pattern as `resolve_food_id_by_name`.
+Searches ALL exercises (not just the 20 most recent) by 1-5 name variants, case-insensitive ILIKE match. Ranks results by match_count (variants matched) DESC, then exercise_id ASC — same pattern as `resolve_food_id_by_name`. Each match includes the exercise's description, so form/setup notes surface before creating a possible duplicate.
 
 ### list_exercises
-Returns the 20 most recently used exercises, sorted by last_used_at DESC NULLS LAST (unused exercises appear last, by name).
+Returns the 20 most recently used exercises, sorted by last_used_at DESC NULLS LAST (unused exercises appear last, by name). Each entry includes its description.
 
 ### merge_exercises
 Moves all sets from a source exercise to a target exercise, then deletes the source. Used to clean up duplicate exercises without losing set history.
@@ -408,7 +413,7 @@ Logs a set (reps and/or duration_seconds, optional weight_kg) for an exercise. R
 Deletes a single set by ID, returning the deleted set's exercise name, weight, and reps for confirmation.
 
 ### list_workouts
-Returns the last 30 days of workouts (default limit 10), each with its sets grouped by exercise, sorted by started_at DESC.
+Returns the last 30 days of workouts (default limit 10), each with its sets grouped by exercise, sorted by started_at DESC. Each exercise entry includes its description alongside name and equipment_type.
 
 ### get_exercise_history
 Returns all workout sessions containing a given exercise, newest first, paginated via limit/offset. Lets the assistant answer "how much was last time on X?" without scanning all workouts.
@@ -419,7 +424,7 @@ Returns best-ever results for an exercise: max_weight, max_reps, max_volume (sin
 ## HTTP Handlers
 
 ### GET /web/workouts
-Read-only list view: an exercise goal tile grid at the top (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderGoalTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
+Read-only list view: an exercise goal tile grid at the top (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderGoalTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
 
 ### GET /web/workouts/:id
-Drill-down for a single exercise: stat tiles (max weight, max reps, est. 1RM, times performed) plus two line charts — weight over time and reps over time — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.
+Drill-down for a single exercise: title subtitle shows the exercise's description (if any, HTML-escaped, via `DetailViewData.Description`), then stat tiles (max weight, max reps, est. 1RM, times performed) plus two line charts — weight over time and reps over time — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.

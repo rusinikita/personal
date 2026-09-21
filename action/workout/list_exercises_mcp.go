@@ -19,7 +19,7 @@ var ListExercisesMCPDefinition = mcp.Tool{
 This tool returns up to 20 exercises sorted by when they were last used:
 - Recently used exercises appear first
 - Never-used exercises appear at the end, sorted by name
-- Each exercise includes ID, name, equipment type, created timestamp, and last used timestamp
+- Each exercise includes ID, name, equipment type, description, created timestamp, and last used timestamp
 
 Returns an array of exercises with their details.`,
 }
@@ -29,11 +29,12 @@ type ListExercisesInput struct {
 }
 
 type ExerciseItem struct {
-	ID         int64   `json:"id" jsonschema:"Exercise ID"`
-	Name       string  `json:"name" jsonschema:"Exercise name"`
-	Type       string  `json:"type" jsonschema:"Equipment type"`
-	CreatedAt  string  `json:"created_at" jsonschema:"Creation timestamp (ISO8601)"`
-	LastUsedAt *string `json:"last_used_at" jsonschema:"Last used timestamp (ISO8601), null if never used"`
+	ID          int64   `json:"id" jsonschema:"Exercise ID"`
+	Name        string  `json:"name" jsonschema:"Exercise name"`
+	Type        string  `json:"type" jsonschema:"Equipment type"`
+	Description string  `json:"description,omitempty" jsonschema:"Notes on form/setup"`
+	CreatedAt   string  `json:"created_at" jsonschema:"Creation timestamp (ISO8601)"`
+	LastUsedAt  *string `json:"last_used_at" jsonschema:"Last used timestamp (ISO8601), null if never used"`
 }
 
 type ListExercisesOutput struct {
@@ -66,10 +67,11 @@ func ListExercises(ctx context.Context, _ *mcp.CallToolRequest, _ ListExercisesI
 
 	for _, ex := range exercises {
 		item := ExerciseItem{
-			ID:        ex.ID,
-			Name:      ex.Name,
-			Type:      string(ex.EquipmentType),
-			CreatedAt: ex.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			ID:          ex.ID,
+			Name:        ex.Name,
+			Type:        string(ex.EquipmentType),
+			Description: ex.Description,
+			CreatedAt:   ex.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		}
 
 		if ex.LastUsedAt != nil {

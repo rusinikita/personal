@@ -27,7 +27,7 @@ Parameters:
 - name_variants: 1-5 name strings to search for (e.g. ["bench", "press"])
 
 Returns:
-- exercises: array of matches with exercise_id, name, equipment_type, last_used_at, match_count
+- exercises: array of matches with exercise_id, name, equipment_type, description, last_used_at, match_count
 - error: validation error message if any`,
 }
 
@@ -39,6 +39,7 @@ type ExerciseMatch struct {
 	ExerciseID    int64   `json:"exercise_id"`
 	Name          string  `json:"name"`
 	EquipmentType string  `json:"equipment_type"`
+	Description   string  `json:"description,omitempty"`
 	LastUsedAt    *string `json:"last_used_at"`
 	MatchCount    int     `json:"match_count"`
 }
@@ -91,6 +92,7 @@ func SearchExercises(ctx context.Context, _ *mcp.CallToolRequest, input SearchEx
 					ExerciseID:    ex.ID,
 					Name:          ex.Name,
 					EquipmentType: string(ex.EquipmentType),
+					Description:   ex.Description,
 					LastUsedAt:    lastUsedAt,
 					MatchCount:    1,
 				}

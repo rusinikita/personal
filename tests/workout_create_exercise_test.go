@@ -44,6 +44,25 @@ func (s *IntegrationTestSuite) TestCreateExercise_Success() {
 	assert.True(s.T(), found, "Created exercise not found in repository")
 }
 
+func (s *IntegrationTestSuite) TestCreateExercise_WithDescription() {
+	ctx := s.Context()
+
+	input := workout.CreateExerciseInput{
+		Name:          "Leg Press",
+		EquipmentType: "machine",
+		Description:   "Seat 3, footplate high",
+	}
+
+	_, output, err := workout.CreateExercise(ctx, nil, input)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), "Seat 3, footplate high", output.Description)
+
+	found, err := s.Repo().GetExercise(ctx, output.ID, output.UserID)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), found)
+	assert.Equal(s.T(), "Seat 3, footplate high", found.Description)
+}
+
 func (s *IntegrationTestSuite) TestCreateExercise_InvalidEquipmentType() {
 	ctx := s.Context()
 
