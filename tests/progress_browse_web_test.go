@@ -167,8 +167,9 @@ func (s *IntegrationTestSuite) TestBrowse_HasCrossLinksToFinishedAndFuture() {
 
 // TestBrowse_SplitsActiveActivitiesByProgressTypeSections covers the
 // four-section active list (Habits, Promises, Projects, Mood, in that
-// order) from progress-spec.md: each section is headed by its type name,
-// has no Type column (redundant with the heading), and is unpaginated.
+// order) from progress-spec.md: each section is introduced by a heading row
+// inside one shared table (not a separate <table> per section), has no
+// Type column (redundant with the heading row), and is unpaginated.
 func (s *IntegrationTestSuite) TestBrowse_SplitsActiveActivitiesByProgressTypeSections() {
 	ctx := s.Context()
 	now := time.Now()
@@ -183,12 +184,13 @@ func (s *IntegrationTestSuite) TestBrowse_SplitsActiveActivitiesByProgressTypeSe
 	r.ServeHTTP(w, req)
 
 	body := w.Body.String()
-	habitsIdx := strings.Index(body, "<h3>Habits</h3>")
-	promisesIdx := strings.Index(body, "<h3>Promises</h3>")
-	projectsIdx := strings.Index(body, "<h3>Projects</h3>")
-	moodIdx := strings.Index(body, "<h3>Mood</h3>")
+	habitsIdx := strings.Index(body, ">Habits</th>")
+	promisesIdx := strings.Index(body, ">Promises</th>")
+	projectsIdx := strings.Index(body, ">Projects</th>")
+	moodIdx := strings.Index(body, ">Mood</th>")
 	require.True(s.T(), habitsIdx >= 0 && promisesIdx >= 0 && projectsIdx >= 0 && moodIdx >= 0, "all four section headings must render")
 	assert.True(s.T(), habitsIdx < promisesIdx && promisesIdx < projectsIdx && projectsIdx < moodIdx, "sections must render in Habits, Promises, Projects, Mood order")
+	assert.Equal(s.T(), 1, strings.Count(body, "<table>"), "all four sections must render inside one shared table")
 
 	assert.Contains(s.T(), body, "Gym")
 	assert.Contains(s.T(), body, "Call mom")
@@ -198,8 +200,8 @@ func (s *IntegrationTestSuite) TestBrowse_SplitsActiveActivitiesByProgressTypeSe
 }
 
 // TestBrowse_ActiveSectionRendersEmptyTableWhenNoActivitiesOfThatType covers
-// the "still show the heading" rule for a progress_type with zero active
-// activities.
+// the "still show the heading row" rule for a progress_type with zero
+// active activities.
 func (s *IntegrationTestSuite) TestBrowse_ActiveSectionRendersEmptyTableWhenNoActivitiesOfThatType() {
 	ctx := s.Context()
 	now := time.Now()
@@ -211,9 +213,9 @@ func (s *IntegrationTestSuite) TestBrowse_ActiveSectionRendersEmptyTableWhenNoAc
 	r.ServeHTTP(w, req)
 
 	body := w.Body.String()
-	assert.Contains(s.T(), body, "<h3>Promises</h3>")
-	assert.Contains(s.T(), body, "<h3>Projects</h3>")
-	assert.Contains(s.T(), body, "<h3>Mood</h3>")
+	assert.Contains(s.T(), body, ">Promises</th>")
+	assert.Contains(s.T(), body, ">Projects</th>")
+	assert.Contains(s.T(), body, ">Mood</th>")
 }
 
 // TestBrowse_ActiveListIsNotPaginated covers the "active list shows

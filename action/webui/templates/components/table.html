@@ -7,13 +7,14 @@
 {{if and (eq $i 0) $topLabel}}<th style="text-align:left">{{$topLabel}}</th>{{end}}
 {{end}}</tr></thead>
 <tbody>
-{{range .Rows}}<tr>
+{{range .Rows}}{{if .Heading}}<tr><th colspan="{{$.ColSpan}}" style="text-align:left">{{.Heading}}</th></tr>
+{{else}}<tr>
 {{$link := .LinkURL}}
 {{$rowTags := .Tags}}
 {{range $i, $cell := .Cells}}<td style="text-align:{{$cell.Align}};white-space:pre-line">{{if and (eq $i 0) $link}}<a href="{{$link}}">{{$cell.Text}}</a>{{else}}{{$cell.Text}}{{end}}</td>
 {{if and (eq $i 0) $.TagsColumnLabel}}<td style="text-align:left">{{range $rowTags}}<span role="button" class="outline contrast webui-tag"{{if .Tooltip}} data-tooltip="{{.Tooltip}}"{{end}}>{{.Label}}</span> {{end}}</td>{{end}}
 {{end}}</tr>
-{{end}}</tbody>
+{{end}}{{end}}</tbody>
 </table>
 {{if .Pagination}}<footer>{{template "components/pagination" .Pagination}}</footer>{{end}}
 </article>

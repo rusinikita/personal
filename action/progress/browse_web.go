@@ -231,19 +231,30 @@ func lifePartTags(lifePartIDs []int64, lifePartsByID map[int64]domain.LifePart) 
 	return tags
 }
 
-// buildActivityTable builds one list's table. includeType is false for the
-// active list's per-progress_type sections (see activeSectionOrder), where
-// the section heading already says the type — a Type column there would
-// just repeat it. The still-combined finished/future lists pass true.
-// stepsByActivity being non-nil (only the active list passes one — see
-// stepsCompactCell) adds a trailing "Steps" column; passing nil (finished/
-// future/paused) omits it entirely, since those activities never have
-// visible steps. lifePartsByID resolves each row's life_part tags into a
+// activityTableColumns builds one list's column headers. includeType is
+// false for the active list (see activeSectionOrder), where each group's
+// heading row already says the type — a Type column there would just repeat
+// it. The still-combined finished/future/paused lists pass true. showSteps
+// adds a trailing "Steps" column (active list only, see stepsCompactCell).
+func activityTableColumns(extraLabel string, includeType, showSteps bool) []webui.TableColumn {
+	columns := []webui.TableColumn{{Label: "Name"}, {Label: "Description"}}
+	if includeType {
+		columns = append(columns, webui.TableColumn{Label: "Type"})
+	}
+	columns = append(columns, webui.TableColumn{Label: "Frequency"}, webui.TableColumn{Label: extraLabel})
+	if showSteps {
+		columns = append(columns, webui.TableColumn{Label: "Steps"})
+	}
+	return columns
+}
+
+// activityTableRows builds one group's rows, matching the column shape
+// activityTableColumns produces for the same includeType/showSteps
+// combination. lifePartsByID resolves each row's life_part tags into the
 // trailing "Life parts" column (webui.TableData.TagsColumnLabel, see
 // progress-spec.md); every caller passes one, built once per handler call
 // from ListLifeParts.
-func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, includeType bool, stepsByActivity map[int64][]domain.Step, lifePartsByID map[int64]domain.LifePart, pagination *webui.PaginationData) webui.TableData {
-	showSteps := stepsByActivity != nil
+func activityTableRows(activities []domain.Activity, extra activityExtraColumn, includeType, showSteps bool, stepsByActivity map[int64][]domain.Step, lifePartsByID map[int64]domain.LifePart) []webui.TableRow {
 	rows := make([]webui.TableRow, 0, len(activities))
 	for _, a := range activities {
 		cells := []string{a.Name, a.Description}
@@ -260,17 +271,17 @@ func buildActivityTable(activities []domain.Activity, extraLabel string, extra a
 			Tags:    lifePartTags(a.LifePartIDs, lifePartsByID),
 		})
 	}
-	columns := []webui.TableColumn{{Label: "Name"}, {Label: "Description"}}
-	if includeType {
-		columns = append(columns, webui.TableColumn{Label: "Type"})
-	}
-	columns = append(columns, webui.TableColumn{Label: "Frequency"}, webui.TableColumn{Label: extraLabel})
-	if showSteps {
-		columns = append(columns, webui.TableColumn{Label: "Steps"})
-	}
+	return rows
+}
+
+// buildActivityTable builds one list's full table (used by the still-
+// combined finished/future/paused lists, always with includeType=true and
+// no steps column — see renderActivityList).
+func buildActivityTable(activities []domain.Activity, extraLabel string, extra activityExtraColumn, includeType bool, stepsByActivity map[int64][]domain.Step, lifePartsByID map[int64]domain.LifePart, pagination *webui.PaginationData) webui.TableData {
+	showSteps := stepsByActivity != nil
 	return webui.TableData{
-		Columns:         columns,
-		Rows:            rows,
+		Columns:         activityTableColumns(extraLabel, includeType, showSteps),
+		Rows:            activityTableRows(activities, extra, includeType, showSteps, stepsByActivity, lifePartsByID),
 		Pagination:      pagination,
 		TagsColumnLabel: "Life parts",
 	}
@@ -373,9 +384,11 @@ var activeSectionOrder = []struct {
 }
 
 // BrowseWebHandler renders GET /web/progress/browse: an activity goal tile
-// grid, then every active activity split into four unpaginated tables (one
-// per progress_type, activeSectionOrder), unlike dashboard_web.go's
-// top-5-only screenshot view.
+// grid, then every active activity in one unpaginated table, grouped into
+// four sections by progress_type (activeSectionOrder) via heading rows —
+// unlike dashboard_web.go's top-5-only screenshot view. One shared table
+// (instead of a separate <table> per section) keeps column widths
+// consistent across the whole list (see progress-spec.md Best Practices).
 func BrowseWebHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
@@ -398,7 +411,7 @@ func BrowseWebHandler(c *gin.Context) {
 	}
 
 	extra := func(a domain.Activity) string { return formatTimeAgoPtr(a.LastPointAt) }
-	content := browseCrossLinks + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles})
+	var rows []webui.TableRow
 	for _, section := range activeSectionOrder {
 		activities, err := db.ListActivities(ctx, domain.ActivityFilter{
 			UserID:       userID,
@@ -420,9 +433,15 @@ func BrowseWebHandler(c *gin.Context) {
 				stepsByActivity[a.ID] = steps
 			}
 		}
-		table := buildActivityTable(activities, "Last update", extra, false, stepsByActivity, lifePartsByID, nil)
-		content += template.HTML(fmt.Sprintf("<h3>%s</h3>", section.Heading)) + webui.RenderTable(table)
+		rows = append(rows, webui.TableRow{Heading: section.Heading})
+		rows = append(rows, activityTableRows(activities, extra, false, true, stepsByActivity, lifePartsByID)...)
 	}
+	table := webui.TableData{
+		Columns:         activityTableColumns("Last update", false, true),
+		Rows:            rows,
+		TagsColumnLabel: "Life parts",
+	}
+	content := browseCrossLinks + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles}) + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)

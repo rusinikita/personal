@@ -36,6 +36,7 @@ type TableRow struct {
 	Cells   []string
 	LinkURL string        // empty = not clickable
 	Tags    []TableRowTag // this row's tags, rendered in the table's trailing tags column (see TableData.TagsColumnLabel); nil = none, only meaningful when TagsColumnLabel is set
+	Heading string        // when non-empty, row renders as a full-width section-heading row instead of Cells/LinkURL/Tags (all ignored); empty = normal row
 }
 
 // TableRowTag is one small tag shown next to a table row's first cell (e.g.

@@ -42,6 +42,7 @@ type tableCellRenderData struct {
 }
 
 type tableRowRenderData struct {
+	Heading string // non-empty = render as a full-width heading row, Cells/LinkURL/Tags below are unused
 	Cells   []tableCellRenderData
 	LinkURL string
 	Tags    []TableRowTag
@@ -52,6 +53,7 @@ type tableRenderData struct {
 	Rows            []tableRowRenderData
 	Pagination      *PaginationData
 	TagsColumnLabel string
+	ColSpan         int // total column count (Columns plus the tags column when present), for a heading row's colspan
 }
 
 // RenderTable renders a TableData into the shared table component markup.
@@ -59,8 +61,16 @@ type tableRenderData struct {
 // column, so numeric ("right") columns line up between the header and the
 // rows instead of the header alone being right-aligned.
 func RenderTable(data TableData) template.HTML {
+	colSpan := len(data.Columns)
+	if data.TagsColumnLabel != "" {
+		colSpan++
+	}
 	rows := make([]tableRowRenderData, len(data.Rows))
 	for i, row := range data.Rows {
+		if row.Heading != "" {
+			rows[i] = tableRowRenderData{Heading: row.Heading}
+			continue
+		}
 		cells := make([]tableCellRenderData, len(row.Cells))
 		for j, cell := range row.Cells {
 			align := "left"
@@ -76,6 +86,7 @@ func RenderTable(data TableData) template.HTML {
 		Rows:            rows,
 		Pagination:      data.Pagination,
 		TagsColumnLabel: data.TagsColumnLabel,
+		ColSpan:         colSpan,
 	})
 }
 
