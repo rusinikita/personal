@@ -57,3 +57,15 @@ Move `activity_progress.note` (free-text, variable-length) out of the progress-p
 **Use cases:**
 - Full-text or semantic (vector) search over notes without scanning/indexing the whole `activity_progress` table.
 - Keep `activity_progress` lean if it ever needs its own indexing/partitioning strategy independent of note content.
+
+## 23-09-26 — Separate entity for inbox notes
+
+Introduce a dedicated entity for inbox notes — quick captures that land somewhere first and get sorted later, instead of being forced into an existing entity (activity, progress note, idea) at the moment of capture. The concrete representation (table shape, fields, whether/how an inbox note gets processed into another entity, MCP tools / web UI) is intentionally left undecided and will be defined when this item is turned into a feature document.
+
+**Why:** Capturing a thought today means immediately deciding where it belongs; a separate inbox entity lets capture stay fast and pushes the "what is this?" decision to a later review step.
+
+## 23-09-26 — Rename goals to achievements
+
+Rename the `goals` subdomain to "achievements" everywhere it surfaces — table, `goal_type`, domain models, `action/goals` package, MCP tools (`create_goal`, `update_goal`, `get_goal_progress`, `log_goal_progress`, `refresh_goals`), web routes/pages (`/web/goals`, embedded tiles), and `docs/functions/goals-spec.md`. Pure rename — no behavior change.
+
+**Why:** "Goal" causes confusion: these aren't life goals, they're a gamification tool — measurable targets (save X, lift X kg, N-day streak) whose point is the satisfaction of hitting them. Calling them achievements matches what they actually are and frees "goal" from implying something they don't model.
