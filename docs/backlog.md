@@ -20,12 +20,6 @@ Add workout-logging web pages under the existing Workouts section:
 - Start a workout screen mid-session and only have it become a real workout once a set is actually logged.
 - Pick the next exercise quickly from a frequency-sorted list instead of scanning the full exercise list.
 
-## 16-09-26 — Formalize activities & finance workflow, render as web doc, expose via MCP for session context
-
-Write up the actual process/conventions for how activities (`action/progress`) and finances (`action/money`) are meant to be used day-to-day — what the user does manually vs. what the agent does — as documentation, render it on the web, and expose it through MCP (e.g. a resource or a `get_workflow_docs`-style tool) so it can be injected into agent sessions as context.
-
-**Why:** Goal is mostly for the user's own clarity — working through this system keeps surfacing confusion about what belongs where (activity vs. idea vs. journal note, which progress_type fits what, etc.); writing the process down forces that decision, and exposing it to the agent keeps every session consistent with it instead of re-deriving conventions ad hoc each time.
-
 ## 16-09-26 — Ideas table + MCP tools (separate from activities)
 
 Add a new table (e.g. `ideas`: id, user_id, title, description, created_at, updated_at) plus MCP tools (`create_idea`, `edit_idea` to append/grow the description over time, `list_ideas`) for unformed thoughts that aren't ready to become an activity — no `progress_type`, no `frequency_days`, no progress points. Not auto-converted into an activity — promoting an idea is a manual action (create a new activity referencing the idea's text); the idea stays in its list afterward as a historical record.
@@ -69,3 +63,27 @@ Introduce a dedicated entity for inbox notes — quick captures that land somewh
 Rename the `goals` subdomain to "achievements" everywhere it surfaces — table, `goal_type`, domain models, `action/goals` package, MCP tools (`create_goal`, `update_goal`, `get_goal_progress`, `log_goal_progress`, `refresh_goals`), web routes/pages (`/web/goals`, embedded tiles), and `docs/functions/goals-spec.md`. Pure rename — no behavior change.
 
 **Why:** "Goal" causes confusion: these aren't life goals, they're a gamification tool — measurable targets (save X, lift X kg, N-day streak) whose point is the satisfaction of hitting them. Calling them achievements matches what they actually are and frees "goal" from implying something they don't model.
+
+## 23-09-26 — Soft delete for progress points, with resolution tracking
+
+Add a `deleted_at` + `resolution` field to progress points (values: `dropped`, `merged`, `expired`, `→ step`/`→ activity`/`→ note` with a reference id), replacing today's hard `delete_progress_point`. Deleted points are excluded from `get_activity_stats` and `search_progress_notes` by default.
+
+**Why:** The weekly/monthly review ritual (`action/docs/content/activity-rituals.md`, §2.4) requires every inbox note to leave a recorded outcome when it's cleared out — dropped, merged into a duplicate, promoted into a step/activity/note, or expired after three monthly reviews with no traction — but the current hard delete destroys that decision instead of recording it.
+
+## 23-09-26 — Duplicate-surfacing counter on progress points
+
+Add a counter field to progress points that tracks how many times a duplicate idea has resurfaced, instead of tallying it informally in the note's text.
+
+**Why:** The inbox ritual's spike trigger ("idea surfaced 3 times") and someday-expiry rule ("3 monthly reviews with no new bump") both key off this count (`action/docs/content/activity-rituals.md`, §2.3, §2.5) — without a real field, detecting either mechanically means re-parsing note history instead of reading one value.
+
+## 23-09-26 — Enforce activity/goal limits in create_activity / create_goal
+
+Check the WIP limit (max 6 active activities total, max 3 per `progress_type`) in `create_activity`, and the max-6 cap in `create_goal`, instead of leaving both counts to be tallied by hand at each weekly review.
+
+**Why:** `action/docs/content/activity-rituals.md` (§2.6, §2.10) treats these limits as load-bearing rules ("новое — только ценой вытеснения"), currently enforced only by the agent counting rows during review — a tool-level check makes the limit hold even outside a review session, instead of depending on the agent remembering to check.
+
+## 25-09-26 — Mechanics/rituals docs for food, workout, finance
+
+Write `action/docs/content/{subject}-mechanics.md` and/or `-rituals.md` for food, workout, and finance, same shape as the activities pair — mechanics normative against the code, rituals covering the actual day-to-day process (when/why, not just what fields exist).
+
+**Why:** `transport/mcp/instructions.md` was trimmed to a dispatcher (subdomain → first tool call) for every subdomain, including food/workout/finance — but unlike activities, they have no `get_doc` fallback yet, so anything beyond "which tool to call first" that used to live in the old instructions text (metaphor scripts, exact wording, detailed procedure) is currently just gone until this is written.

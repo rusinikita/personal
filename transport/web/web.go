@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"personal/action/auth"
+	"personal/action/docs"
 	"personal/action/goals"
 	"personal/action/money"
 	"personal/action/progress"
@@ -79,6 +80,11 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	// screenshot page for a physical always-on display, unauthenticated
 	// like /web/progress above (see goals.EinkDashboardWebHandler).
 	router.GET("/web/goals/eink", dbMiddleware(db), goals.EinkDashboardWebHandler)
+
+	// Docs — hand-written convention documents embedded in action/docs,
+	// read-only, no DB access.
+	router.GET("/web/docs", webAuth, docs.IndexWebHandler)
+	router.GET("/web/docs/:topic", webAuth, docs.DocWebHandler)
 
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))
