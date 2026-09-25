@@ -87,3 +87,9 @@ Check the WIP limit (max 6 active activities total, max 3 per `progress_type`) i
 Write `action/docs/content/{subject}-mechanics.md` and/or `-rituals.md` for food, workout, and finance, same shape as the activities pair — mechanics normative against the code, rituals covering the actual day-to-day process (when/why, not just what fields exist).
 
 **Why:** `transport/mcp/instructions.md` was trimmed to a dispatcher (subdomain → first tool call) for every subdomain, including food/workout/finance — but unlike activities, they have no `get_doc` fallback yet, so anything beyond "which tool to call first" that used to live in the old instructions text (metaphor scripts, exact wording, detailed procedure) is currently just gone until this is written.
+
+## 25-09-26 — Sidebar navigation between docs on /web/docs pages
+
+Add a sidebar to `GET /web/docs/{topic}` pages listing every available doc (from `docs.Topics()`, current one highlighted), so the user can jump between docs directly instead of going back to the `/web/docs` index each time.
+
+**Why:** With two docs today and more planned (see "25-09-26 — Mechanics/rituals docs for food, workout, finance"), mechanics and rituals docs cross-reference each other constantly — switching between them via the index page is an extra round-trip for every jump.
