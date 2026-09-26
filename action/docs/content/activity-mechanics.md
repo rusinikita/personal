@@ -13,14 +13,14 @@
 | **Activity** | Всё, что трекается: привычка, проект, обещание, настроение | Life parts (1..N) |
 | **Progress point** | Чекин: значение −2..+2 и заметка | Activity (1) |
 | **Step** | Next-action: конкретное следующее действие | Activity (1) |
-| **Goal** | Achievement: прогресс-бар на аспект activity, упражнения или денег | Activity / exercise / категория трат (0..1) |
+| **Achievement** | Прогресс-бар на аспект activity, упражнения или денег | Activity / exercise / категория трат (0..1) |
 | **Life part** | Область жизни | — |
 | **Событие календаря** | Слот в Google Calendar | Activity через `activity_id:XX` в description |
 
 ```
 Life part ──< Activity >── Progress point
                  │   └──< Step
-                 └── Goal (0..N за жизнь)
+                 └── Achievement (0..N за жизнь)
 Google Calendar event ··· activity_id:XX
 ```
 
@@ -75,7 +75,7 @@ Google Calendar event ··· activity_id:XX
 | удалена | Нигде | **Уничтожается** вместе с чекинами |
 
 - Отдельного `finish_activity` нет — завершение через `edit_activity(status, ended_at)`.
-- `delete_activity` — безвозвратное удаление activity и всех её чекинов. Падает, если на activity ссылается goal.
+- `delete_activity` — безвозвратное удаление activity и всех её чекинов. Падает, если на activity ссылается achievement.
 - **Legacy-паузы:** часть старых activity «поставлена на паузу» сдвигом `started_at` в будущее — до появления `status=paused` и `deferred_until`. Такие activity не видны в `get_activity_list(active_only=true)`. Их разбор — в миграции (`rituals.md`, «Разово»).
 
 ### 2.4 Служебные activity
@@ -149,13 +149,13 @@ Google Calendar event ··· activity_id:XX
 
 ---
 
-## 5. Goal
+## 5. Achievement
 
-> **Goal = achievement.** Не цель и не финишная черта activity, а прогресс-бар на отдельный аспект — для мотивации на втором экране. Название сущности историческое.
+> **Achievement** — не цель и не финишная черта activity, а прогресс-бар на отдельный аспект — для мотивации на втором экране.
 
 ### 5.1 Типы
 
-| `goal_type` | Что считает | Нужно указать | `current_value` |
+| `achievement_type` | Что считает | Нужно указать | `current_value` |
 |---|---|---|---|
 | `activity_occurrence_count` | Число чекинов activity за период | `activity_id` | Считается |
 | `activity_streak_count` | Серия чекинов activity подряд | `activity_id` | Считается |
@@ -163,15 +163,15 @@ Google Calendar event ··· activity_id:XX
 | `exercise_total_volume` | Суммарный объём по упражнению | `exercise_id` | Считается |
 | `money_saving` | Накоплено | — | Считается |
 | `money_spend` | Потрачено в категории (лимит) | `category` | Считается |
-| `manual` | Что угодно | `unit` | Вручную: `log_goal_progress(delta)` |
+| `manual` | Что угодно | `unit` | Вручную: `log_achievement_progress(delta)` |
 
 ### 5.2 Поля и поведение
 
 - Общие поля: `name`, `target_value`, `starts_at`, `ends_at` (срок), `unit`.
-- `current_value` — кэш. Для шести вычисляемых типов обновляется `refresh_goals` (все или один); `get_goal_progress` его не пересчитывает.
-- `get_goal_progress(date?)` — все goal, активные на дату, с `remaining_value`.
-- `update_goal` — `name`, `target_value`, `ends_at` / `clear_ends_at`, `unit`, `category` (только `money_spend`), `current_value` (только `manual`).
-- Удалить activity, на которую ссылается goal, нельзя, пока goal не удалён или не перепривязан.
+- `current_value` — кэш. Для шести вычисляемых типов обновляется `refresh_achievements` (все или один); `get_achievement_progress` его не пересчитывает.
+- `get_achievement_progress(date?)` — все achievement, активные на дату, с `remaining_value`.
+- `update_achievement` — `name`, `target_value`, `ends_at` / `clear_ends_at`, `unit`, `category` (только `money_spend`), `current_value` (только `manual`).
+- Удалить activity, на которую ссылается achievement, нельзя, пока achievement не удалён или не перепривязан.
 
 ---
 
@@ -201,12 +201,12 @@ Google Calendar event ··· activity_id:XX
 
 ## 8. Смежные модули MCP
 
-Не часть трекинга activity, но на них опираются goal и месячный финансовый срез.
+Не часть трекинга activity, но на них опираются achievement и месячный финансовый срез.
 
 | Модуль | Что есть | Где используется |
 |---|---|---|
-| Финансы | Транзакции (expense / income / transfer), `get_balance`, `get_spending_by_category`, `compare_periods`, `get_top_merchants`; суммы в EUR | Goal `money_*`; месячный срез (`rituals.md`, 3.3) |
-| Тренировки | Упражнения, подходы, `get_personal_records`, `get_exercise_history` | Goal `exercise_*` |
+| Финансы | Транзакции (expense / income / transfer), `get_balance`, `get_spending_by_category`, `compare_periods`, `get_top_merchants`; суммы в EUR | Achievement `money_*`; месячный срез (`rituals.md`, 3.3) |
+| Тренировки | Упражнения, подходы, `get_personal_records`, `get_exercise_history` | Achievement `exercise_*` |
 | Питание | Продукты, логирование, `get_nutrition_stats` | — |
 | Telegram | `send_telegram_message` — сообщение мне вне сессии | — |
 
@@ -221,7 +221,7 @@ Google Calendar event ··· activity_id:XX
 | Soft delete заметок inbox с решением (`dropped`, `→ step`, `merged`, `expired`…), удалённое скрыто от выдачи | Только жёсткий `delete_progress_point` | Реализовать soft delete: `deleted_at` + `resolution` (+ ссылка на ID), фильтр в `get_activity_stats` и `search_progress_notes` |
 | Счётчик всплываний `+1` | Нет поля | Пока — в тексте заметки; решить, нужно ли поле |
 | Служебная activity «Inbox» | Не создана | Создать при миграции; выбрать `progress_type` и life part |
-| Лимит 6 goal, WIP 6 / 3 на тип | Не проверяется | Считает агент на ревью; возможно — проверка в `create_*` |
+| Лимит 6 achievement, WIP 6 / 3 на тип | Не проверяется | Считает агент на ревью; возможно — проверка в `create_*` |
 | Паузы только через `status=paused` + `deferred_until` | Остались legacy-паузы через `started_at` | Миграция |
 
 ---
@@ -241,5 +241,5 @@ Google Calendar event ··· activity_id:XX
 | Поиск по заметкам | `search_progress_notes(query_variants, …)` |
 | Метафоры шкалы | `get_progress_type_examples` |
 | Steps: список / создать / изменить / удалить | `get_step_list` / `create_step` / `edit_step` / `delete_step` |
-| Goals: список / создать / изменить / +delta / пересчитать | `get_goal_progress` / `create_goal` / `update_goal` / `log_goal_progress` / `refresh_goals` |
+| Achievements: список / создать / изменить / +delta / пересчитать | `get_achievement_progress` / `create_achievement` / `update_achievement` / `log_achievement_progress` / `refresh_achievements` |
 | Life parts | `list_life_parts` |

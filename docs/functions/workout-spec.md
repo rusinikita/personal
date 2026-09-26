@@ -21,7 +21,7 @@ A **read-only** web dashboard (`GET /web/workouts`, `GET /web/workouts/:id`) sit
 - **List view reuses `GetPersonalRecords` per row**: `ListPersonalRecords` first ranks exercises by set count, then calls the existing single-exercise `GetPersonalRecords` for each — N+1 queries, acceptable for a single-user personal tool with a handful of exercises (same trade-off `BrowseDetailWebHandler` already makes calling `GetTrendStats` three times)
 - **Est. 1RM computed in the handler, not stored**: same Epley formula (`weight × (1 + reps/30)`) `get_personal_records_mcp.go` already computes from `MaxWeight`, kept out of `domain.PersonalRecords` so the DB layer stays formula-agnostic
 - **Drill-down page has no table, only charts**: unlike the Progress browse drill-down (which pairs a chart with a paginated point-history table), the exercise drill-down is stat tiles + one dual-axis chart only — `webui.RenderDetailView` is adjusted to skip rendering the table section when `DetailViewData.Table.Columns` is empty (mirrors its existing "skip stat tiles when `Stats` is empty" behavior), instead of showing an empty table box
-- **List view embeds its own goal tiles, built elsewhere**: `GET /web/workouts` shows an `exercise_max_weight`/`exercise_total_volume` tile grid above the exercise table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/workout` owns no goal logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no exercise goals (empty `EmptyMessage`, see `webui-spec.md`)
+- **List view embeds its own achievement tiles, built elsewhere**: `GET /web/workouts` shows an `exercise_max_weight`/`exercise_total_volume` tile grid above the exercise table, via `achievements.BuildAchievementTiles(ctx, db, userID, now, types)` + `webui.RenderAchievementTiles` (see `achievements-spec.md`) — `action/workout` owns no achievement logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no exercise achievements (empty `EmptyMessage`, see `webui-spec.md`)
 - **One dual-axis chart, one point per set**: the drill-down shows weight (left Y axis, kg) and reps (right Y axis) as two lines on one `webui.DualAxisChartData` chart instead of two separate line charts, so a set's weight and reps sit at the same X position. Every set with weight or reps becomes one point (X label = set date, oldest-to-newest); a missing value (`WeightKg = 0`, e.g. bodyweight, or `Reps = 0`, e.g. a duration-only set) becomes `null` — a gap in that line only, the other line still shows the set. Sets with neither are skipped
 - **Exercise `description` is free-text, nullable at the column level but always read back as `""`**: every read query wraps it in `COALESCE(description, '')` so `domain.Exercise.Description` is a plain `string`, never a pointer — existing rows predating the column get `''` instead of `NULL` on first read. `edit_exercise` takes `description` as `*string` specifically so "omitted" (keep current value) is distinguishable from "explicit empty string" (clear it), unlike `name`/`equipment_type` which use the zero-value-means-omitted convention
 
@@ -178,12 +178,12 @@ sequenceDiagram
     participant Webui as action/webui
 
     Browser->>Handler: GET /web/workouts
-    Handler->>DB: goals.BuildGoalTiles(userID, now, types=[exercise_max_weight, exercise_total_volume])<br/>(see goals-spec.md)
-    DB-->>Handler: []webui.GoalTileData (may be empty)
+    Handler->>DB: achievements.BuildAchievementTiles(userID, now, types=[exercise_max_weight, exercise_total_volume])<br/>(see achievements-spec.md)
+    DB-->>Handler: []webui.AchievementTileData (may be empty)
     Handler->>DB: ListPersonalRecords(userID)
     DB-->>Handler: []ExercisePersonalRecords, sorted by SetCount DESC
     Handler->>Handler: build TableData (Name, Equipment, Times performed, Max weight, Max reps, Est. 1RM)<br/>each row links to /web/workouts/{exercise_id}
-    Handler->>Webui: RenderGoalTiles (omitted if empty), RenderTable, RenderPage
+    Handler->>Webui: RenderAchievementTiles (omitted if empty), RenderTable, RenderPage
     Webui-->>Browser: 200 text/html
 
     Browser->>Handler: GET /web/workouts/{id}
@@ -425,7 +425,7 @@ Returns best-ever results for an exercise: max_weight, max_reps, max_volume (sin
 ## HTTP Handlers
 
 ### GET /web/workouts
-Read-only list view: an exercise goal tile grid at the top (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderGoalTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
+Read-only list view: an exercise achievement tile grid at the top (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderAchievementTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
 
 ### GET /web/workouts/:id
 Drill-down for a single exercise: title subtitle shows the exercise's description (if any, HTML-escaped, via `DetailViewData.Description`), then stat tiles (max weight, max reps, est. 1RM, times performed) plus one dual-axis chart — weight (left Y axis, kg) and reps (right Y axis), one point per set (see "One dual-axis chart, one point per set" above) — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.

@@ -83,7 +83,7 @@ type DB interface {
 	CountActivities(ctx context.Context, filter domain.ActivityFilter) (int, error)
 	GetActivity(ctx context.Context, activityID int64, userID int64) (*domain.Activity, error)
 	UpdateActivity(ctx context.Context, activity *domain.Activity) error      // also writes progress_type, status, deferred_until
-	DeleteActivity(ctx context.Context, activityID int64, userID int64) error // hard delete; blocked if a goal still references the activity
+	DeleteActivity(ctx context.Context, activityID int64, userID int64) error // hard delete; blocked if an achievement still references the activity
 	CreateProgress(ctx context.Context, progress *domain.ActivityPoint) (int64, error)
 	GetProgress(ctx context.Context, progressID int64, userID int64) (*domain.ActivityPoint, error)
 	ListProgress(ctx context.Context, filter domain.ProgressFilter) ([]domain.ActivityPoint, error)
@@ -101,25 +101,25 @@ type DB interface {
 	UpdateStep(ctx context.Context, step *domain.Step) error                                                // rename, status, closed_at, completed_by_progress_point_id — caller has already merged partial-update fields onto a fetched step
 	DeleteStep(ctx context.Context, stepID int64, userID int64) error
 
-	// Goals tracking methods (see docs/functions/goals-spec.md)
+	// Achievements tracking methods (see docs/functions/achievements-spec.md)
 
-	// CreateGoal and UpdateGoal are the only two write methods on the whole
-	// repository for goals — every write to an existing goal, no matter the
-	// caller (update_goal, refresh_goals, log_goal_progress), goes through
-	// UpdateGoal's generic partial update (see goals-spec.md Best Practices).
-	CreateGoal(ctx context.Context, g *domain.Goal) (int64, error)
-	UpdateGoal(ctx context.Context, userID int64, update domain.GoalUpdate) error
+	// CreateAchievement and UpdateAchievement are the only two write methods on the whole
+	// repository for achievements — every write to an existing achievement, no matter the
+	// caller (update_achievement, refresh_achievements, log_achievement_progress), goes through
+	// UpdateAchievement's generic partial update (see achievements-spec.md Best Practices).
+	CreateAchievement(ctx context.Context, g *domain.Achievement) (int64, error)
+	UpdateAchievement(ctx context.Context, userID int64, update domain.AchievementUpdate) error
 
-	GetGoal(ctx context.Context, goalID int64, userID int64) (*domain.Goal, error)
-	ListGoals(ctx context.Context, filter domain.GoalFilter) ([]domain.Goal, error)
+	GetAchievement(ctx context.Context, achievementID int64, userID int64) (*domain.Achievement, error)
+	ListAchievements(ctx context.Context, filter domain.AchievementFilter) ([]domain.Achievement, error)
 
 	// GetCategorySpend sums transactions.amount_eur where category starts
-	// with the given prefix, within [from, to] — powers money_spend goals.
-	// Same query the old Budget/BudgetProgress used, now goal-scoped.
+	// with the given prefix, within [from, to] — powers money_spend achievements.
+	// Same query the old Budget/BudgetProgress used, now achievement-scoped.
 	GetCategorySpend(ctx context.Context, userID int64, category string, from, to time.Time) (float64, error)
 
 	// GetExerciseVolume sums sets.weight_kg * sets.reps for an exercise
-	// since a given time — powers exercise_total_volume goals.
+	// since a given time — powers exercise_total_volume achievements.
 	GetExerciseVolume(ctx context.Context, userID int64, exerciseID int64, since time.Time) (float64, error)
 }
 

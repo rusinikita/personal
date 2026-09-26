@@ -4,7 +4,7 @@
 
 System for tracking personal financial transactions, income, and expenses with MCP (Model Context Protocol) interface. Supports multi-currency logging with EUR conversion, hierarchical category paths, merchant tracking, bulk import from bank CSV exports, and analytical tools for spending analysis.
 
-**Budgets have moved to the cross-domain Goals feature** (see `goals-spec.md`) — the old `set_budget`/`get_budget_progress` MCP tools and `budgets` table are superseded by `goals-spec.md`'s `money_spend`-type goal, alongside a new `money_saving` type and count-based goals (workout PRs, habit counts) that don't belong in the money subdomain. This spec keeps only what's genuinely money-specific: transactions and the read-only financial dashboard.
+**Budgets have moved to the cross-domain Achievements feature** (see `achievements-spec.md`) — the old `set_budget`/`get_budget_progress` MCP tools and `budgets` table are superseded by `achievements-spec.md`'s `money_spend`-type achievement, alongside a new `money_saving` type and count-based achievements (workout PRs, habit counts) that don't belong in the money subdomain. This spec keeps only what's genuinely money-specific: transactions and the read-only financial dashboard.
 
 A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, `GET /web/money/calendar`, `GET /web/money/export`) sits on top of this same data for reviewing the overall financial picture — balance, income/spend trends, category weight, sync freshness, a day-by-day calendar of activity — at a glance, plus a dedicated screen for exporting a category-level spending breakdown as CSV. Adding/editing/deleting transactions stays out of scope for the dashboard; it links out to the existing `/money/import` bulk-import page instead of duplicating it. Built on the shared `action/webui` design system (see `webui-spec.md`), the same way `action/progress`'s browse view is.
 
@@ -18,7 +18,7 @@ A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, 
 - **Original Description**: Raw bank text preserved for future re-categorization without data loss
 - **Flat Schema**: accounts, merchants, and categories are plain strings — no foreign key overhead
 - **Nullable Fields**: note and original_description are nullable for manual entries
-- **Money dashboard embeds its own goal tiles, built elsewhere**: `GET /web/money` shows a `money_saving`/`money_spend` tile grid between the stat tiles and the category table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/money` doesn't own any goal logic itself, it just calls the helper and drops the fragment into its page. The section disappears entirely when the user has no money goals (empty `EmptyMessage`, see `webui-spec.md`)
+- **Money dashboard embeds its own achievement tiles, built elsewhere**: `GET /web/money` shows a `money_saving`/`money_spend` tile grid between the stat tiles and the category table, via `achievements.BuildAchievementTiles(ctx, db, userID, now, types)` + `webui.RenderAchievementTiles` (see `achievements-spec.md`) — `action/money` doesn't own any achievement logic itself, it just calls the helper and drops the fragment into its page. The section disappears entirely when the user has no money achievements (empty `EmptyMessage`, see `webui-spec.md`)
 - **Web dashboard reuses existing analytics methods**: both the all-time and last-calendar-month figures (current balance, total income, net, per-category totals) are built from the same `GetBalance` and `GetSpendingByCategory` calls the MCP tools already use, just with different `from`/`to` bounds — the only new repository method is `GetMoneySummary`, needed because nothing today exposes the date range itself (see next point)
 - **"Last sync" is import freshness, not transaction age**: `GetMoneySummary.LastSyncedAt` is `MAX(created_at)`, not `MAX(transacted_at)` — a backdated manual entry or an import of old bank history would make the newest transaction's own date look stale even right after a sync. `created_at` answers "when did I last touch this data," which is what the dashboard's sync-freshness indicator is for
 - **Months-span is global, not per-category**: average monthly spend per category divides that category's all-time total by the number of months since the user's overall first transaction (`GetMoneySummary.FirstTransactionAt`), not that category's own first transaction — otherwise a category that only started appearing recently would show an inflated average relative to older categories
@@ -210,11 +210,11 @@ sequenceDiagram
     DB-->>Handler: last-month totals per top-level category
     Handler->>Handler: merge by category: total_eur, last_month_eur,<br/>avg_monthly_eur = total_eur / months_span<br/>sort by avg_monthly_eur DESC
 
-    Handler->>DB: goals.BuildGoalTiles(userID, now, types=[money_saving, money_spend])<br/>(see goals-spec.md)
-    DB-->>Handler: []webui.GoalTileData (may be empty)
+    Handler->>DB: achievements.BuildAchievementTiles(userID, now, types=[money_saving, money_spend])<br/>(see achievements-spec.md)
+    DB-->>Handler: []webui.AchievementTileData (may be empty)
 
-    Handler->>Webui: RenderGoalTiles (omitted if empty), RenderStatTiles, RenderTable, RenderPage
-    Webui-->>Browser: 200 text/html (goal tiles + stat tiles + category table,<br/>links to /web/money/transactions,<br/>/web/money/calendar, and /money/import)
+    Handler->>Webui: RenderAchievementTiles (omitted if empty), RenderStatTiles, RenderTable, RenderPage
+    Webui-->>Browser: 200 text/html (achievement tiles + stat tiles + category table,<br/>links to /web/money/transactions,<br/>/web/money/calendar, and /money/import)
 ```
 
 ### Sequence Diagram: Transactions List (shared by all three entry points)
@@ -514,7 +514,7 @@ Income minus expenses for a period in one aggregation query; transfer transactio
 
 Read-only overview built on the shared `action/webui` design system (see `webui-spec.md`):
 - Stat tiles: last sync date (`GetMoneySummary.LastSyncedAt`), current balance, total income (all time), net for last calendar month, average monthly savings, and projected balance 3 months / 6 months / 1 year out (see the "Web Dashboard" sequence diagram and Best Practices above for how each is derived)
-- A financial goal tile grid (`money_saving`/`money_spend` types only) via `goals.BuildGoalTiles` + `webui.RenderGoalTiles` (see `goals-spec.md`), placed directly below the stat tiles — omitted entirely when the user has no money goals
+- A financial achievement tile grid (`money_saving`/`money_spend` types only) via `achievements.BuildAchievementTiles` + `webui.RenderAchievementTiles` (see `achievements-spec.md`), placed directly below the stat tiles — omitted entirely when the user has no money achievements
 - A balance trend combo chart (`webui.RenderComboChart`, see `webui-spec.md`) plotting actual balance 12/9/6/3 months ago through the current balance to a 3/6/9/12-month projection, as one series drawn as both a bar and an overlaid line
 - A table of top-level categories sorted by average monthly spend descending, columns: Category, Avg monthly spend, Total (all time), Last month — each row links to `/web/money/transactions?category=:category`
 - A "View all transactions" link to `/web/money/transactions` (no filters — most recent first)

@@ -13,16 +13,16 @@ import (
 // it's inserted verbatim rather than re-escaped), so the page template just
 // lays sections around them declaratively.
 type designSystemPageData struct {
-	StatsHTML       template.HTML
-	TableHTML       template.HTML
-	WeightChartHTML template.HTML
-	MoodChartHTML   template.HTML
-	SpendChartHTML  template.HTML
-	ComboChartHTML  template.HTML
-	DualAxisHTML    template.HTML
-	CalendarHTML    template.HTML
-	DetailHTML      template.HTML
-	GoalTilesHTML   template.HTML
+	StatsHTML            template.HTML
+	TableHTML            template.HTML
+	WeightChartHTML      template.HTML
+	MoodChartHTML        template.HTML
+	SpendChartHTML       template.HTML
+	ComboChartHTML       template.HTML
+	DualAxisHTML         template.HTML
+	CalendarHTML         template.HTML
+	DetailHTML           template.HTML
+	AchievementTilesHTML template.HTML
 }
 
 // fixtureCalendarWeeks builds a real, correctly-computed August 2026 month
@@ -181,8 +181,8 @@ func DesignSystemHandler(c *gin.Context) {
 		},
 	}
 
-	goalTiles := GoalTilesData{
-		Tiles: []GoalTileData{
+	achievementTiles := AchievementTilesData{
+		Tiles: []AchievementTileData{
 			{Name: "Emergency Fund", ProgressLabel: "€2,100.00 / €5,000.00 (42%)", PercentComplete: 42, Deadline: "by Dec 31, 2026"},
 			{Name: "Food Budget", ProgressLabel: "€320.00 / €300.00 (107%)", PercentComplete: 100, OverTarget: true},
 			{Name: "Bench Press 100kg", ProgressLabel: "82.5kg / 100kg", PercentComplete: 82.5},
@@ -190,16 +190,16 @@ func DesignSystemHandler(c *gin.Context) {
 	}
 
 	content := execToHTML("pages/design_system", designSystemPageData{
-		StatsHTML:       RenderStatTiles(stats),
-		TableHTML:       RenderTable(table),
-		WeightChartHTML: RenderLineChart(weightChart),
-		MoodChartHTML:   RenderLineChart(moodChart),
-		SpendChartHTML:  RenderBarChart(spendChart),
-		ComboChartHTML:  RenderComboChart(balanceTrendChart),
-		DualAxisHTML:    RenderDualAxisChart(weightRepsChart),
-		CalendarHTML:    RenderCalendar(calendar),
-		DetailHTML:      RenderDetailView(detail),
-		GoalTilesHTML:   RenderGoalTiles(goalTiles),
+		StatsHTML:            RenderStatTiles(stats),
+		TableHTML:            RenderTable(table),
+		WeightChartHTML:      RenderLineChart(weightChart),
+		MoodChartHTML:        RenderLineChart(moodChart),
+		SpendChartHTML:       RenderBarChart(spendChart),
+		ComboChartHTML:       RenderComboChart(balanceTrendChart),
+		DualAxisHTML:         RenderDualAxisChart(weightRepsChart),
+		CalendarHTML:         RenderCalendar(calendar),
+		DetailHTML:           RenderDetailView(detail),
+		AchievementTilesHTML: RenderAchievementTiles(achievementTiles),
 	})
 
 	c.Header("Content-Type", "text/html; charset=utf-8")

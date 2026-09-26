@@ -13,15 +13,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"personal/action/goals"
+	"personal/action/achievements"
 	"personal/action/webui"
 	"personal/domain"
 	"personal/gateways"
 )
 
-// workoutGoalTypes is which goal_types the Workouts embedded tile grid
-// shows (see docs/functions/goals-spec.md).
-var workoutGoalTypes = []domain.GoalType{domain.GoalTypeExerciseMaxWeight, domain.GoalTypeExerciseTotalVolume}
+// workoutAchievementTypes is which achievement_types the Workouts embedded tile grid
+// shows (see docs/functions/achievements-spec.md).
+var workoutAchievementTypes = []domain.AchievementType{domain.AchievementTypeExerciseMaxWeight, domain.AchievementTypeExerciseTotalVolume}
 
 // historyLimit bounds the exercise-history query used to build the
 // drill-down's trend charts. A single-user personal tool won't log anywhere
@@ -69,9 +69,9 @@ func PersonalRecordsWebHandler(c *gin.Context) {
 	}
 	userID := webui.CurrentUserID(c)
 
-	goalTiles, err := goals.BuildGoalTiles(ctx, db, userID, time.Now().UTC(), workoutGoalTypes)
+	achievementTiles, err := achievements.BuildAchievementTiles(ctx, db, userID, time.Now().UTC(), workoutAchievementTypes)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "Failed to load goals: %v", err)
+		c.String(http.StatusInternalServerError, "Failed to load achievements: %v", err)
 		return
 	}
 
@@ -110,7 +110,7 @@ func PersonalRecordsWebHandler(c *gin.Context) {
 		Rows: rows,
 	}
 
-	content := webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles}) + webui.RenderTable(table)
+	content := webui.RenderAchievementTiles(webui.AchievementTilesData{Tiles: achievementTiles}) + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)

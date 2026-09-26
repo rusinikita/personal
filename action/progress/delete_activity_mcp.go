@@ -28,7 +28,7 @@ Use this tool only when the user explicitly wants an activity gone, not just mar
 Required input:
 - activity_id: Get from get_activity_list
 
-Errors if the activity doesn't exist, isn't owned by the user, or if a goal still references it (the goal must be deleted or repointed first).
+Errors if the activity doesn't exist, isn't owned by the user, or if an achievement still references it (the achievement must be deleted or repointed first).
 
 Cannot be undone.`,
 }

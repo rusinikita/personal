@@ -93,15 +93,9 @@ New entity (table name to be decided together with the schema — not `notes`; p
 - Monthly review: the whole `someday` list, `expired` candidates by `last_surfaced_at`.
 - Quarterly review: inbox conversion by `resolution` for the quarter.
 
-## 23-09-26 — Rename goals to achievements
+## 23-09-26 — Enforce activity/achievement limits in create_activity / create_achievement
 
-Rename the `goals` subdomain to "achievements" everywhere it surfaces — table, `goal_type`, domain models, `action/goals` package, MCP tools (`create_goal`, `update_goal`, `get_goal_progress`, `log_goal_progress`, `refresh_goals`), web routes/pages (`/web/goals`, embedded tiles), and `docs/functions/goals-spec.md`. Pure rename — no behavior change.
-
-**Why:** "Goal" causes confusion: these aren't life goals, they're a gamification tool — measurable targets (save X, lift X kg, N-day streak) whose point is the satisfaction of hitting them. Calling them achievements matches what they actually are and frees "goal" from implying something they don't model.
-
-## 23-09-26 — Enforce activity/goal limits in create_activity / create_goal
-
-Check the WIP limit (max 6 active activities total, max 3 per `progress_type`) in `create_activity`, and the max-6 cap in `create_goal`, instead of leaving both counts to be tallied by hand at each weekly review.
+Check the WIP limit (max 6 active activities total, max 3 per `progress_type`) in `create_activity`, and the max-6 cap in `create_achievement`, instead of leaving both counts to be tallied by hand at each weekly review.
 
 **Why:** `action/docs/content/activity-rituals.md` (§2.6, §2.10) treats these limits as load-bearing rules ("новое — только ценой вытеснения"), currently enforced only by the agent counting rows during review — a tool-level check makes the limit hold even outside a review session, instead of depending on the agent remembering to check.
 

@@ -16,15 +16,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"personal/action/goals"
+	"personal/action/achievements"
 	"personal/action/webui"
 	"personal/domain"
 	"personal/gateways"
 )
 
-// progressGoalTypes is which goal_types the Progress browse view's embedded
-// tile grid shows (see docs/functions/goals-spec.md).
-var progressGoalTypes = []domain.GoalType{domain.GoalTypeActivityOccurrenceCount, domain.GoalTypeActivityStreakCount}
+// progressAchievementTypes is which achievement_types the Progress browse view's embedded
+// tile grid shows (see docs/functions/achievements-spec.md).
+var progressAchievementTypes = []domain.AchievementType{domain.AchievementTypeActivityOccurrenceCount, domain.AchievementTypeActivityStreakCount}
 
 // BrowsePageSize is the fixed page size for every browse-view list (the
 // three activity lists and a drill-down's progress-point history). It's a
@@ -83,8 +83,8 @@ type pointFormData struct {
 // pointFormContentSrc is the "log a point" form on the standalone
 // /web/progress/browse/{id}/points/new page — a local html/template
 // constant, not a shared webui component (action/webui has no form
-// components at all), same convention as goalsRefreshFormSrc
-// (action/goals/dashboard_web.go) and importFormContentSrc
+// components at all), same convention as achievementsRefreshFormSrc
+// (action/achievements/dashboard_web.go) and importFormContentSrc
 // (action/money/import_web.go).
 const pointFormContentSrc = `{{if .Error}}<p style="color: var(--pico-del-color)">{{.Error}}</p>{{end}}
 <form method="POST" action="{{.ActionURL}}">
@@ -383,7 +383,7 @@ var activeSectionOrder = []struct {
 	{domain.ProgressTypeMood, "Mood"},
 }
 
-// BrowseWebHandler renders GET /web/progress/browse: an activity goal tile
+// BrowseWebHandler renders GET /web/progress/browse: an activity achievement tile
 // grid, then every active activity in one unpaginated table, grouped into
 // four sections by progress_type (activeSectionOrder) via heading rows —
 // unlike dashboard_web.go's top-5-only screenshot view. One shared table
@@ -398,9 +398,9 @@ func BrowseWebHandler(c *gin.Context) {
 	}
 	userID := webui.CurrentUserID(c)
 
-	goalTiles, err := goals.BuildGoalTiles(ctx, db, userID, time.Now().UTC(), progressGoalTypes)
+	achievementTiles, err := achievements.BuildAchievementTiles(ctx, db, userID, time.Now().UTC(), progressAchievementTypes)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "Failed to load goals: %v", err)
+		c.String(http.StatusInternalServerError, "Failed to load achievements: %v", err)
 		return
 	}
 
@@ -441,7 +441,7 @@ func BrowseWebHandler(c *gin.Context) {
 		Rows:            rows,
 		TagsColumnLabel: "Life parts",
 	}
-	content := browseCrossLinks + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles}) + webui.RenderTable(table)
+	content := browseCrossLinks + webui.RenderAchievementTiles(webui.AchievementTilesData{Tiles: achievementTiles}) + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
@@ -518,7 +518,7 @@ func BrowseNewPointWebHandler(c *gin.Context) {
 // shared with that tool via createProgressPoint
 // (create_progress_point_mcp.go), so the two entry points can't drift
 // apart. On success it redirects to the GET drill-down (write-then-redirect,
-// same pattern as goals.RefreshWebHandler); on failure it re-renders the
+// same pattern as achievements.RefreshWebHandler); on failure it re-renders the
 // same log-a-point page in place with an inline error, same pattern as
 // money's CSV import form.
 func BrowseCreatePointWebHandler(c *gin.Context) {

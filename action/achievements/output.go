@@ -1,4 +1,4 @@
-package goals
+package achievements
 
 import (
 	"time"
@@ -6,14 +6,14 @@ import (
 	"personal/domain"
 )
 
-// GoalOutput mirrors domain.Goal for JSON serialization, adding
-// RemainingValue (Goal.RemainingValue(), see goals-spec.md Best Practices —
-// no separate GetGoalProgress/GoalProgress type, just a getter on whatever
-// Goal a caller already has).
-type GoalOutput struct {
+// AchievementOutput mirrors domain.Achievement for JSON serialization, adding
+// RemainingValue (Achievement.RemainingValue(), see achievements-spec.md Best Practices —
+// no separate GetAchievementProgress/AchievementProgress type, just a getter on whatever
+// Achievement a caller already has).
+type AchievementOutput struct {
 	ID                 int64      `json:"id"`
 	Name               string     `json:"name"`
-	GoalType           string     `json:"goal_type"`
+	AchievementType    string     `json:"achievement_type"`
 	ExerciseID         *int64     `json:"exercise_id,omitempty"`
 	ActivityID         *int64     `json:"activity_id,omitempty"`
 	TargetValue        float64    `json:"target_value"`
@@ -28,11 +28,11 @@ type GoalOutput struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
-func toGoalOutput(g domain.Goal) GoalOutput {
-	return GoalOutput{
+func toAchievementOutput(g domain.Achievement) AchievementOutput {
+	return AchievementOutput{
 		ID:                 g.ID,
 		Name:               g.Name,
-		GoalType:           string(g.GoalType),
+		AchievementType:    string(g.AchievementType),
 		ExerciseID:         g.ExerciseID,
 		ActivityID:         g.ActivityID,
 		TargetValue:        g.TargetValue,

@@ -534,7 +534,7 @@ func (s *IntegrationTestSuite) TestDeleteActivity_NotFound() {
 	assert.Contains(s.T(), err.Error(), "activity not found")
 }
 
-func (s *IntegrationTestSuite) TestDeleteActivity_BlockedByGoalReference() {
+func (s *IntegrationTestSuite) TestDeleteActivity_BlockedByAchievementReference() {
 	ctx := s.Context()
 	db := s.Repo()
 	userID := s.UserID()
@@ -550,21 +550,21 @@ func (s *IntegrationTestSuite) TestDeleteActivity_BlockedByGoalReference() {
 	require.NoError(s.T(), err)
 
 	unit := "check-ins"
-	_, err = db.CreateGoal(ctx, &domain.Goal{
-		UserID:       userID,
-		Name:         "Meditate 30 Times",
-		GoalType:     domain.GoalTypeActivityOccurrenceCount,
-		ActivityID:   &activityID,
-		TargetValue:  30,
-		CurrentValue: 0,
-		Unit:         &unit,
-		StartsAt:     time.Now().AddDate(0, 0, -14),
+	_, err = db.CreateAchievement(ctx, &domain.Achievement{
+		UserID:          userID,
+		Name:            "Meditate 30 Times",
+		AchievementType: domain.AchievementTypeActivityOccurrenceCount,
+		ActivityID:      &activityID,
+		TargetValue:     30,
+		CurrentValue:    0,
+		Unit:            &unit,
+		StartsAt:        time.Now().AddDate(0, 0, -14),
 	})
 	require.NoError(s.T(), err)
 
 	_, _, err = progress.DeleteActivity(ctx, nil, progress.DeleteActivityInput{ActivityID: activityID})
 	require.Error(s.T(), err)
-	assert.Contains(s.T(), err.Error(), "goal still references it")
+	assert.Contains(s.T(), err.Error(), "achievement still references it")
 
 	// Verify the activity is still there.
 	stillThere, err := db.GetActivity(ctx, activityID, userID)

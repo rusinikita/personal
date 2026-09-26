@@ -10,9 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"personal/action/achievements"
 	"personal/action/auth"
 	"personal/action/docs"
-	"personal/action/goals"
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/webui"
@@ -70,16 +70,18 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/money/export", webAuth, dbMiddleware(db), money.ExportWebHandler)
 	router.GET("/web/money/export/download", webAuth, dbMiddleware(db), money.ExportDownloadWebHandler)
 
-	// Goals dashboard — every goal type, read-mostly plus one Refresh write
-	// route, built on the webui design system. Creating/editing goals and
+	// Achievements dashboard — every achievement type, read-mostly plus one Refresh write
+	// route, built on the webui design system. Creating/editing achievements and
 	// logging manual progress stay MCP-only.
-	router.GET("/web/goals", webAuth, dbMiddleware(db), goals.DashboardWebHandler)
-	router.POST("/web/goals/refresh", webAuth, dbMiddleware(db), goals.RefreshWebHandler)
+	router.GET("/web/achievements", webAuth, dbMiddleware(db), achievements.DashboardWebHandler)
+	router.POST("/web/achievements/refresh", webAuth, dbMiddleware(db), achievements.RefreshWebHandler)
 
-	// Goals e-ink dashboard — purpose-built fixed-viewport, black-and-white
+	// Achievements e-ink dashboard — purpose-built fixed-viewport, black-and-white
 	// screenshot page for a physical always-on display, unauthenticated
-	// like /web/progress above (see goals.EinkDashboardWebHandler).
-	router.GET("/web/goals/eink", dbMiddleware(db), goals.EinkDashboardWebHandler)
+	// like /web/progress above (see achievements.EinkDashboardWebHandler).
+	router.GET("/web/achievements/eink", dbMiddleware(db), achievements.EinkDashboardWebHandler)
+	// Pre-rename e-ink URL, kept because the physical display still points at it.
+	router.GET("/web/goals/eink", achievements.LegacyEinkRedirectWebHandler)
 
 	// Docs — hand-written convention documents embedded in action/docs,
 	// read-only, no DB access.

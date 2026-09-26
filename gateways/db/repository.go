@@ -147,10 +147,10 @@ func (r *repository) ApplyMigrations(ctx context.Context) error {
 }
 
 func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
-	// goals.exercise_id/activity_id are real FKs into exercises/activities —
+	// achievements.exercise_id/activity_id are real FKs into exercises/activities —
 	// deleted first so those tables' own deletes below don't hit a
 	// foreign-key violation.
-	_, err := r.db.Exec(ctx, `DELETE FROM goals WHERE user_id = $1`, userID)
+	_, err := r.db.Exec(ctx, `DELETE FROM achievements WHERE user_id = $1`, userID)
 	if err != nil {
 		return err
 	}
@@ -478,8 +478,8 @@ func (r *repository) GetSpendingForPeriod(ctx context.Context, userID int64, fro
 
 // GetCategorySpend sums expense transactions whose category starts with the
 // given prefix, within [from, to] — the same query the old Budget/
-// BudgetProgress used, now goal-scoped and powering money_spend goals (see
-// docs/functions/goals-spec.md).
+// BudgetProgress used, now achievement-scoped and powering money_spend achievements (see
+// docs/functions/achievements-spec.md).
 func (r *repository) GetCategorySpend(ctx context.Context, userID int64, category string, from, to time.Time) (float64, error) {
 	var spent float64
 	err := r.db.QueryRow(ctx, `
@@ -1794,15 +1794,15 @@ func (r *repository) UpdateActivity(ctx context.Context, activity *domain.Activi
 }
 
 // DeleteActivity hard-deletes an activity; its activity_progress rows
-// cascade via fk_progress_activity, but a goal still referencing it
-// (goals.activity_id has no ON DELETE clause) blocks the delete with a
+// cascade via fk_progress_activity, but an achievement still referencing it
+// (achievements.activity_id has no ON DELETE clause) blocks the delete with a
 // foreign-key violation, surfaced here as a clear error.
 func (r *repository) DeleteActivity(ctx context.Context, activityID int64, userID int64) error {
 	result, err := r.db.Exec(ctx, `DELETE FROM activities WHERE id = $1 AND user_id = $2`, activityID, userID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation {
-			return fmt.Errorf("cannot delete activity: a goal still references it — delete or repoint the goal first")
+			return fmt.Errorf("cannot delete activity: an achievement still references it — delete or repoint the achievement first")
 		}
 		return err
 	}
@@ -2337,48 +2337,48 @@ func (r *repository) GetTrendStats(ctx context.Context, activityID int64, userID
 }
 
 // ---------------------------------------------------------------------------
-// Goals tracking (see docs/functions/goals-spec.md)
+// Achievements tracking (see docs/functions/achievements-spec.md)
 // ---------------------------------------------------------------------------
 
-// goalDetails is the JSON shape stored in goals.details — assembled from and
-// unpacked back into domain.Goal's typed fields only here; action/goals and
-// the MCP tool handlers never see raw JSON, only domain.Goal (see
-// goals-spec.md Best Practices).
-type goalDetails struct {
+// achievementDetails is the JSON shape stored in achievements.details — assembled from and
+// unpacked back into domain.Achievement's typed fields only here; action/achievements and
+// the MCP tool handlers never see raw JSON, only domain.Achievement (see
+// achievements-spec.md Best Practices).
+type achievementDetails struct {
 	Category           *string  `json:"category,omitempty"`
 	Unit               *string  `json:"unit,omitempty"`
 	BaselineBalanceEUR *float64 `json:"baseline_balance_eur,omitempty"`
 }
 
-func marshalGoalDetails(g *domain.Goal) ([]byte, error) {
-	return json.Marshal(goalDetails{
+func marshalAchievementDetails(g *domain.Achievement) ([]byte, error) {
+	return json.Marshal(achievementDetails{
 		Category:           g.Category,
 		Unit:               g.Unit,
 		BaselineBalanceEUR: g.BaselineBalanceEUR,
 	})
 }
 
-// goalRowScanner is satisfied by both pgx.Row (QueryRow) and pgx.Rows
-// (Query, one row at a time via Next()), so scanGoal works for both GetGoal
-// and ListGoals.
-type goalRowScanner interface {
+// achievementRowScanner is satisfied by both pgx.Row (QueryRow) and pgx.Rows
+// (Query, one row at a time via Next()), so scanAchievement works for both GetAchievement
+// and ListAchievements.
+type achievementRowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanGoal(row goalRowScanner) (*domain.Goal, error) {
-	var g domain.Goal
+func scanAchievement(row achievementRowScanner) (*domain.Achievement, error) {
+	var g domain.Achievement
 	var details []byte
 	err := row.Scan(
-		&g.ID, &g.UserID, &g.Name, &g.GoalType, &g.ExerciseID, &g.ActivityID,
+		&g.ID, &g.UserID, &g.Name, &g.AchievementType, &g.ExerciseID, &g.ActivityID,
 		&g.TargetValue, &g.CurrentValue, &details, &g.StartsAt, &g.EndsAt,
 		&g.CreatedAt, &g.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-	var d goalDetails
+	var d achievementDetails
 	if err := json.Unmarshal(details, &d); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal goal details: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal achievement details: %w", err)
 	}
 	g.Category = d.Category
 	g.Unit = d.Unit
@@ -2386,10 +2386,10 @@ func scanGoal(row goalRowScanner) (*domain.Goal, error) {
 	return &g, nil
 }
 
-const goalColumns = "id, user_id, name, goal_type, exercise_id, activity_id, target_value, current_value, details, starts_at, ends_at, created_at, updated_at"
+const achievementColumns = "id, user_id, name, achievement_type, exercise_id, activity_id, target_value, current_value, details, starts_at, ends_at, created_at, updated_at"
 
-func (r *repository) CreateGoal(ctx context.Context, g *domain.Goal) (int64, error) {
-	details, err := marshalGoalDetails(g)
+func (r *repository) CreateAchievement(ctx context.Context, g *domain.Achievement) (int64, error) {
+	details, err := marshalAchievementDetails(g)
 	if err != nil {
 		return 0, err
 	}
@@ -2399,25 +2399,25 @@ func (r *repository) CreateGoal(ctx context.Context, g *domain.Goal) (int64, err
 
 	var id int64
 	err = r.db.QueryRow(ctx, `
-		INSERT INTO goals (user_id, name, goal_type, exercise_id, activity_id, target_value, current_value, details, starts_at, ends_at, created_at, updated_at)
+		INSERT INTO achievements (user_id, name, achievement_type, exercise_id, activity_id, target_value, current_value, details, starts_at, ends_at, created_at, updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		RETURNING id`,
-		g.UserID, g.Name, g.GoalType, g.ExerciseID, g.ActivityID, g.TargetValue, g.CurrentValue,
+		g.UserID, g.Name, g.AchievementType, g.ExerciseID, g.ActivityID, g.TargetValue, g.CurrentValue,
 		details, g.StartsAt, g.EndsAt, g.CreatedAt, g.UpdatedAt,
 	).Scan(&id)
 	return id, err
 }
 
-// UpdateGoal is the only way to write to an existing goal — every caller
-// (the update_goal MCP tool, refresh_goals' recompute, log_goal_progress's
-// increment) builds a domain.GoalUpdate and goes through this one dynamic
-// partial update (see goals-spec.md Best Practices). Category/Unit are
-// never both set on the same call in practice — a goal_type that allows one
+// UpdateAchievement is the only way to write to an existing achievement — every caller
+// (the update_achievement MCP tool, refresh_achievements' recompute, log_achievement_progress's
+// increment) builds a domain.AchievementUpdate and goes through this one dynamic
+// partial update (see achievements-spec.md Best Practices). Category/Unit are
+// never both set on the same call in practice — an achievement_type that allows one
 // never allows the other — so the two jsonb_set branches never collide in
 // the same generated SET clause.
-func (r *repository) UpdateGoal(ctx context.Context, userID int64, update domain.GoalUpdate) error {
+func (r *repository) UpdateAchievement(ctx context.Context, userID int64, update domain.AchievementUpdate) error {
 	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
-	q := psql.Update("goals").Where(squirrel.Eq{"id": update.ID, "user_id": userID})
+	q := psql.Update("achievements").Where(squirrel.Eq{"id": update.ID, "user_id": userID})
 
 	if update.Name != nil {
 		q = q.Set("name", *update.Name)
@@ -2450,30 +2450,30 @@ func (r *repository) UpdateGoal(ctx context.Context, userID int64, update domain
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("goal not found")
+		return fmt.Errorf("achievement not found")
 	}
 	return nil
 }
 
-func (r *repository) GetGoal(ctx context.Context, goalID int64, userID int64) (*domain.Goal, error) {
-	row := r.db.QueryRow(ctx, `SELECT `+goalColumns+` FROM goals WHERE id = $1 AND user_id = $2`, goalID, userID)
-	g, err := scanGoal(row)
+func (r *repository) GetAchievement(ctx context.Context, achievementID int64, userID int64) (*domain.Achievement, error) {
+	row := r.db.QueryRow(ctx, `SELECT `+achievementColumns+` FROM achievements WHERE id = $1 AND user_id = $2`, achievementID, userID)
+	g, err := scanAchievement(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get goal: %w", err)
+		return nil, fmt.Errorf("failed to get achievement: %w", err)
 	}
 	return g, nil
 }
 
-// ListGoals is a plain cached read of already-computed current_value
-// columns — no per-goal_type computation happens here, only in
-// create_goal/refresh_goals (see goals-spec.md Best Practices).
-func (r *repository) ListGoals(ctx context.Context, filter domain.GoalFilter) ([]domain.Goal, error) {
+// ListAchievements is a plain cached read of already-computed current_value
+// columns — no per-achievement_type computation happens here, only in
+// create_achievement/refresh_achievements (see achievements-spec.md Best Practices).
+func (r *repository) ListAchievements(ctx context.Context, filter domain.AchievementFilter) ([]domain.Achievement, error) {
 	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
-	q := psql.Select(strings.Split(goalColumns, ", ")...).
-		From("goals").
+	q := psql.Select(strings.Split(achievementColumns, ", ")...).
+		From("achievements").
 		Where(squirrel.Eq{"user_id": filter.UserID})
 
 	if filter.ActiveOnly {
@@ -2485,7 +2485,7 @@ func (r *repository) ListGoals(ctx context.Context, filter domain.GoalFilter) ([
 			Where(squirrel.Or{squirrel.Eq{"ends_at": nil}, squirrel.GtOrEq{"ends_at": at}})
 	}
 	if len(filter.Types) > 0 {
-		q = q.Where(squirrel.Eq{"goal_type": filter.Types})
+		q = q.Where(squirrel.Eq{"achievement_type": filter.Types})
 	}
 	q = q.OrderBy("starts_at")
 
@@ -2499,9 +2499,9 @@ func (r *repository) ListGoals(ctx context.Context, filter domain.GoalFilter) ([
 	}
 	defer rows.Close()
 
-	var result []domain.Goal
+	var result []domain.Achievement
 	for rows.Next() {
-		g, err := scanGoal(rows)
+		g, err := scanAchievement(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -2511,7 +2511,7 @@ func (r *repository) ListGoals(ctx context.Context, filter domain.GoalFilter) ([
 }
 
 // GetExerciseVolume sums weight_kg * reps for an exercise since a given
-// time — powers exercise_total_volume goals. Only sets with both weight_kg
+// time — powers exercise_total_volume achievements. Only sets with both weight_kg
 // and reps set count, the same restriction GetPersonalRecords already
 // applies for its own max-weight/max-volume records.
 func (r *repository) GetExerciseVolume(ctx context.Context, userID int64, exerciseID int64, since time.Time) (float64, error) {

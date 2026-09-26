@@ -1,0 +1,12 @@
+{{define "components/achievement_tiles"}}
+{{if .Tiles}}<div class="webui-achievement-tiles">
+{{range .Tiles}}<article class="webui-achievement-tile{{if .OverTarget}} webui-achievement-tile--over{{end}}">
+<header>{{if .LinkURL}}<a href="{{.LinkURL}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</header>
+<progress value="{{.PercentComplete}}" max="100"></progress>
+<div class="webui-achievement-tile-label">{{.ProgressLabel}}</div>
+{{if .Deadline}}<div class="webui-achievement-tile-deadline">{{.Deadline}}</div>{{end}}
+</article>
+{{end}}</div>
+{{else if .EmptyMessage}}<p>{{.EmptyMessage}}</p>
+{{end}}
+{{end}}

@@ -1,6 +1,6 @@
-Personal tracking system: food/nutrition, workouts, life-progress activities & goals, personal finance, and quick Telegram messages to the user.
+Personal tracking system: food/nutrition, workouts, life-progress activities & achievements, personal finance, and quick Telegram messages to the user.
 
-This file is loaded into every session, so it stays a dispatcher — route a request to the right subdomain and its first call, don't reconstruct the whole procedure here. Go deeper only via 'list_docs' then 'get_doc' — today that only covers activities/goals (`activity-mechanics`, `activity-rituals`); food, workout, and finance have no deeper doc yet, so this section is still their only guidance.
+This file is loaded into every session, so it stays a dispatcher — route a request to the right subdomain and its first call, don't reconstruct the whole procedure here. Go deeper only via 'list_docs' then 'get_doc' — today that only covers activities/achievements (`activity-mechanics`, `activity-rituals`); food, workout, and finance have no deeper doc yet, so this section is still their only guidance.
 
 ## Cross-cutting rules
 
@@ -23,12 +23,12 @@ Tools: `create_exercise`, `list_exercises`, `search_exercises`, `edit_exercise`,
 - Logging a set: find the exercise with `search_exercises`/`list_exercises` (only `create_exercise` if it's genuinely new — check for a near-duplicate first; `merge_exercises` fixes a missed duplicate after the fact), then `log_workout_set`. A workout is created automatically on the first set of a session — there's no separate "start workout" call.
 - Reviewing progress: `get_exercise_history`/`get_personal_records` per exercise, `list_workouts` for session-level history.
 
-## Progress: activities, steps, goals
+## Progress: activities, steps, achievements
 
-Tools live in `action/progress` and `action/goals`.
+Tools live in `action/progress` and `action/achievements`.
 
 - Reflection / check-in session: call `get_progress_type_examples` first (metaphor ↔ value mapping), then `get_activity_list` for what's due.
-- Everything else — activity lifecycle, steps, goals, limits, rituals — isn't repeated here: call `list_docs` then `get_doc` for `activity-mechanics` (schema/tools, normative against the code) or `activity-rituals` (when/why/process, the user's own operating manual).
+- Everything else — activity lifecycle, steps, achievements, limits, rituals — isn't repeated here: call `list_docs` then `get_doc` for `activity-mechanics` (schema/tools, normative against the code) or `activity-rituals` (when/why/process, the user's own operating manual).
 
 ## Finance
 

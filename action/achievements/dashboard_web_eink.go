@@ -1,10 +1,10 @@
-// Goals' e-ink dashboard: GET /web/goals/eink, a dedicated, unauthenticated,
+// Achievements' e-ink dashboard: GET /web/achievements/eink, a dedicated, unauthenticated,
 // fixed-viewport black-and-white/monospace page for a physical e-ink
 // display, mirroring action/progress/dashboard_web.go's screenshot
-// dashboard. Shows only the active-goals tile grid (the same data
-// BuildGoalTiles/webui.RenderGoalTiles produce for GET /web/goals) — no
+// dashboard. Shows only the active-achievements tile grid (the same data
+// BuildAchievementTiles/webui.RenderAchievementTiles produce for GET /web/achievements) — no
 // Refresh form, no past/completed table.
-package goals
+package achievements
 
 import (
 	"html/template"
@@ -23,7 +23,7 @@ const einkHTMLTemplate = `<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Goals</title>
+    <title>Achievements</title>
     <style>
         * {
             margin: 0;
@@ -54,36 +54,36 @@ const einkHTMLTemplate = `<!DOCTYPE html>
             margin-bottom: 12px;
         }
 
-        .webui-goal-tiles {
+        .webui-achievement-tiles {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 12px;
             align-content: start;
         }
 
-        .webui-goal-tile {
+        .webui-achievement-tile {
             border: 1px solid #000;
             border-radius: 8px;
             padding: 10px 12px;
         }
 
-        .webui-goal-tile--over {
+        .webui-achievement-tile--over {
             border-width: 2px;
         }
 
-        .webui-goal-tile header {
+        .webui-achievement-tile header {
             font-size: 18px;
             font-weight: 600;
             color: #000;
             margin-bottom: 6px;
         }
 
-        .webui-goal-tile header a {
+        .webui-achievement-tile header a {
             color: #000;
             text-decoration: none;
         }
 
-        .webui-goal-tile progress {
+        .webui-achievement-tile progress {
             width: 100%;
             height: 10px;
             accent-color: #000;
@@ -91,12 +91,12 @@ const einkHTMLTemplate = `<!DOCTYPE html>
             margin-bottom: 6px;
         }
 
-        .webui-goal-tile-label {
+        .webui-achievement-tile-label {
             font-size: 15px;
             color: #000;
         }
 
-        .webui-goal-tile-deadline {
+        .webui-achievement-tile-deadline {
             font-size: 12px;
             color: #808080;
             margin-top: 2px;
@@ -111,18 +111,18 @@ const einkHTMLTemplate = `<!DOCTYPE html>
 </head>
 <body>
     <div class="dashboard">
-        <div class="page-title">Goals</div>
+        <div class="page-title">Achievements</div>
         {{.Tiles}}
     </div>
 </body>
 </html>`
 
-var einkTemplate = template.Must(template.New("goalsEink").Parse(einkHTMLTemplate))
+var einkTemplate = template.Must(template.New("achievementsEink").Parse(einkHTMLTemplate))
 
-// EinkDashboardWebHandler renders GET /web/goals/eink: every active goal as
+// EinkDashboardWebHandler renders GET /web/achievements/eink: every active achievement as
 // a tile (progress bar + label + deadline), restyled black-and-white for a
 // glanceable e-ink view. No Refresh form, no past/completed table — those
-// stay exclusive to GET /web/goals.
+// stay exclusive to GET /web/achievements.
 func EinkDashboardWebHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
@@ -133,13 +133,13 @@ func EinkDashboardWebHandler(c *gin.Context) {
 	userID := webui.CurrentUserID(c)
 	now := time.Now().UTC()
 
-	tiles, err := BuildGoalTiles(ctx, db, userID, now, nil)
+	tiles, err := BuildAchievementTiles(ctx, db, userID, now, nil)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "Failed to load goals: %v", err)
+		c.String(http.StatusInternalServerError, "Failed to load achievements: %v", err)
 		return
 	}
 
-	tilesHTML := webui.RenderGoalTiles(webui.GoalTilesData{Tiles: tiles, EmptyMessage: "No active goals"})
+	tilesHTML := webui.RenderAchievementTiles(webui.AchievementTilesData{Tiles: tiles, EmptyMessage: "No active achievements"})
 
 	var buf strings.Builder
 	if err := einkTemplate.Execute(&buf, struct{ Tiles template.HTML }{Tiles: tilesHTML}); err != nil {
@@ -149,4 +149,15 @@ func EinkDashboardWebHandler(c *gin.Context) {
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, buf.String())
+}
+
+// LegacyEinkRedirectWebHandler serves the pre-rename GET /web/goals/eink URL
+// with a permanent redirect to GET /web/achievements/eink, since a physical
+// e-ink display is still configured with the old address.
+func LegacyEinkRedirectWebHandler(c *gin.Context) {
+	target := "/web/achievements/eink"
+	if c.Request.URL.RawQuery != "" {
+		target += "?" + c.Request.URL.RawQuery
+	}
+	c.Redirect(http.StatusMovedPermanently, target)
 }

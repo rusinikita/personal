@@ -402,11 +402,11 @@ func (m *MockRepository) GetTransactions(_ context.Context, filter domain.Transa
 	return filtered[offset:end], total, nil
 }
 
-// mockGoals is fixture data for the goals dashboard and every page that
-// embeds a goal tile grid (Money/Progress-browse/Workouts), one goal per
+// mockAchievements is fixture data for the achievements dashboard and every page that
+// embeds an achievement tile grid (Money/Progress-browse/Workouts), one achievement per
 // applicable type on each of those domains, so the preview shows what an
 // embedded (and the dedicated) grid actually looks like.
-func mockGoals(userID int64) []domain.Goal {
+func mockAchievements(userID int64) []domain.Achievement {
 	now := time.Now()
 	deadline := now.AddDate(0, 3, 0)
 	category := "food"
@@ -414,22 +414,22 @@ func mockGoals(userID int64) []domain.Goal {
 	baseline := 1000.0
 	exerciseID := int64(1)
 	activityID := int64(2)
-	return []domain.Goal{
-		{ID: 1, UserID: userID, Name: "Emergency Fund", GoalType: domain.GoalTypeMoneySaving, TargetValue: 5000, CurrentValue: 2100, BaselineBalanceEUR: &baseline, StartsAt: now.AddDate(0, -2, 0), EndsAt: &deadline},
-		{ID: 2, UserID: userID, Name: "Food Budget", GoalType: domain.GoalTypeMoneySpend, TargetValue: 400, CurrentValue: 320, Category: &category, StartsAt: now.AddDate(0, 0, -20)},
-		{ID: 3, UserID: userID, Name: "Bench Press 100kg", GoalType: domain.GoalTypeExerciseMaxWeight, ExerciseID: &exerciseID, TargetValue: 100, CurrentValue: 82.5, StartsAt: now.AddDate(0, -1, 0)},
-		{ID: 4, UserID: userID, Name: "Meditate 30 Times", GoalType: domain.GoalTypeActivityOccurrenceCount, ActivityID: &activityID, TargetValue: 30, CurrentValue: 12, Unit: &unit, StartsAt: now.AddDate(0, 0, -14)},
+	return []domain.Achievement{
+		{ID: 1, UserID: userID, Name: "Emergency Fund", AchievementType: domain.AchievementTypeMoneySaving, TargetValue: 5000, CurrentValue: 2100, BaselineBalanceEUR: &baseline, StartsAt: now.AddDate(0, -2, 0), EndsAt: &deadline},
+		{ID: 2, UserID: userID, Name: "Food Budget", AchievementType: domain.AchievementTypeMoneySpend, TargetValue: 400, CurrentValue: 320, Category: &category, StartsAt: now.AddDate(0, 0, -20)},
+		{ID: 3, UserID: userID, Name: "Bench Press 100kg", AchievementType: domain.AchievementTypeExerciseMaxWeight, ExerciseID: &exerciseID, TargetValue: 100, CurrentValue: 82.5, StartsAt: now.AddDate(0, -1, 0)},
+		{ID: 4, UserID: userID, Name: "Meditate 30 Times", AchievementType: domain.AchievementTypeActivityOccurrenceCount, ActivityID: &activityID, TargetValue: 30, CurrentValue: 12, Unit: &unit, StartsAt: now.AddDate(0, 0, -14)},
 	}
 }
 
-func (m *MockRepository) ListGoals(_ context.Context, filter domain.GoalFilter) ([]domain.Goal, error) {
-	types := make(map[domain.GoalType]bool, len(filter.Types))
+func (m *MockRepository) ListAchievements(_ context.Context, filter domain.AchievementFilter) ([]domain.Achievement, error) {
+	types := make(map[domain.AchievementType]bool, len(filter.Types))
 	for _, t := range filter.Types {
 		types[t] = true
 	}
-	var result []domain.Goal
-	for _, g := range mockGoals(filter.UserID) {
-		if len(types) > 0 && !types[g.GoalType] {
+	var result []domain.Achievement
+	for _, g := range mockAchievements(filter.UserID) {
+		if len(types) > 0 && !types[g.AchievementType] {
 			continue
 		}
 		result = append(result, g)
@@ -437,9 +437,9 @@ func (m *MockRepository) ListGoals(_ context.Context, filter domain.GoalFilter) 
 	return result, nil
 }
 
-func (m *MockRepository) GetGoal(_ context.Context, goalID int64, userID int64) (*domain.Goal, error) {
-	for _, g := range mockGoals(userID) {
-		if g.ID == goalID {
+func (m *MockRepository) GetAchievement(_ context.Context, achievementID int64, userID int64) (*domain.Achievement, error) {
+	for _, g := range mockAchievements(userID) {
+		if g.ID == achievementID {
 			return &g, nil
 		}
 	}

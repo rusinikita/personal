@@ -19,15 +19,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"personal/action/goals"
+	"personal/action/achievements"
 	"personal/action/webui"
 	"personal/domain"
 	"personal/gateways"
 )
 
-// moneyGoalTypes is which goal_types Money's embedded tile grid shows (see
-// docs/functions/goals-spec.md).
-var moneyGoalTypes = []domain.GoalType{domain.GoalTypeMoneySaving, domain.GoalTypeMoneySpend}
+// moneyAchievementTypes is which achievement_types Money's embedded tile grid shows (see
+// docs/functions/achievements-spec.md).
+var moneyAchievementTypes = []domain.AchievementType{domain.AchievementTypeMoneySaving, domain.AchievementTypeMoneySpend}
 
 // displayTimezone is the timezone day boundaries (the transactions list's
 // ?from/?to filter and the calendar's day grouping) are computed in,
@@ -295,13 +295,13 @@ func MoneyDashboardWebHandler(c *gin.Context) {
 		Points:     trendPoints,
 	}
 
-	goalTiles, err := goals.BuildGoalTiles(ctx, db, userID, now, moneyGoalTypes)
+	achievementTiles, err := achievements.BuildAchievementTiles(ctx, db, userID, now, moneyAchievementTypes)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "Failed to load goals: %v", err)
+		c.String(http.StatusInternalServerError, "Failed to load achievements: %v", err)
 		return
 	}
 
-	content := webui.RenderStatTiles(stats) + webui.RenderGoalTiles(webui.GoalTilesData{Tiles: goalTiles}) +
+	content := webui.RenderStatTiles(stats) + webui.RenderAchievementTiles(webui.AchievementTilesData{Tiles: achievementTiles}) +
 		webui.RenderComboChart(trendChart) + moneyDashboardLinks + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")

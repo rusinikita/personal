@@ -2,11 +2,11 @@
 
 ## Overview
 
-Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Goals) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart, a bar chart, a combo chart, a dual-axis line chart, a month-grid calendar, a drill-down/detail layout, and a goal-progress tile grid, all themed consistently (light + dark) from a single place.
+Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Achievements) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart, a bar chart, a combo chart, a dual-axis line chart, a month-grid calendar, a drill-down/detail layout, and an achievement-progress tile grid, all themed consistently (light + dark) from a single place.
 
 Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain.
 
-This is a **presentation-only, infrastructure layer**: it owns no database tables and no MCP tools. It exposes exactly one HTTP route of its own — a **demo/style-guide page** (`GET /web/design-system`) showing every component with sample data, so the design language can be reviewed and iterated on before any of the real dashboards (Money, Progress browse, Workouts, Goals) exist. All other pages are built by other actions' HTTP handlers (`action/money`, `action/progress`, `action/workout`, `action/goals`), which import this package and call it to render their pages.
+This is a **presentation-only, infrastructure layer**: it owns no database tables and no MCP tools. It exposes exactly one HTTP route of its own — a **demo/style-guide page** (`GET /web/design-system`) showing every component with sample data, so the design language can be reviewed and iterated on before any of the real dashboards (Money, Progress browse, Workouts, Achievements) exist. All other pages are built by other actions' HTTP handlers (`action/money`, `action/progress`, `action/workout`, `action/achievements`), which import this package and call it to render their pages.
 
 **Explicitly out of scope / untouched:** `action/progress/dashboard_web.go` (`/web/progress`) is a separate, purpose-built black-and-white fixed-viewport page for screenshot/e-ink display. It does not use this design system and must not be modified as part of this work.
 
@@ -24,7 +24,7 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Chart.js for four chart types**: server builds the data series as JSON, a thin inline script initializes a Chart.js chart from it — no server-side chart image/SVG generation to maintain. A **line chart** (single series over time — Progress activity value-over-time drill-down), a **bar chart** (categorical comparison — Money spend-by-category), and a **combo chart** (one series over time, rendered as both a bar and a line at once — Money's balance trend), and a **dual-axis line chart** (two different series over the same x-axis, each on its own Y axis — Workouts weight + reps per set) cover every known use
 - **Combo chart is one series, drawn twice for readability — not two different series**: it plots the *same* `Points[].Value` per x-axis label as both a bar and an overlaid line via Chart.js's native mixed-dataset support (one `type: "bar"` chart with a second dataset overridden to `type: "line"`) — the per-period magnitude reads clearly from the bars, the shape of the trend reads clearly from the line, both for one number. Because both datasets carry identical values, the legend stays off (same convention as the single-series line/bar charts — a legend would just show the same label twice) and a second color token (`--webui-chart-bar`, alongside the existing `--webui-chart-line`) keeps the bar visually distinct from its own line overlay
 - **Dual-axis chart is two different series on two Y axes, modeled on the combo chart**: one Chart.js `type: "line"` chart with two datasets over the shared `Points[].Label` x-axis — the left dataset on the default `y` axis (`position: "left"`), the right one on a secondary `y1` axis (`position: "right"`, `grid.drawOnChartArea: false` so grid lines come from the left axis only). A point's missing value is `null` in JSON (Go `*float64` = nil), which Chart.js draws as a gap in that line only (`spanGaps` left at its default `false`). Unlike the other charts the legend is **on** — the two lines are different series, so the legend is what tells them apart. Colors reuse the existing tokens (left = `--webui-chart-line`, right = `--webui-chart-bar`), no new token
-- **Goal tiles reuse Pico's native `<progress>` element, no Chart.js**: `RenderGoalTiles` renders each goal as its own card with a `<progress value=... max=100>` bar plus a text label — Pico CSS already themes `<progress>` for light/dark, so this needs no canvas, no JS init script, and no new custom CSS beyond the card grid layout. One component, two placements: the dedicated `/web/goals` page renders every goal in one grid, while Money/Progress-browse/Workouts each embed the same component with a `GoalTilesData.Tiles` slice pre-filtered to their own domain's goal types (see `goals-spec.md`)
+- **Achievement tiles reuse Pico's native `<progress>` element, no Chart.js**: `RenderAchievementTiles` renders each achievement as its own card with a `<progress value=... max=100>` bar plus a text label — Pico CSS already themes `<progress>` for light/dark, so this needs no canvas, no JS init script, and no new custom CSS beyond the card grid layout. One component, two placements: the dedicated `/web/achievements` page renders every achievement in one grid, while Money/Progress-browse/Workouts each embed the same component with an `AchievementTilesData.Tiles` slice pre-filtered to their own domain's achievement types (see `achievements-spec.md`)
 - **Typed Go structs, not raw HTML, as the component API**: pages build a `Table`, `StatTile`, `LineChart`, `BarChart`, or `DetailView` struct and hand it to the shell; the shell owns the markup
 - **Responsive by default**: flexbox/grid + relative units (`rem`, `%`, `minmax()`), no fixed `100vw`/`100vh` sizing (that pattern stays confined to the untouched screenshot dashboard)
 - **Pagination lives on `TableData`, not as a separate component call**: a table and its pagination controls are one visual unit, so `TableData.Pagination *PaginationData` is enough for any caller (list page or drill-down history table) to get consistent prev/next + "page X of Y" controls without composing an extra fragment
@@ -65,7 +65,7 @@ graph TB
         Combo[Combo chart component<br/>bar+line mixed dataset, Chart.js init script]
         Dual[Dual-axis line chart component<br/>two series, left + right Y axis, Chart.js init script]
         Detail[Drill-down/detail layout]
-        Tile[Goal tile grid component<br/>Pico native progress bar, no Chart.js]
+        Tile[Achievement tile grid component<br/>Pico native progress bar, no Chart.js]
     end
 
     subgraph "Consuming HTTP handlers"
@@ -73,7 +73,7 @@ graph TB
         ProgressH[action/progress handlers<br/>NEW browse view only]
         WorkoutH[action/workout handlers]
         ImportH[action/money import_web.go]
-        GoalsH[action/goals handlers<br/>+ BuildGoalTiles helper, called by<br/>MoneyH/ProgressH/WorkoutH for their own embedded tiles]
+        AchievementsH[action/achievements handlers<br/>+ BuildAchievementTiles helper, called by<br/>MoneyH/ProgressH/WorkoutH for their own embedded tiles]
     end
 
     Browser -->|GET /web/design-system| Demo
@@ -81,7 +81,7 @@ graph TB
     Browser --> ProgressH
     Browser --> WorkoutH
     Browser --> ImportH
-    Browser -->|GET /web/goals| GoalsH
+    Browser -->|GET /web/achievements| AchievementsH
     Browser -->|loads via link/script tag in shell head| Pico
     Browser --> ChartJS
 
@@ -90,10 +90,10 @@ graph TB
     ProgressH -->|builds LineChartData| Shell
     WorkoutH -->|builds DualAxisChartData| Shell
     ImportH --> Shell
-    GoalsH -->|builds GoalTilesData, calls webui.RenderGoalTiles| Shell
-    MoneyH -.->|"goals.BuildGoalTiles types=money_saving/money_spend"| GoalsH
-    ProgressH -.->|"goals.BuildGoalTiles types=activity_*"| GoalsH
-    WorkoutH -.->|"goals.BuildGoalTiles types=exercise_*"| GoalsH
+    AchievementsH -->|builds AchievementTilesData, calls webui.RenderAchievementTiles| Shell
+    MoneyH -.->|"achievements.BuildAchievementTiles types=money_saving/money_spend"| AchievementsH
+    ProgressH -.->|"achievements.BuildAchievementTiles types=activity_*"| AchievementsH
+    WorkoutH -.->|"achievements.BuildAchievementTiles types=exercise_*"| AchievementsH
 
     Shell --> Table
     Shell --> Stat
@@ -338,25 +338,25 @@ type CalendarData struct {
     Weeks    [][]CalendarDay // each inner slice has exactly 7 CalendarDay entries
 }
 
-// GoalTileData is one goal rendered as a card with a progress bar (see goals-spec.md).
-type GoalTileData struct {
+// AchievementTileData is one achievement rendered as a card with a progress bar (see achievements-spec.md).
+type AchievementTileData struct {
     Name            string
     ProgressLabel   string  // e.g. "€420 / €1,000 (42%)", "82kg / 100kg", "14 / 30 day streak"
     PercentComplete float64 // 0-100, clamped for the bar width (ProgressLabel still shows the real, unclamped numbers)
     Deadline        string  // formatted, e.g. "by Dec 31, 2026" — empty hides the deadline line (no deadline set)
-    OverTarget      bool    // current exceeds target — tile renders with a warning tint. Only meaningful for goal
+    OverTarget      bool    // current exceeds target — tile renders with a warning tint. Only meaningful for achievement
                              // types where exceeding is bad (e.g. money_spend over budget); left false otherwise
     LinkURL         string  // drill-down link to the underlying category/exercise/activity page, empty = not clickable
                              // (same "empty = not clickable" convention as TableRow.LinkURL/CalendarDay.LinkURL);
-                             // derived per goal_type by action/goals' toGoalTileData, see goals-spec.md
+                             // derived per achievement_type by action/achievements' toAchievementTileData, see achievements-spec.md
 }
 
-// GoalTilesData is a grid of goal tiles — either every active goal (the
-// dedicated /web/goals page) or a subset pre-filtered to one domain's goal
+// AchievementTilesData is a grid of achievement tiles — either every active achievement (the
+// dedicated /web/achievements page) or a subset pre-filtered to one domain's achievement
 // types (embedded in the Money/Progress-browse/Workouts pages).
-type GoalTilesData struct {
-    Tiles        []GoalTileData
-    EmptyMessage string // shown instead of the grid when Tiles is empty; empty string means render nothing (see goals-spec.md's embedded-vs-dedicated empty-state convention)
+type AchievementTilesData struct {
+    Tiles        []AchievementTileData
+    EmptyMessage string // shown instead of the grid when Tiles is empty; empty string means render nothing (see achievements-spec.md's embedded-vs-dedicated empty-state convention)
 }
 ```
 
@@ -380,7 +380,7 @@ action/webui/templates/
     dual_axis_chart.html           {{define "components/dual_axis_chart"}} — two series, left + right Y axis, legend on
     calendar.html                  {{define "components/calendar"}}
     detail_view.html               {{define "components/detail_view"}}
-    goal_tiles.html                 {{define "components/goal_tiles"}}  — one <article> card per GoalTileData, wrapped in a responsive grid
+    achievement_tiles.html                 {{define "components/achievement_tiles"}}  — one <article> card per AchievementTileData, wrapped in a responsive grid
   pages/
     design_system.html             {{define "pages/design_system"}}   — demo page's own composition
 ```
@@ -400,7 +400,7 @@ The one real route this package owns. Renders a single page built entirely from 
 - A dual-axis line chart with sample data (previewing Workouts' weight + reps per set, including one point with no weight → gap in the weight line)
 - A month-grid calendar with real, correctly-computed leading/trailing days and a few sample linked/unlinked days (previewing the Money transaction calendar use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
-- A goal tile grid with a few sample tiles (mixed progress percentages, one with a deadline, one `OverTarget`) previewing both the dedicated Goals page and an embedded subset use
+- An achievement tile grid with a few sample tiles (mixed progress percentages, one with a deadline, one `OverTarget`) previewing both the dedicated Achievements page and an embedded subset use
 
 Behind `WebMiddleware` (see `auth-spec.md`'s "Authorization for web dashboards" flow) like every other `/web/*` dashboard — it renders through the same shell, and the shell now shows the logged-in username, so it needs a real session to demo that correctly.
 
@@ -436,8 +436,8 @@ Renders a Pico card (`<article>`) with a `<header>` holding the month title, and
 ### `webui.RenderDetailView(data DetailViewData) template.HTML`
 Renders the drill-down/detail layout: back link, title, optional description paragraph, optional stat tiles, then an optional table. `Description` renders (as pre-escaped `template.HTML`, so callers can pass through markdown-rendered content) only when non-empty — used by the Progress activity drill-down (`progress-spec.md`) to show `Activity.Description`. When `data.Table.Columns` is empty, the table section is skipped entirely (mirrors the existing "skip stat tiles when `Stats` is empty" behavior) — used by the Workouts exercise drill-down (`workout-spec.md`), which has stat tiles and a chart but no table.
 
-### `webui.RenderGoalTiles(data GoalTilesData) template.HTML`
-Renders `data.Tiles` as a responsive card grid (`<article class="webui-goal-tile">` per tile, CSS grid wrapper — same "no fixed viewport sizing" responsiveness as every other component), each card showing the goal name, a Pico native `<progress value="{{.PercentComplete}}" max="100">` bar, the `ProgressLabel` text below it, and the `Deadline` line when set. When `LinkURL` is set, the goal name is rendered as `<a href="{{.LinkURL}}">{{.Name}}</a>` instead of plain text — the same "link the primary identifier, not the whole card" convention `RenderTable` uses for a row's first cell — otherwise it's plain text (some goal types have no drill-down target, see `goals-spec.md`). A tile with `OverTarget` true gets a warning-tint class (`webui-goal-tile--over`), styled from the same `:root` design tokens as the rest of the custom CSS layer. When `data.Tiles` is empty, renders `data.EmptyMessage` if set, or nothing at all if it's also empty — the dedicated `/web/goals` page always sets a message ("No active goals yet"), while Money/Progress-browse/Workouts leave it unset so an embedded section with no goals of that domain's types simply doesn't appear (see `goals-spec.md`).
+### `webui.RenderAchievementTiles(data AchievementTilesData) template.HTML`
+Renders `data.Tiles` as a responsive card grid (`<article class="webui-achievement-tile">` per tile, CSS grid wrapper — same "no fixed viewport sizing" responsiveness as every other component), each card showing the achievement name, a Pico native `<progress value="{{.PercentComplete}}" max="100">` bar, the `ProgressLabel` text below it, and the `Deadline` line when set. When `LinkURL` is set, the achievement name is rendered as `<a href="{{.LinkURL}}">{{.Name}}</a>` instead of plain text — the same "link the primary identifier, not the whole card" convention `RenderTable` uses for a row's first cell — otherwise it's plain text (some achievement types have no drill-down target, see `achievements-spec.md`). A tile with `OverTarget` true gets a warning-tint class (`webui-achievement-tile--over`), styled from the same `:root` design tokens as the rest of the custom CSS layer. When `data.Tiles` is empty, renders `data.EmptyMessage` if set, or nothing at all if it's also empty — the dedicated `/web/achievements` page always sets a message ("No active achievements yet"), while Money/Progress-browse/Workouts leave it unset so an embedded section with no achievements of that domain's types simply doesn't appear (see `achievements-spec.md`).
 
 ## E2E Tests
 

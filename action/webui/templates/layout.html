@@ -14,8 +14,8 @@
   --webui-chart-grid: #dddddd;
   --webui-chart-line: #0d6efd;
   --webui-chart-bar: #6c757d;
-  --webui-goal-over-bg: #ffe7e7;
-  --webui-goal-over-border: #dc3545;
+  --webui-achievement-over-bg: #ffe7e7;
+  --webui-achievement-over-border: #dc3545;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -24,8 +24,8 @@
     --webui-chart-grid: #444444;
     --webui-chart-line: #4dabf7;
     --webui-chart-bar: #adb5bd;
-    --webui-goal-over-bg: #4a1f1f;
-    --webui-goal-over-border: #dc3545;
+    --webui-achievement-over-bg: #4a1f1f;
+    --webui-achievement-over-border: #dc3545;
   }
 }
 nav a[aria-current="page"] { color: var(--webui-accent); font-weight: 700; }
@@ -46,11 +46,11 @@ nav a[aria-current="page"] { color: var(--webui-accent); font-weight: 700; }
 .webui-calendar-day-num { font-weight: 600; }
 .webui-calendar-count, .webui-calendar-total { font-size: 0.75rem; opacity: 0.8; }
 .webui-calendar-nav ul { display: flex; gap: 1rem; list-style: none; padding: 0; margin: 0 0 1rem; }
-.webui-goal-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-.webui-goal-tile { margin: 0; }
-.webui-goal-tile--over { background: var(--webui-goal-over-bg); border: 1px solid var(--webui-goal-over-border); }
-.webui-goal-tile-label { font-size: 0.85rem; opacity: 0.8; }
-.webui-goal-tile-deadline { font-size: 0.75rem; opacity: 0.6; }
+.webui-achievement-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.webui-achievement-tile { margin: 0; }
+.webui-achievement-tile--over { background: var(--webui-achievement-over-bg); border: 1px solid var(--webui-achievement-over-border); }
+.webui-achievement-tile-label { font-size: 0.85rem; opacity: 0.8; }
+.webui-achievement-tile-deadline { font-size: 0.75rem; opacity: 0.6; }
 .webui-steps-heading { margin: 1rem 0 0.4rem; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.7; }
 .webui-steps { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .webui-steps li { display: flex; align-items: center; gap: 0.5rem; }

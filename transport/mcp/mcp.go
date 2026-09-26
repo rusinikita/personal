@@ -7,9 +7,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"personal/action/achievements"
 	"personal/action/docs"
 	"personal/action/food"
-	"personal/action/goals"
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/telegram"
@@ -103,12 +103,12 @@ func Server(db gateways.DB, tg gateways.Telegram) *mcp.Server {
 	mcp.AddTool(server, &money.ComparePeriodsMCPDefinition, money.ComparePeriods)
 	mcp.AddTool(server, &money.GetBalanceMCPDefinition, money.GetBalance)
 
-	// Goals tracking tools
-	mcp.AddTool(server, &goals.CreateGoalMCPDefinition, goals.CreateGoal)
-	mcp.AddTool(server, &goals.UpdateGoalMCPDefinition, goals.UpdateGoal)
-	mcp.AddTool(server, &goals.RefreshGoalsMCPDefinition, goals.RefreshGoals)
-	mcp.AddTool(server, &goals.GetGoalProgressMCPDefinition, goals.GetGoalProgress)
-	mcp.AddTool(server, &goals.LogGoalProgressMCPDefinition, goals.LogGoalProgress)
+	// Achievements tracking tools
+	mcp.AddTool(server, &achievements.CreateAchievementMCPDefinition, achievements.CreateAchievement)
+	mcp.AddTool(server, &achievements.UpdateAchievementMCPDefinition, achievements.UpdateAchievement)
+	mcp.AddTool(server, &achievements.RefreshAchievementsMCPDefinition, achievements.RefreshAchievements)
+	mcp.AddTool(server, &achievements.GetAchievementProgressMCPDefinition, achievements.GetAchievementProgress)
+	mcp.AddTool(server, &achievements.LogAchievementProgressMCPDefinition, achievements.LogAchievementProgress)
 
 	// Convention docs
 	mcp.AddTool(server, &docs.ListDocsMCPDefinition, docs.ListDocs)

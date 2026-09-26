@@ -1,4 +1,4 @@
-package goals
+package achievements
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 // moneyBalanceSince returns the account's cumulative balance from the
 // user's very first transaction through to — the same "all time" balance
 // money-spec.md's dashboard uses, needed by both money_saving's baseline
-// snapshot (create_goal) and its recompute (refresh_goals). A user with no
+// snapshot (create_achievement) and its recompute (refresh_achievements). A user with no
 // transactions yet has no meaningful "since" bound, so from == to (an empty
 // window, balance 0).
 func moneyBalanceSince(ctx context.Context, db gateways.DB, userID int64, to time.Time) (float64, error) {
@@ -37,7 +37,7 @@ func moneyBalanceSince(ctx context.Context, db gateways.DB, userID int64, to tim
 // very first gap — from at back to the newest point itself — already
 // exceeds FrequencyDays, the streak has already lapsed (current_value = 0),
 // matching ordinary streak semantics: a missed check-in resets it (see
-// goals-spec.md Best Practices).
+// achievements-spec.md Best Practices).
 func activityStreak(ctx context.Context, db gateways.DB, userID int64, activityID int64, at time.Time) (float64, error) {
 	activity, err := db.GetActivity(ctx, activityID, userID)
 	if err != nil {
@@ -72,14 +72,14 @@ func activityStreak(ctx context.Context, db gateways.DB, userID int64, activityI
 }
 
 // computeCurrentValue recomputes current_value for one of the six derived
-// goal types (everything but manual) — the shared logic behind create_goal's
-// initial snapshot and refresh_goals' recompute (see goals-spec.md's
-// "Refresh Goals" sequence diagram). g must already have its per-type
+// achievement types (everything but manual) — the shared logic behind create_achievement's
+// initial snapshot and refresh_achievements' recompute (see achievements-spec.md's
+// "Refresh Achievements" sequence diagram). g must already have its per-type
 // fields (Category/BaselineBalanceEUR/ExerciseID/ActivityID/StartsAt/EndsAt)
 // populated; g.CurrentValue itself is not read.
-func computeCurrentValue(ctx context.Context, db gateways.DB, userID int64, g domain.Goal, now time.Time) (float64, error) {
-	switch g.GoalType {
-	case domain.GoalTypeMoneySpend:
+func computeCurrentValue(ctx context.Context, db gateways.DB, userID int64, g domain.Achievement, now time.Time) (float64, error) {
+	switch g.AchievementType {
+	case domain.AchievementTypeMoneySpend:
 		category := ""
 		if g.Category != nil {
 			category = *g.Category
@@ -90,7 +90,7 @@ func computeCurrentValue(ctx context.Context, db gateways.DB, userID int64, g do
 		}
 		return db.GetCategorySpend(ctx, userID, category, g.StartsAt, to)
 
-	case domain.GoalTypeMoneySaving:
+	case domain.AchievementTypeMoneySaving:
 		balance, err := moneyBalanceSince(ctx, db, userID, now)
 		if err != nil {
 			return 0, err
@@ -101,7 +101,7 @@ func computeCurrentValue(ctx context.Context, db gateways.DB, userID int64, g do
 		}
 		return balance - baseline, nil
 
-	case domain.GoalTypeExerciseMaxWeight:
+	case domain.AchievementTypeExerciseMaxWeight:
 		records, err := db.GetPersonalRecords(ctx, userID, *g.ExerciseID)
 		if err != nil {
 			return 0, err
@@ -111,20 +111,20 @@ func computeCurrentValue(ctx context.Context, db gateways.DB, userID int64, g do
 		}
 		return records.MaxWeight.WeightKg, nil
 
-	case domain.GoalTypeExerciseTotalVolume:
+	case domain.AchievementTypeExerciseTotalVolume:
 		return db.GetExerciseVolume(ctx, userID, *g.ExerciseID, g.StartsAt)
 
-	case domain.GoalTypeActivityOccurrenceCount:
+	case domain.AchievementTypeActivityOccurrenceCount:
 		count, err := db.CountProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: *g.ActivityID, From: g.StartsAt})
 		if err != nil {
 			return 0, err
 		}
 		return float64(count), nil
 
-	case domain.GoalTypeActivityStreakCount:
+	case domain.AchievementTypeActivityStreakCount:
 		return activityStreak(ctx, db, userID, *g.ActivityID, now)
 
 	default:
-		return 0, fmt.Errorf("goal_type %q has no derived progress to compute", g.GoalType)
+		return 0, fmt.Errorf("achievement_type %q has no derived progress to compute", g.AchievementType)
 	}
 }
