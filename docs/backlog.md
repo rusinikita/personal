@@ -104,14 +104,3 @@ Check the WIP limit (max 6 active activities total, max 3 per `progress_type`) i
 Write `action/docs/content/{subject}-mechanics.md` and/or `-rituals.md` for food, workout, and finance, same shape as the activities pair — mechanics normative against the code, rituals covering the actual day-to-day process (when/why, not just what fields exist).
 
 **Why:** `transport/mcp/instructions.md` was trimmed to a dispatcher (subdomain → first tool call) for every subdomain, including food/workout/finance — but unlike activities, they have no `get_doc` fallback yet, so anything beyond "which tool to call first" that used to live in the old instructions text (metaphor scripts, exact wording, detailed procedure) is currently just gone until this is written.
-
-## 26-09-26 — Track executions of repeatable steps
-
-Record each time a `repeatable` step is done, without closing it, and show that history: when it was last done and how often. Today a step only has `active`/`finished` plus one `completed_by_progress_point_id`, so the only way to mark a repeatable step as done is to close it, and then it drops out of `get_step_list`. How to store executions (a separate table, or links from progress points) and how to mark one (a web form checkbox, an MCP tool) will be decided in the feature doc.
-
-**Why:** A repeatable step is a recurring next-action that stays open as long as its activity is alive, but it still needs a way to record that it was done. Closing it for that purpose has already hidden one by accident (step 16 on activity 67). The monthly review also needs this: `action/docs/content/activity-rituals.md` §2.9 and §3.4 say repeatable steps not done for a month get dropped or rephrased, and right now nothing records when a step was last done.
-
-**Use cases:**
-- Tick a repeatable step when logging a point (web form or chat), and the step stays active.
-- See when a repeatable step was last done and how often in the past month.
-- Monthly review: list the repeatable steps not done in the past month.

@@ -66,7 +66,8 @@ func progressValueOptions(pt domain.ProgressType) []progressValueOption {
 	}
 }
 
-// pointFormStepOption is one open-step checkbox in the "log a point" form.
+// pointFormStepOption is one open step in the "log a point" form — a
+// "close" checkbox for one_time, an "executed" radio for repeatable.
 type pointFormStepOption struct {
 	ID   int64
 	Name string
@@ -74,10 +75,11 @@ type pointFormStepOption struct {
 
 // pointFormData feeds pointFormTemplate for one activity's drill-down page.
 type pointFormData struct {
-	ActionURL string
-	Options   []progressValueOption
-	Steps     []pointFormStepOption
-	Error     string
+	ActionURL       string
+	Options         []progressValueOption
+	OneTimeSteps    []pointFormStepOption
+	RepeatableSteps []pointFormStepOption
+	Error           string
 }
 
 // pointFormContentSrc is the "log a point" form on the standalone
@@ -95,9 +97,15 @@ const pointFormContentSrc = `{{if .Error}}<p style="color: var(--pico-del-color)
     </fieldset>
     <label for="point-note">Note</label>
     <textarea id="point-note" name="note" rows="3" placeholder="optional"></textarea>
-    {{if .Steps}}<fieldset>
+    {{if .OneTimeSteps}}<fieldset>
         <legend>Close steps</legend>
-        {{range .Steps}}<label style="display:block"><input type="checkbox" name="close_step_ids" value="{{.ID}}"> {{.Name}}</label>
+        {{range .OneTimeSteps}}<label style="display:block"><input type="checkbox" name="close_step_ids" value="{{.ID}}"> {{.Name}}</label>
+        {{end}}
+    </fieldset>{{end}}
+    {{if .RepeatableSteps}}<fieldset>
+        <legend>Repeatable step done</legend>
+        <label style="display:block"><input type="radio" name="executed_step_id" value="" checked> none</label>
+        {{range .RepeatableSteps}}<label style="display:block"><input type="radio" name="executed_step_id" value="{{.ID}}"> 🔁 {{.Name}}</label>
         {{end}}
     </fieldset>{{end}}
     <details>
@@ -192,7 +200,9 @@ func stepsCompactCell(steps []domain.Step) string {
 // layout.html so it reads as a real checklist instead of blending into the
 // description paragraph. one_time is the unmarked default (most steps are),
 // so only repeatable gets a 🔁 marker — no badge text, since the emoji alone
-// reads clearly next to a short step name. Empty when there are no open
+// reads clearly next to a short step name. Repeatable steps also show their
+// execution history ("last DD.MM, N× in 30 days" or "never done"), which the
+// monthly review uses to spot ones not done for a month. Empty when there are no open
 // steps, so it's safe to append unconditionally.
 func renderStepsList(steps []domain.Step) template.HTML {
 	if len(steps) == 0 {
@@ -205,11 +215,23 @@ func renderStepsList(steps []domain.Step) template.HTML {
 		b.WriteString(template.HTMLEscapeString(st.Name))
 		if st.Type == domain.StepTypeRepeatable {
 			b.WriteString(` <span class="webui-step-type" title="repeatable">🔁</span>`)
+			b.WriteString(` <small>(`)
+			b.WriteString(stepExecutionSummary(st))
+			b.WriteString(`)</small>`)
 		}
 		b.WriteString("</li>")
 	}
 	b.WriteString("</ul>")
 	return template.HTML(b.String())
+}
+
+// stepExecutionSummary formats a repeatable step's execution history for the
+// drill-down.
+func stepExecutionSummary(st domain.Step) string {
+	if st.LastExecutedAt == nil {
+		return "never done"
+	}
+	return fmt.Sprintf("last %s, %d× in 30 days", st.LastExecutedAt.Format("02.01"), st.ExecutionsLast30Days)
 }
 
 // lifePartTags resolves an activity's LifePartIDs into chip data via
@@ -561,7 +583,22 @@ func BrowseCreatePointWebHandler(c *gin.Context) {
 		}
 	}
 
-	point, err := createProgressPoint(ctx, db, userID, activityID, value, c.PostForm("note"), hoursLeft, progressAt)
+	// The radio group allows only one choice; this guards a hand-crafted POST.
+	var executedStepID *int64
+	switch raw := c.PostFormArray("executed_step_id"); {
+	case len(raw) > 1:
+		renderNewPointPage(c, activityID, "only one repeatable step can be marked done per point")
+		return
+	case len(raw) == 1 && raw[0] != "":
+		id, err := strconv.ParseInt(raw[0], 10, 64)
+		if err != nil {
+			renderNewPointPage(c, activityID, "invalid executed step id")
+			return
+		}
+		executedStepID = &id
+	}
+
+	point, err := createProgressPoint(ctx, db, userID, activityID, value, c.PostForm("note"), hoursLeft, progressAt, executedStepID)
 	if err != nil {
 		renderNewPointPage(c, activityID, err.Error())
 		return
@@ -576,7 +613,7 @@ func BrowseCreatePointWebHandler(c *gin.Context) {
 	c.Redirect(http.StatusFound, fmt.Sprintf("/web/progress/browse/%d", activityID))
 }
 
-// applyStepFormActions closes every checked step and queues new steps from
+// applyStepFormActions closes every checked one_time step and queues new steps from
 // the two ";"-split text fields, after a progress point is logged from the
 // web form — one form submission, one redirect, same requirement as the
 // point itself (see progress-spec.md Best Practices).
@@ -593,6 +630,9 @@ func applyStepFormActions(ctx context.Context, db gateways.DB, userID, activityI
 		}
 		if step == nil {
 			return fmt.Errorf("step not found")
+		}
+		if step.Type != domain.StepTypeOneTime {
+			return fmt.Errorf("only one_time steps are closed from the form")
 		}
 		step.Status = domain.StepStatusFinished
 		step.ClosedAt = &now
@@ -663,7 +703,7 @@ func renderNewPointPage(c *gin.Context, activityID int64, formError string) {
 		return
 	}
 
-	var stepOptions []pointFormStepOption
+	var oneTimeSteps, repeatableSteps []pointFormStepOption
 	if activity.Status == domain.ActivityStatusActive {
 		steps, err := db.ListSteps(ctx, domain.StepFilter{UserID: userID, ActivityID: activityID, Statuses: []domain.StepStatus{domain.StepStatusActive}})
 		if err != nil {
@@ -671,15 +711,21 @@ func renderNewPointPage(c *gin.Context, activityID int64, formError string) {
 			return
 		}
 		for _, st := range steps {
-			stepOptions = append(stepOptions, pointFormStepOption{ID: st.ID, Name: st.Name})
+			option := pointFormStepOption{ID: st.ID, Name: st.Name}
+			if st.Type == domain.StepTypeRepeatable {
+				repeatableSteps = append(repeatableSteps, option)
+			} else {
+				oneTimeSteps = append(oneTimeSteps, option)
+			}
 		}
 	}
 
 	form, err := renderPointForm(pointFormData{
-		ActionURL: fmt.Sprintf("/web/progress/browse/%d/points", activityID),
-		Options:   progressValueOptions(activity.ProgressType),
-		Steps:     stepOptions,
-		Error:     formError,
+		ActionURL:       fmt.Sprintf("/web/progress/browse/%d/points", activityID),
+		Options:         progressValueOptions(activity.ProgressType),
+		OneTimeSteps:    oneTimeSteps,
+		RepeatableSteps: repeatableSteps,
+		Error:           formError,
 	})
 	if err != nil {
 		c.String(http.StatusInternalServerError, "render error: %v", err)

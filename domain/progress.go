@@ -52,14 +52,15 @@ type Activity struct {
 
 // ActivityPoint represents a single progress point
 type ActivityPoint struct {
-	ID         int64     `json:"id" db:"id"`
-	ActivityID int64     `json:"activity_id" db:"activity_id" jsonschema:"Activity ID this progress point belongs to"`
-	UserID     int64     `json:"user_id" db:"user_id"`
-	Value      int       `json:"value" db:"value" jsonschema:"Progress value from -2 to +2"`
-	HoursLeft  *float64  `json:"hours_left,omitempty" db:"hours_left" jsonschema:"Estimated hours remaining for projects (null if not tracking)"`
-	Note       string    `json:"note,omitempty" db:"note" jsonschema:"Optional note about this progress point"`
-	ProgressAt time.Time `json:"progress_at" db:"progress_at" jsonschema:"When progress was made (defaults to now if empty)"`
-	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+	ID             int64     `json:"id" db:"id"`
+	ActivityID     int64     `json:"activity_id" db:"activity_id" jsonschema:"Activity ID this progress point belongs to"`
+	UserID         int64     `json:"user_id" db:"user_id"`
+	Value          int       `json:"value" db:"value" jsonschema:"Progress value from -2 to +2"`
+	HoursLeft      *float64  `json:"hours_left,omitempty" db:"hours_left" jsonschema:"Estimated hours remaining for projects (null if not tracking)"`
+	Note           string    `json:"note,omitempty" db:"note" jsonschema:"Optional note about this progress point"`
+	ProgressAt     time.Time `json:"progress_at" db:"progress_at" jsonschema:"When progress was made (defaults to now if empty)"`
+	ExecutedStepID *int64    `json:"executed_step_id,omitempty" db:"executed_step_id" jsonschema:"Repeatable step of this activity done in this point (at most one)"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }
 
 // ActivityStats represents calculated statistics for an activity
@@ -144,6 +145,9 @@ type Step struct {
 	CompletedByProgressPointID *int64     `json:"completed_by_progress_point_id,omitempty" db:"completed_by_progress_point_id" jsonschema:"Progress point whose checkbox closed this step (null while active)"`
 	ClosedAt                   *time.Time `json:"closed_at,omitempty" db:"closed_at"`
 	CreatedAt                  time.Time  `json:"created_at" db:"created_at"`
+	// Read-only, computed by ListSteps/ListStepsWithActivity from activity_progress.executed_step_id
+	LastExecutedAt       *time.Time `json:"last_executed_at,omitempty" db:"last_executed_at" jsonschema:"progress_at of the latest point that executed this step (null if never)"`
+	ExecutionsLast30Days int        `json:"executions_last_30_days" db:"executions_last_30_days" jsonschema:"How many points executed this step in the past 30 days"`
 }
 
 // StepFilter defines query parameters for listing steps

@@ -100,10 +100,11 @@ func (m *MockRepository) GetTrendStats(_ context.Context, _ int64, _ int64, _ ti
 // repository filters by ActivityID/Statuses.
 func (m *MockRepository) ListSteps(_ context.Context, filter domain.StepFilter) ([]domain.Step, error) {
 	now := time.Now()
+	lastExecutedAt := now.AddDate(0, 0, -4)
 	all := []domain.Step{
 		{ID: 1, UserID: filter.UserID, ActivityID: 1, Name: "Wire up steps UI", Type: domain.StepTypeOneTime, Status: domain.StepStatusActive, CreatedAt: now.AddDate(0, 0, -2)},
 		{ID: 2, UserID: filter.UserID, ActivityID: 1, Name: "Write E2E tests", Type: domain.StepTypeOneTime, Status: domain.StepStatusActive, CreatedAt: now.AddDate(0, 0, -1)},
-		{ID: 3, UserID: filter.UserID, ActivityID: 2, Name: "Buy protein powder", Type: domain.StepTypeRepeatable, Status: domain.StepStatusActive, CreatedAt: now.AddDate(0, 0, -3)},
+		{ID: 3, UserID: filter.UserID, ActivityID: 2, Name: "Buy protein powder", Type: domain.StepTypeRepeatable, Status: domain.StepStatusActive, CreatedAt: now.AddDate(0, 0, -3), LastExecutedAt: &lastExecutedAt, ExecutionsLast30Days: 3},
 	}
 
 	steps := make([]domain.Step, 0, len(all))

@@ -53,11 +53,12 @@ type GetActivityStatsInput struct {
 }
 
 type ProgressPoint struct {
-	ID         int64    `json:"id" jsonschema:"Progress point ID"`
-	Value      int      `json:"value" jsonschema:"Progress value from -2 to +2"`
-	HoursLeft  *float64 `json:"hours_left,omitempty" jsonschema:"Estimated hours remaining"`
-	Note       string   `json:"note,omitempty" jsonschema:"Note about this progress point"`
-	ProgressAt string   `json:"progress_at" jsonschema:"When progress was made (ISO8601)"`
+	ID             int64    `json:"id" jsonschema:"Progress point ID"`
+	Value          int      `json:"value" jsonschema:"Progress value from -2 to +2"`
+	HoursLeft      *float64 `json:"hours_left,omitempty" jsonschema:"Estimated hours remaining"`
+	Note           string   `json:"note,omitempty" jsonschema:"Note about this progress point"`
+	ProgressAt     string   `json:"progress_at" jsonschema:"When progress was made (ISO8601)"`
+	ExecutedStepID *int64   `json:"executed_step_id,omitempty" jsonschema:"Repeatable step done in this point"`
 }
 
 type TrendStatsOutput struct {

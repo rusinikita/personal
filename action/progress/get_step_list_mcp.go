@@ -25,6 +25,8 @@ Parameters:
 - activity_id: Optional, filter to one activity's steps
 - status: Optional, active|finished (defaults to active — finished steps aren't useful to re-surface here)
 
+Each step also has last_executed_at and executions_last_30_days — how recently and how often a repeatable step was done (recorded via create_progress_point's executed_step_id). Monthly review: repeatable steps with empty or >30-day-old last_executed_at weren't done for a month.
+
 Example:
 User: "What's next on the move?"
 You: [Call get_step_list(activity_id=42)]`,
@@ -36,13 +38,15 @@ type GetStepListInput struct {
 }
 
 type StepListItem struct {
-	ID           int64  `json:"id" jsonschema:"Step ID"`
-	ActivityID   int64  `json:"activity_id" jsonschema:"Activity ID this step belongs to"`
-	ActivityName string `json:"activity_name" jsonschema:"Name of the owning activity"`
-	Name         string `json:"name" jsonschema:"Step name"`
-	Type         string `json:"type" jsonschema:"one_time|repeatable"`
-	Status       string `json:"status" jsonschema:"active|finished"`
-	CreatedAt    string `json:"created_at" jsonschema:"When the step was created (ISO8601)"`
+	ID                   int64  `json:"id" jsonschema:"Step ID"`
+	ActivityID           int64  `json:"activity_id" jsonschema:"Activity ID this step belongs to"`
+	ActivityName         string `json:"activity_name" jsonschema:"Name of the owning activity"`
+	Name                 string `json:"name" jsonschema:"Step name"`
+	Type                 string `json:"type" jsonschema:"one_time|repeatable"`
+	Status               string `json:"status" jsonschema:"active|finished"`
+	CreatedAt            string `json:"created_at" jsonschema:"When the step was created (ISO8601)"`
+	LastExecutedAt       string `json:"last_executed_at,omitempty" jsonschema:"When a progress point last executed this repeatable step (ISO8601, empty if never)"`
+	ExecutionsLast30Days int    `json:"executions_last_30_days" jsonschema:"How many progress points executed this step in the past 30 days"`
 }
 
 type GetStepListOutput struct {
@@ -81,14 +85,20 @@ func GetStepList(ctx context.Context, _ *mcp.CallToolRequest, input GetStepListI
 
 	items := make([]StepListItem, 0, len(steps))
 	for _, st := range steps {
+		var lastExecutedAt string
+		if st.LastExecutedAt != nil {
+			lastExecutedAt = st.LastExecutedAt.Format(time.RFC3339)
+		}
 		items = append(items, StepListItem{
-			ID:           st.ID,
-			ActivityID:   st.ActivityID,
-			ActivityName: st.ActivityName,
-			Name:         st.Name,
-			Type:         string(st.Type),
-			Status:       string(st.Status),
-			CreatedAt:    st.CreatedAt.Format(time.RFC3339),
+			ID:                   st.ID,
+			ActivityID:           st.ActivityID,
+			ActivityName:         st.ActivityName,
+			Name:                 st.Name,
+			Type:                 string(st.Type),
+			Status:               string(st.Status),
+			CreatedAt:            st.CreatedAt.Format(time.RFC3339),
+			LastExecutedAt:       lastExecutedAt,
+			ExecutionsLast30Days: st.ExecutionsLast30Days,
 		})
 	}
 

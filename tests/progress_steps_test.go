@@ -386,3 +386,226 @@ func (s *IntegrationTestSuite) TestBrowseCreatePoint_QueuesNewStepsFromSemicolon
 		assert.Equal(s.T(), points[0].ID, *st.CreatedByProgressPointID)
 	}
 }
+
+// --- Repeatable step executions ----------------------------------------------
+// A repeatable step is executed (not closed) by a progress point via
+// activity_progress.executed_step_id — at most one per point.
+
+func (s *IntegrationTestSuite) TestCreateProgressPoint_ExecutesRepeatableStepWhichStaysActive() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	activityID := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	_, created, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Practice on Duolingo", Type: "repeatable"})
+	require.NoError(s.T(), err)
+
+	stepID := created.Step.ID
+	_, output, err := progress.CreateProgressPoint(ctx, nil, progress.CreateProgressPointInput{ActivityID: activityID, Value: 1, ExecutedStepID: &stepID})
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), output.Progress.ExecutedStepID)
+	assert.Equal(s.T(), stepID, *output.Progress.ExecutedStepID)
+
+	step, err := s.Repo().GetStep(ctx, stepID, userID)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), domain.StepStatusActive, step.Status, "executing a repeatable step must not close it")
+	assert.Nil(s.T(), step.ClosedAt)
+
+	_, list, err := progress.GetStepList(ctx, nil, progress.GetStepListInput{ActivityID: activityID})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), list.Steps, 1)
+	assert.NotEmpty(s.T(), list.Steps[0].LastExecutedAt)
+	assert.Equal(s.T(), 1, list.Steps[0].ExecutionsLast30Days)
+}
+
+func (s *IntegrationTestSuite) TestCreateProgressPoint_RejectsExecutingOneTimeStep() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	activityID := s.createActivity(ctx, "Move apartment", domain.ProgressTypeProjectProgress, time.Now().AddDate(0, 0, -5))
+	_, created, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Book truck", Type: "one_time"})
+	require.NoError(s.T(), err)
+
+	stepID := created.Step.ID
+	_, _, err = progress.CreateProgressPoint(ctx, nil, progress.CreateProgressPointInput{ActivityID: activityID, Value: 1, ExecutedStepID: &stepID})
+	require.Error(s.T(), err)
+
+	points, err := s.Repo().ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID})
+	require.NoError(s.T(), err)
+	assert.Empty(s.T(), points, "nothing is written when executed_step_id is invalid")
+}
+
+func (s *IntegrationTestSuite) TestCreateProgressPoint_RejectsExecutingStepOfAnotherActivity() {
+	ctx := s.Context()
+	activity1 := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	activity2 := s.createActivity(ctx, "Gym", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	_, created, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activity2, Name: "Stretch", Type: "repeatable"})
+	require.NoError(s.T(), err)
+
+	stepID := created.Step.ID
+	_, _, err = progress.CreateProgressPoint(ctx, nil, progress.CreateProgressPointInput{ActivityID: activity1, Value: 1, ExecutedStepID: &stepID})
+	require.Error(s.T(), err)
+}
+
+func (s *IntegrationTestSuite) TestCreateProgressPoint_RejectsExecutingFinishedStep() {
+	ctx := s.Context()
+	activityID := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	_, created, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Practice", Type: "repeatable"})
+	require.NoError(s.T(), err)
+	finished := "finished"
+	_, _, err = progress.EditStep(ctx, nil, progress.EditStepInput{StepID: created.Step.ID, Status: &finished})
+	require.NoError(s.T(), err)
+
+	stepID := created.Step.ID
+	_, _, err = progress.CreateProgressPoint(ctx, nil, progress.CreateProgressPointInput{ActivityID: activityID, Value: 1, ExecutedStepID: &stepID})
+	require.Error(s.T(), err)
+}
+
+func (s *IntegrationTestSuite) TestGetStepList_ExecutionStatsCountOnlyLast30Days() {
+	ctx := s.Context()
+	activityID := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -60))
+	_, created, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Practice", Type: "repeatable"})
+	require.NoError(s.T(), err)
+	_, _, err = progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Buy a textbook", Type: "one_time"})
+	require.NoError(s.T(), err)
+
+	stepID := created.Step.ID
+	old := time.Now().AddDate(0, 0, -40).UTC().Truncate(time.Second)
+	recent := time.Now().AddDate(0, 0, -5).UTC().Truncate(time.Second)
+	for _, at := range []time.Time{old, recent} {
+		_, _, err = progress.CreateProgressPoint(ctx, nil, progress.CreateProgressPointInput{
+			ActivityID: activityID, Value: 1, ExecutedStepID: &stepID, ProgressAt: at.Format(time.RFC3339),
+		})
+		require.NoError(s.T(), err)
+	}
+
+	_, list, err := progress.GetStepList(ctx, nil, progress.GetStepListInput{ActivityID: activityID})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), list.Steps, 2)
+
+	byName := make(map[string]progress.StepListItem, len(list.Steps))
+	for _, st := range list.Steps {
+		byName[st.Name] = st
+	}
+	assert.Equal(s.T(), 1, byName["Practice"].ExecutionsLast30Days, "the 40-day-old execution is outside the window")
+	lastExecutedAt, err := time.Parse(time.RFC3339, byName["Practice"].LastExecutedAt)
+	require.NoError(s.T(), err)
+	assert.True(s.T(), recent.Equal(lastExecutedAt), "last_executed_at is the latest point's progress_at, got %s", lastExecutedAt)
+
+	assert.Empty(s.T(), byName["Buy a textbook"].LastExecutedAt)
+	assert.Equal(s.T(), 0, byName["Buy a textbook"].ExecutionsLast30Days)
+}
+
+func (s *IntegrationTestSuite) TestDeleteStep_KeepsProgressPointThatExecutedIt() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	activityID := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	_, created, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Practice", Type: "repeatable"})
+	require.NoError(s.T(), err)
+
+	stepID := created.Step.ID
+	_, point, err := progress.CreateProgressPoint(ctx, nil, progress.CreateProgressPointInput{ActivityID: activityID, Value: 1, ExecutedStepID: &stepID})
+	require.NoError(s.T(), err)
+
+	_, _, err = progress.DeleteStep(ctx, nil, progress.DeleteStepInput{StepID: stepID})
+	require.NoError(s.T(), err)
+
+	points, err := s.Repo().ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), points, 1)
+	assert.Equal(s.T(), point.Progress.ID, points[0].ID)
+	assert.Nil(s.T(), points[0].ExecutedStepID, "deleting the step only nulls the link")
+}
+
+func (s *IntegrationTestSuite) TestBrowseNewPoint_ShowsRepeatableStepsAsRadioGroup() {
+	ctx := s.Context()
+	activityID := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	_, oneTime, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Buy a textbook", Type: "one_time"})
+	require.NoError(s.T(), err)
+	_, repeatable, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Practice", Type: "repeatable"})
+	require.NoError(s.T(), err)
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/progress/browse/%d/points/new", activityID), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(s.T(), body, fmt.Sprintf(`name="close_step_ids" value="%d"`, oneTime.Step.ID))
+	assert.NotContains(s.T(), body, fmt.Sprintf(`name="close_step_ids" value="%d"`, repeatable.Step.ID), "repeatable steps are not closed from the form")
+	assert.Contains(s.T(), body, fmt.Sprintf(`type="radio" name="executed_step_id" value="%d"`, repeatable.Step.ID))
+	assert.Contains(s.T(), body, `type="radio" name="executed_step_id" value="" checked`)
+}
+
+func (s *IntegrationTestSuite) TestBrowseCreatePoint_ExecutesChosenRepeatableStep() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	activityID := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	_, created, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Practice", Type: "repeatable"})
+	require.NoError(s.T(), err)
+
+	r := s.browseRouter(ctx)
+	form := url.Values{"value": {"1"}, "executed_step_id": {fmt.Sprint(created.Step.ID)}}
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/web/progress/browse/%d/points", activityID), strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusFound, w.Code)
+
+	points, err := s.Repo().ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID})
+	require.NoError(s.T(), err)
+	require.Len(s.T(), points, 1)
+	require.NotNil(s.T(), points[0].ExecutedStepID)
+	assert.Equal(s.T(), created.Step.ID, *points[0].ExecutedStepID)
+
+	step, err := s.Repo().GetStep(ctx, created.Step.ID, userID)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), domain.StepStatusActive, step.Status)
+}
+
+func (s *IntegrationTestSuite) TestBrowseCreatePoint_RejectsMoreThanOneRepeatableStep() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	activityID := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	_, step1, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Practice", Type: "repeatable"})
+	require.NoError(s.T(), err)
+	_, step2, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Watch a show", Type: "repeatable"})
+	require.NoError(s.T(), err)
+
+	r := s.browseRouter(ctx)
+	form := url.Values{"value": {"1"}, "executed_step_id": {fmt.Sprint(step1.Step.ID), fmt.Sprint(step2.Step.ID)}}
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/web/progress/browse/%d/points", activityID), strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code, "re-renders the form with an inline error")
+	assert.Contains(s.T(), w.Body.String(), "only one repeatable step")
+
+	points, err := s.Repo().ListProgress(ctx, domain.ProgressFilter{UserID: userID, ActivityID: activityID})
+	require.NoError(s.T(), err)
+	assert.Empty(s.T(), points)
+}
+
+func (s *IntegrationTestSuite) TestBrowseDetail_ShowsRepeatableStepExecutionHistory() {
+	ctx := s.Context()
+	activityID := s.createActivity(ctx, "Learn Spanish", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -30))
+	_, done, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Practice", Type: "repeatable"})
+	require.NoError(s.T(), err)
+	_, _, err = progress.CreateStep(ctx, nil, progress.CreateStepInput{ActivityID: activityID, Name: "Watch a show", Type: "repeatable"})
+	require.NoError(s.T(), err)
+
+	stepID := done.Step.ID
+	at := time.Now().AddDate(0, 0, -3)
+	_, _, err = progress.CreateProgressPoint(ctx, nil, progress.CreateProgressPointInput{ActivityID: activityID, Value: 1, ExecutedStepID: &stepID, ProgressAt: at.Format(time.RFC3339)})
+	require.NoError(s.T(), err)
+
+	r := s.browseRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/progress/browse/%d", activityID), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(s.T(), body, "last "+at.Format("02.01")+", 1× in 30 days")
+	assert.Contains(s.T(), body, "never done")
+}

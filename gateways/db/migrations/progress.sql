@@ -66,3 +66,9 @@ CREATE TABLE IF NOT EXISTS steps (
 
 CREATE INDEX IF NOT EXISTS idx_steps_user_id ON steps(user_id);
 CREATE INDEX IF NOT EXISTS idx_steps_activity_id ON steps(activity_id);
+
+-- Repeatable step done in a progress point (at most one per point). Added
+-- after steps since the FK points forward; deleting a step only nulls it.
+ALTER TABLE activity_progress ADD COLUMN IF NOT EXISTS executed_step_id BIGINT REFERENCES steps(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_progress_executed_step_id ON activity_progress(executed_step_id) WHERE executed_step_id IS NOT NULL;

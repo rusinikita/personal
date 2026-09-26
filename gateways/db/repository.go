@@ -1816,8 +1816,8 @@ func (r *repository) DeleteActivity(ctx context.Context, activityID int64, userI
 
 func (r *repository) CreateProgress(ctx context.Context, progress *domain.ActivityPoint) (int64, error) {
 	query := `
-		INSERT INTO activity_progress (activity_id, user_id, value, hours_left, note, progress_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO activity_progress (activity_id, user_id, value, hours_left, note, progress_at, executed_step_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id`
 
 	now := time.Now()
@@ -1831,6 +1831,7 @@ func (r *repository) CreateProgress(ctx context.Context, progress *domain.Activi
 		progress.HoursLeft,
 		progress.Note,
 		progress.ProgressAt,
+		progress.ExecutedStepID,
 		progress.CreatedAt,
 	).Scan(&id)
 
@@ -1850,7 +1851,7 @@ func (r *repository) CreateProgress(ctx context.Context, progress *domain.Activi
 
 func (r *repository) GetProgress(ctx context.Context, progressID int64, userID int64) (*domain.ActivityPoint, error) {
 	query := `
-		SELECT id, activity_id, user_id, value, hours_left, note, progress_at, created_at
+		SELECT id, activity_id, user_id, value, hours_left, note, progress_at, executed_step_id, created_at
 		FROM activity_progress
 		WHERE id = $1 AND user_id = $2`
 
@@ -1863,6 +1864,7 @@ func (r *repository) GetProgress(ctx context.Context, progressID int64, userID i
 		&p.HoursLeft,
 		&p.Note,
 		&p.ProgressAt,
+		&p.ExecutedStepID,
 		&p.CreatedAt,
 	)
 	if err != nil {
@@ -1954,7 +1956,7 @@ func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFil
 	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 	query := applyProgressFilter(psql.Select(
-		"id", "activity_id", "user_id", "value", "hours_left", "note", "progress_at", "created_at",
+		"id", "activity_id", "user_id", "value", "hours_left", "note", "progress_at", "executed_step_id", "created_at",
 	).From("activity_progress"), filter).
 		OrderBy("progress_at DESC")
 
@@ -1987,6 +1989,7 @@ func (r *repository) ListProgress(ctx context.Context, filter domain.ProgressFil
 			&p.HoursLeft,
 			&p.Note,
 			&p.ProgressAt,
+			&p.ExecutedStepID,
 			&p.CreatedAt,
 		)
 		if err != nil {
@@ -2164,13 +2167,27 @@ func applyStepFilter(query squirrel.SelectBuilder, filter domain.StepFilter) squ
 	return query
 }
 
+// withStepExecutionStats adds the Step.LastExecutedAt and
+// Step.ExecutionsLast30Days columns, computed from
+// activity_progress.executed_step_id, for the steps table aliased as
+// stepsAlias. The 30-day cutoff is a bound parameter, same as every other
+// progress_at filter here.
+func withStepExecutionStats(query squirrel.SelectBuilder, stepsAlias string) squirrel.SelectBuilder {
+	return query.
+		Column(fmt.Sprintf("(SELECT MAX(ep.progress_at) FROM activity_progress ep WHERE ep.executed_step_id = %s.id) AS last_executed_at", stepsAlias)).
+		Column(squirrel.Expr(
+			fmt.Sprintf("(SELECT COUNT(*) FROM activity_progress ep WHERE ep.executed_step_id = %s.id AND ep.progress_at >= ?) AS executions_last_30_days", stepsAlias),
+			time.Now().AddDate(0, 0, -30),
+		))
+}
+
 func (r *repository) ListSteps(ctx context.Context, filter domain.StepFilter) ([]domain.Step, error) {
 	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
-	query := applyStepFilter(psql.Select(
+	query := applyStepFilter(withStepExecutionStats(psql.Select(
 		"id", "user_id", "activity_id", "name", "type", "status",
 		"created_by_progress_point_id", "completed_by_progress_point_id", "closed_at", "created_at",
-	).From("steps"), filter).OrderBy("created_at ASC")
+	), "steps").From("steps"), filter).OrderBy("created_at ASC")
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -2197,6 +2214,8 @@ func (r *repository) ListSteps(ctx context.Context, filter domain.StepFilter) ([
 			&st.CompletedByProgressPointID,
 			&st.ClosedAt,
 			&st.CreatedAt,
+			&st.LastExecutedAt,
+			&st.ExecutionsLast30Days,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan step: %w", err)
@@ -2218,11 +2237,11 @@ func (r *repository) ListSteps(ctx context.Context, filter domain.StepFilter) ([
 func (r *repository) ListStepsWithActivity(ctx context.Context, filter domain.StepFilter) ([]domain.StepWithActivity, error) {
 	psql := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
-	query := psql.Select(
+	query := withStepExecutionStats(psql.Select(
 		"s.id", "s.user_id", "s.activity_id", "s.name", "s.type", "s.status",
 		"s.created_by_progress_point_id", "s.completed_by_progress_point_id", "s.closed_at", "s.created_at",
 		"a.name AS activity_name",
-	).
+	), "s").
 		From("steps s").
 		Join("activities a ON a.id = s.activity_id").
 		Where(squirrel.Eq{"s.user_id": filter.UserID}).
@@ -2263,6 +2282,8 @@ func (r *repository) ListStepsWithActivity(ctx context.Context, filter domain.St
 			&st.ClosedAt,
 			&st.CreatedAt,
 			&st.ActivityName,
+			&st.LastExecutedAt,
+			&st.ExecutionsLast30Days,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan step: %w", err)

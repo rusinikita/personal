@@ -102,6 +102,7 @@ Google Calendar event ··· activity_id:XX
 | `note` | string | Что я сказал, без интерпретаций |
 | `progress_at` | datetime | Когда было; по умолчанию сейчас, можно задним числом |
 | `hours_left` | number | Только для проектов: оценка оставшихся часов |
+| `executed_step_id` | int | Repeatable step этой activity, выполненный в этом чекине; максимум один |
 
 ### 3.2 Шкала по типам
 
@@ -140,12 +141,16 @@ Google Calendar event ··· activity_id:XX
 | `type` | enum | `one_time` — сделал и закрыл; `repeatable` — повторяется, пока жива activity |
 | `status` | enum | `active` / `finished` (закрытие ставит `closed_at`) |
 | `completed_by_progress_point_id` | int | Чекин, которым шаг закрыт |
+| `last_executed_at` | datetime | Только чтение: `progress_at` последнего чекина с этим `executed_step_id` |
+| `executions_last_30_days` | int | Только чтение: сколько чекинов выполнили step за 30 дней |
 
 ### 4.2 Поведение
 
 - Статуса `dropped` у step нет: ненужный step удаляется `delete_step`.
 - `get_step_list` отдаёт steps **только активных activity**. У paused / finished / dropped activity steps не всплывают автоматически.
 - `create_step` через MCP не связывает step с чекином. Веб-форма чекина связывает созданный вместе с ней step с этой точкой.
+- Отметка в чекине: one_time закрывается; repeatable остаётся `active`, а чекин получает `executed_step_id` (MCP — параметр `create_progress_point`, веб — radio-группа). Step должен быть active repeatable той же activity. Закрыть repeatable можно только явно — `edit_step status=finished`.
+- Удаление step не удаляет чекины, только обнуляет их `executed_step_id`.
 
 ---
 
@@ -235,7 +240,7 @@ Google Calendar event ··· activity_id:XX
 | Создать activity | `create_activity(name, progress_type, frequency_days, description?, life_part_ids?, started_at?)` |
 | Изменить / пауза / завершить / переоткрыть | `edit_activity(activity_id, …)` |
 | Удалить activity навсегда | `delete_activity` — только по явной просьбе |
-| Чекин | `create_progress_point(activity_id, value, note?, progress_at?, hours_left?)` |
+| Чекин | `create_progress_point(activity_id, value, note?, progress_at?, hours_left?, executed_step_id?)` |
 | Поправить чекин | `edit_progress_point(progress_id, …)` |
 | Удалить чекин | `delete_progress_point(progress_id)` |
 | Поиск по заметкам | `search_progress_notes(query_variants, …)` |

@@ -2,7 +2,7 @@
 
 ## Overview
 
-System for tracking progress across life areas, projects, and goals with periodic reflection and statistics. Supports different progress types (mood, habit progress, project progress, promise state), enables daily/weekly reflections, and provides detailed statistics on trends and completion rates. Activities can represent habits (daily recurring), projects (time-bound with completion), or maintenance goals (ongoing without completion). Each activity also carries a set of **steps** — concrete, short-horizon next-actions (days to a couple weeks out) that were previously scattered informally in note text or activity descriptions.
+System for tracking progress across life areas, projects, and goals with periodic reflection and statistics. Supports different progress types (mood, habit progress, project progress, promise state), enables daily/weekly reflections, and provides detailed statistics on trends and completion rates. Activities can represent habits (daily recurring), projects (time-bound with completion), or maintenance goals (ongoing without completion). Each activity also carries a set of **steps** — concrete, short-horizon next-actions (days to a couple weeks out) that were previously scattered informally in note text or activity descriptions. A `repeatable` step is **executed** rather than closed: a progress point can mark one repeatable step as done (`executed_step_id`), the step stays active, and its history (last done, times done in the past 30 days) shows in chat and on the drill-down, so the monthly review can find repeatable steps not done for a month.
 
 ## Best Practices Applied
 
@@ -34,10 +34,16 @@ System for tracking progress across life areas, projects, and goals with periodi
 - **Value picked via a radio group with one fixed emoji-per-value metaphor per `progress_type`, not the full `get_progress_type_examples` set**: the MCP reflection flow benefits from offering several metaphors (weather/light/colors for mood, etc.) so the AI can pick whichever resonates, but a web form needs exactly one label per value, hardcoded per type in the web handler — mood uses "mood as weather" (☀️+2 ⛅+1 ☁️0 🌧️-1 ⛈️-2), habit_progress uses "habit consistency" (💪+2 👍+1 🤔0 😔-1 ❌-2), project_progress uses "project momentum" (🚀+2 ➡️+1 ⏸️0 ↩️-1 🔄-2), promise_state uses "promise awareness" with only 3 options since it has no ±2 anywhere in the domain (✅+1 💭0 🤷-1). No new domain model or MCP-facing change — `get_progress_type_examples`'s full multi-metaphor output is untouched, this is presentation-only data local to the web handler
 - **Steps are owned by an activity, not the progress-point system**: `steps` gets its own table (`activity_id` FK, `ON DELETE CASCADE` same as `activity_progress`) rather than being folded into `activity_progress` — a step is a next-action, not a logged reflection value, and it has its own lifecycle (`active`/`finished`) independent of when/whether a point gets logged
 - **Step ↔ progress-point links are informational, not ownership**: `created_by_progress_point_id`/`completed_by_progress_point_id` are `ON DELETE SET NULL` (not `CASCADE`) against `activity_progress` — deleting the point that spawned or closed a step (via `delete_progress_point`) shouldn't silently delete or reopen the step, it should just drop the audit trail back to that point
-- **`one_time` vs `repeatable` only affects what happens after closing**: both types use the same `status` enum (`active`/`finished`) and the same close mechanism (checkbox on the progress-point form, or `edit_step` directly) — closing a `repeatable` step doesn't auto-reopen it or spawn a new one; re-queuing it is a manual re-add (`create_step` again, or the new-step text field next time), same as a `one_time` step, so there's no separate "recurrence" mechanism to build
+- **`one_time` is closed by doing it, `repeatable` is executed by doing it**: both types share the `status` enum (`active`/`finished`), but ticking a step when logging a point does different things. A ticked `one_time` step is closed (`status=finished`, `closed_at`, `completed_by_progress_point_id`). A ticked `repeatable` step is recorded as the point's `executed_step_id` and **stays `active`**. A `repeatable` step is closed only on purpose (`edit_step status=finished`, e.g. at the monthly review) or removed with `delete_step`. No auto-recurrence or scheduling
+- **Execution is a column on the progress point, not a new table**: `activity_progress.executed_step_id` (nullable FK to `steps`, `ON DELETE SET NULL`). The execution time is the point's `progress_at`, so fixing a point's date via `edit_progress_point` moves the execution too, and `delete_progress_point` removes it. Deleting a step only nulls the link — the progress point itself is kept
+- **At most one repeatable step per progress point**: the single column enforces it at the schema level. The process rule (in `activity-rituals.md` §2.9) is to keep one repeatable step per activity where possible, and if there are several, tick them one at a time in different points
+- **Execution stats are computed when listing steps, not stored**: `ListSteps`/`ListStepsWithActivity` add `last_executed_at` (`MAX(progress_at)`) and `executions_last_30_days` (count with `progress_at >= now - 30 days`) via correlated subqueries over `activity_progress WHERE executed_step_id = steps.id` (the 30-day cutoff is a bound parameter). No counters to keep in sync. For `one_time` steps they are always `NULL`/`0`. The 30-day window is hardcoded to match the monthly review, not a parameter
+- **The monthly review needs no new filter**: `get_step_list` already returns `type` for every active step of active activities; with `last_executed_at` added, "repeatable steps not done in the past month" is filtered by the agent itself
+- **Ticking in chat reuses `create_progress_point`, not a new tool**: optional `executed_step_id` input. The step must be the user's own `repeatable`, `active` step of the **same activity** as the point, otherwise the call fails before anything is written. The web form goes through the same shared validation. No `edit_progress_point` input for it: a tick forgotten at creation is fixed by deleting and re-logging the point
+- **Past closures of repeatable steps are not migrated**: repeatable steps closed earlier just to mark them done (e.g. step 16 on activity 67) are reopened by hand, once, out of band (`UPDATE steps SET status='active', closed_at=NULL, completed_by_progress_point_id=NULL WHERE id=...`); their past closure is not turned into an execution
 - **No `dropped` status for steps — abandoning one is just `delete_step`**: unlike activities, a step's history isn't worth keeping once it's no longer relevant — the things worth auditing are the activity itself and its progress points/notes, not an abandoned one-line next-action. `StepStatus` has only `active`/`finished`; a step nobody wants anymore is hard-deleted (`delete_step`), not marked over
 - **New steps queued via `;`-separated text fields, mirroring the multi-variant pattern used elsewhere** (`resolve_food_id_by_name`, `search_progress_notes`): the progress-point form's two text inputs (one-time, repeatable) each split on `;` server-side into individual `CreateStep` calls tied to the new point's ID — no new batch-input domain type, just string splitting before existing single-item creation
-- **Step creation/closing on the web form shares the write path with the point itself, not a separate request**: `POST /web/progress/browse/{id}/points` creates the `ActivityPoint` first, then in the same handler call closes each checked step (`UpdateStep` with `status=finished`, `closed_at=now`, `completed_by_progress_point_id=<new point id>`) and creates each new step from the `;`-split text fields (`CreateStep` with `created_by_progress_point_id=<new point id>`) — one form submission, one redirect, matching the "single 'log progress' submission" requirement instead of a separate step-editing round trip
+- **Step creation/closing on the web form shares the write path with the point itself, not a separate request**: `POST /web/progress/browse/{id}/points` creates the `ActivityPoint` first, then in the same handler call closes each checked `one_time` step (`UpdateStep` with `status=finished`, `closed_at=now`, `completed_by_progress_point_id=<new point id>`) and creates each new step from the `;`-split text fields (`CreateStep` with `created_by_progress_point_id=<new point id>`) — one form submission, one redirect, matching the "single 'log progress' submission" requirement instead of a separate step-editing round trip
 - **No `started_at` on steps — visibility is derived from the activity's status, not a step-level date**: a step is only shown in any listing (browse compact list, drill-down full list, progress-point form checkboxes) while its owning activity's `status = active`; a step belonging to a paused/finished/dropped activity is simply not rendered anywhere, with no separate flag or date field on `steps` itself needed to achieve that
 - **`edit_step` also takes `completed_by_progress_point_id` as a pointer field**, alongside name/status — same partial-update pattern as the rest of the subdomain. This lets the AI link a step's closure to a progress point it just created in the same chat turn (not only the web form's same-POST flow)
 - **`get_step_list` reuses the same visibility rule as the web display listings, not a second mechanism**: it only returns steps belonging to an activity with `status = active` — a step whose activity is paused/finished/dropped is invisible everywhere, chat included, not just on the web pages. Backed by a new `ListStepsWithActivity` repository method that joins `steps` to `activities` (filtering `activities.status = 'active'`, also giving the activity's name for context), following the same enrichment pattern `SearchProgressNotes`/`ActivityPointWithActivity` already established in this subdomain
@@ -56,6 +62,7 @@ erDiagram
     ACTIVITIES ||--o{ STEPS : "next-actions"
     ACTIVITY_PROGRESS_POINT |o..o{ STEPS : "creates (created_by_progress_point_id)"
     ACTIVITY_PROGRESS_POINT |o..o{ STEPS : "closes (completed_by_progress_point_id)"
+    STEPS |o..o{ ACTIVITY_PROGRESS_POINT : "executed in (executed_step_id)"
 
     LIFE_PARTS {
         bigint id PK
@@ -88,6 +95,7 @@ erDiagram
         decimal hours_left "NULL or estimated hours remaining"
         text note
         timestamp progress_at "when progress was made"
+        bigint executed_step_id FK "repeatable step done in this point, NULL if none"
         timestamp created_at
     }
 
@@ -228,13 +236,13 @@ sequenceDiagram
         Handler->>DB: ListSteps(ActivityID: id, Statuses: [active])
         DB-->>Handler: open steps for this activity (may be empty)
     end
-    Handler-->>Browser: standalone page: activity name + progress_type,<br/>radio-group form (emoji set picked by activity.progress_type),<br/>one checkbox per open step, plus new-step text fields (one-time / repeatable)
+    Handler-->>Browser: standalone page: activity name + progress_type,<br/>radio-group form (emoji set picked by activity.progress_type),<br/>one checkbox per open one_time step, one radio per open repeatable step (+ "none"),<br/>plus new-step text fields (one-time / repeatable)
 
-    Browser->>Handler: POST /web/progress/browse/{id}/points<br/>(value, note, hours_left, progress_at,<br/>close_step_ids[], new_one_time_steps, new_repeatable_steps — form fields)
+    Browser->>Handler: POST /web/progress/browse/{id}/points<br/>(value, note, hours_left, progress_at,<br/>close_step_ids[], executed_step_id, new_one_time_steps, new_repeatable_steps — form fields)
     Handler->>DB: GetActivity(id) (ownership check)
-    Handler->>Handler: validate value range + parse/default progress_at<br/>(same rules as create_progress_point)
+    Handler->>Handler: validate value range + parse/default progress_at<br/>(same rules as create_progress_point,<br/>incl. executed_step_id: own, repeatable, active, same activity)
     alt valid
-        Handler->>DB: CreateProgress(...)
+        Handler->>DB: CreateProgress(..., executed_step_id)
         DB-->>Handler: point id
         loop for each checked close_step_id
             Handler->>DB: UpdateStep(status: finished, closed_at: now,<br/>completed_by_progress_point_id: point id)
@@ -320,6 +328,11 @@ CREATE TABLE IF NOT EXISTS steps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_steps_user_id ON steps(user_id);
+
+-- Repeatable step done in a progress point. Added after steps (FK points forward), idempotent on the live DB
+ALTER TABLE activity_progress ADD COLUMN IF NOT EXISTS executed_step_id BIGINT REFERENCES steps(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_progress_executed_step_id ON activity_progress(executed_step_id) WHERE executed_step_id IS NOT NULL;
 ```
 
 ## Go Code Structure
@@ -392,6 +405,7 @@ type ActivityPoint struct {
     HoursLeft  float64   `json:"hours_left,omitempty" db:"hours_left" jsonschema:"Estimated hours remaining for projects (0 if not tracking)"`
     Note       string    `json:"note,omitempty" db:"note" jsonschema:"Optional note about this progress point"`
     ProgressAt time.Time `json:"progress_at" db:"progress_at" jsonschema:"When progress was made (defaults to now if empty)"`
+    ExecutedStepID *int64 `json:"executed_step_id,omitempty" db:"executed_step_id" jsonschema:"Repeatable step of this activity done in this point (optional, at most one)"`
     CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -501,6 +515,9 @@ type Step struct {
     CompletedByProgressPointID  *int64     `json:"completed_by_progress_point_id,omitempty" db:"completed_by_progress_point_id" jsonschema:"Progress point whose checkbox closed this step (null while active)"`
     ClosedAt                    *time.Time `json:"closed_at,omitempty" db:"closed_at"`
     CreatedAt                   time.Time  `json:"created_at" db:"created_at"`
+    // Read-only, computed by ListSteps/ListStepsWithActivity from activity_progress.executed_step_id
+    LastExecutedAt              *time.Time `json:"last_executed_at,omitempty" db:"last_executed_at" jsonschema:"progress_at of the latest point that executed this repeatable step (null if never)"`
+    ExecutionsLast30Days        int        `json:"executions_last_30_days" db:"executions_last_30_days" jsonschema:"How many points executed this repeatable step in the past 30 days"`
 }
 
 // StepFilter defines query parameters for listing steps
@@ -535,7 +552,7 @@ type ProgressRepository interface {
     DeleteActivity(ctx context.Context, activityID int64, userID int64) error // hard delete; activity_progress rows cascade via FK, but an achievement still referencing this activity (achievements.activity_id, no ON DELETE clause) blocks it with a foreign-key violation
 
     // Progress CRUD
-    CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error)
+    CreateProgress(ctx context.Context, progress *ActivityPoint) (int64, error) // writes executed_step_id; caller has already validated it
     ListProgress(ctx context.Context, filter ProgressFilter) ([]ActivityPoint, error)
     CountProgress(ctx context.Context, filter ProgressFilter) (int, error) // same WHERE clauses as ListProgress, ignores Limit/Offset — for drill-down pagination
     UpdateProgress(ctx context.Context, progress *ActivityPoint) error // ID + UserID identify the row; caller has already merged partial-update fields onto a fetched point
@@ -547,7 +564,7 @@ type ProgressRepository interface {
 
     // Step CRUD
     CreateStep(ctx context.Context, step *Step) (int64, error)
-    ListSteps(ctx context.Context, filter StepFilter) ([]Step, error) // used for progress-point form checkboxes and browse/drill-down display; caller is expected to only call this for an activity it already knows is status=active
+    ListSteps(ctx context.Context, filter StepFilter) ([]Step, error) // also fills LastExecutedAt/ExecutionsLast30Days; used for progress-point form checkboxes and browse/drill-down display; caller is expected to only call this for an activity it already knows is status=active
     ListStepsWithActivity(ctx context.Context, filter StepFilter) ([]StepWithActivity, error) // used by get_step_list; joins to activities and always filters activities.status='active' server-side, regardless of filter.Statuses
     UpdateStep(ctx context.Context, step *Step) error // rename, status, closed_at, completed_by_progress_point_id — caller has already merged partial-update fields onto a fetched step
     DeleteStep(ctx context.Context, stepID int64, userID int64) error
@@ -578,7 +595,7 @@ Returns hardcoded natural language ↔ numeric value mapping examples (multiple 
 Returns last 3 progress points plus trend averages and 80th percentiles for three windows: overall, last 30 days, last 7 days.
 
 ### create_progress_point
-Logs a progress point for an activity: value (-2 to +2, required), optional note, hours_left, and progress_at (defaults to now).
+Logs a progress point for an activity: value (-2 to +2, required), optional note, hours_left, progress_at (defaults to now), and executed_step_id — one repeatable step done in this point. `executed_step_id` must be the user's own `repeatable`, `active` step of the same activity; the step stays active.
 
 ### edit_progress_point
 Updates mutable fields (value, note, hours_left, progress_at) of an existing progress point, scoped to the owning user. At least one field required; unspecified fields keep their current value. Same partial-update pointer-field pattern as `edit_activity`.
@@ -599,7 +616,7 @@ Updates mutable fields (name, status, completed_by_progress_point_id) of an exis
 Deletes a step by ID, scoped to the owning user. Errors if the step doesn't exist or isn't owned by the user. Cannot be undone.
 
 ### get_step_list
-Lists steps, each with its activity's name, optionally filtered to one activity_id. Only ever returns steps whose owning activity is `status=active` — a step belonging to a paused/finished/dropped activity is never returned, matching the same visibility rule the web browse/drill-down pages use. Defaults to `status=active` steps only (finished steps aren't useful to re-surface here).
+Lists steps, each with its activity's name, optionally filtered to one activity_id. Only ever returns steps whose owning activity is `status=active` — a step belonging to a paused/finished/dropped activity is never returned, matching the same visibility rule the web browse/drill-down pages use. Defaults to `status=active` steps only (finished steps aren't useful to re-surface here). Each step also carries `last_executed_at` and `executions_last_30_days` (meaningful for repeatable steps) — used at the monthly review to find repeatable steps not done for a month.
 
 > `create_life_part` is intentionally **not** exposed as an MCP tool — life parts are seeded via repository/script.
 
@@ -621,13 +638,13 @@ Lists activities where `status` is `finished` or `dropped` (`ListActivities(Stat
 Lists activities where `started_at` is in the future (`ListActivities(FutureOnly: true, Statuses: [active])`), same table shape (including the Description column), pagination, and a "Life parts" column, with a back link.
 
 ### GET /web/progress/browse/{id}
-Drill-down for one activity: a `DetailView` with the activity's description (when set) shown as a paragraph under the title, its open steps shown in full (`ListSteps(ActivityID: id, Statuses: [active])`, only fetched/rendered when the activity itself is `status=active` — a drill-down for a paused/finished/dropped activity shows no steps section), stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1), and a "+ Add" button at the top linking to `GET /web/progress/browse/{id}/points/new`. Back link returns to wherever the user came from (main/finished/future list).
+Drill-down for one activity: a `DetailView` with the activity's description (when set) shown as a paragraph under the title, its open steps shown in full (`ListSteps(ActivityID: id, Statuses: [active])`, only fetched/rendered when the activity itself is `status=active` — a drill-down for a paused/finished/dropped activity shows no steps section; each repeatable step also shows "last DD.MM, N× in 30 days" or "never done" from `LastExecutedAt`/`ExecutionsLast30Days`), stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1), and a "+ Add" button at the top linking to `GET /web/progress/browse/{id}/points/new`. Back link returns to wherever the user came from (main/finished/future list).
 
 ### GET /web/progress/browse/{id}/points/new
-Standalone "log a point" page, reached via the drill-down's "+ Add" button — not a form embedded on the drill-down itself. Header names the activity (name + `progress_type`) so it's unambiguous which activity the point is for. Form fields: `value` (radio group, one emoji per value, the set picked by the activity's `progress_type` — see Best Practices), `note` (optional text), `hours_left` (optional number), `progress_at` (optional datetime-local; blank defaults to now, same as the MCP tool), one checkbox per currently-open step for this activity when the activity is `status=active` (`ListSteps(ActivityID: id, Statuses: [active])`; no checkboxes rendered for a paused/finished/dropped activity's point form), and two `;`-separated text fields for queuing new steps — one for one-time steps, one for repeatable steps. Posts to `POST /web/progress/browse/{id}/points` below. Back link returns to the drill-down.
+Standalone "log a point" page, reached via the drill-down's "+ Add" button — not a form embedded on the drill-down itself. Header names the activity (name + `progress_type`) so it's unambiguous which activity the point is for. Form fields: `value` (radio group, one emoji per value, the set picked by the activity's `progress_type` — see Best Practices), `note` (optional text), `hours_left` (optional number), `progress_at` (optional datetime-local; blank defaults to now, same as the MCP tool), one checkbox per currently-open `one_time` step (checked = close it) and a radio group over currently-open `repeatable` steps plus a "none" option (default), so at most one repeatable step can be marked executed, when the activity is `status=active` (`ListSteps(ActivityID: id, Statuses: [active])`; no step controls rendered for a paused/finished/dropped activity's point form), and two `;`-separated text fields for queuing new steps — one for one-time steps, one for repeatable steps. Posts to `POST /web/progress/browse/{id}/points` below. Back link returns to the drill-down.
 
 ### POST /web/progress/browse/{id}/points
-Logs a progress point for the activity directly from the browser, instead of requiring the MCP tool `create_progress_point`. Runs the same value-range + ownership (`GetActivity`) validation as `create_progress_point` before calling `CreateProgress`. On success: closes every checked step (`UpdateStep` with `status: finished`, `closed_at: now`, `completed_by_progress_point_id` set to the new point's ID) and creates a step per `;`-split entry in each new-step text field (`CreateStep` with `created_by_progress_point_id` set to the new point's ID), then redirects (302) to `GET /web/progress/browse/{id}` (write-then-redirect, same pattern as `POST /web/achievements/refresh`); on validation or DB failure, re-renders the standalone `points/new` page in place with an inline error message instead of redirecting. Protected by `WebMiddleware` like the rest of `/web/progress/browse/*`.
+Logs a progress point for the activity directly from the browser, instead of requiring the MCP tool `create_progress_point`. Runs the same value-range + ownership (`GetActivity`) + `executed_step_id` validation as `create_progress_point` before calling `CreateProgress` (the chosen repeatable step goes into the point's `executed_step_id`; `close_step_ids` accepts only `one_time` steps). On success: closes every checked `one_time` step (`UpdateStep` with `status: finished`, `closed_at: now`, `completed_by_progress_point_id` set to the new point's ID) and creates a step per `;`-split entry in each new-step text field (`CreateStep` with `created_by_progress_point_id` set to the new point's ID), then redirects (302) to `GET /web/progress/browse/{id}` (write-then-redirect, same pattern as `POST /web/achievements/refresh`); on validation or DB failure, re-renders the standalone `points/new` page in place with an inline error message instead of redirecting. Protected by `WebMiddleware` like the rest of `/web/progress/browse/*`.
 
 ## Dialog & Conversation Guidelines
 
