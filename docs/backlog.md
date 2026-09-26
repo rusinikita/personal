@@ -111,12 +111,6 @@ Write `action/docs/content/{subject}-mechanics.md` and/or `-rituals.md` for food
 
 **Why:** `transport/mcp/instructions.md` was trimmed to a dispatcher (subdomain → first tool call) for every subdomain, including food/workout/finance — but unlike activities, they have no `get_doc` fallback yet, so anything beyond "which tool to call first" that used to live in the old instructions text (metaphor scripts, exact wording, detailed procedure) is currently just gone until this is written.
 
-## 25-09-26 — Sidebar navigation between docs on /web/docs pages
-
-Add a sidebar to `GET /web/docs/{topic}` pages listing every available doc (from `docs.Topics()`, current one highlighted), so the user can jump between docs directly instead of going back to the `/web/docs` index each time.
-
-**Why:** With two docs today and more planned (see "25-09-26 — Mechanics/rituals docs for food, workout, finance"), mechanics and rituals docs cross-reference each other constantly — switching between them via the index page is an extra round-trip for every jump.
-
 ## 26-09-26 — Track executions of repeatable steps
 
 Record each time a `repeatable` step is done, without closing it, and show that history: when it was last done and how often. Today a step only has `active`/`finished` plus one `completed_by_progress_point_id`, so the only way to mark a repeatable step as done is to close it, and then it drops out of `get_step_list`. How to store executions (a separate table, or links from progress points) and how to mark one (a web form checkbox, an MCP tool) will be decided in the feature doc.

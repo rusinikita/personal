@@ -23,6 +23,7 @@ This spec is the mechanism only. Content lives as files under `action/docs/conte
 - **One route, a `topic` selector — not one route per doc**: two documents today, more later (other subjects, or a third kind per subject), but each is the same shape (a slug → embedded text). `GET /web/docs/{topic}` and `get_doc(topic)` both key off the same slug — the slug is exactly the content file's basename minus `.md` (`activity-mechanics`, `activity-rituals`). Adding a doc later is one more embedded file, not a new mechanism and not a code change.
 - **Topic list is discovered, not hardcoded — list then load, two tools**: no `DocTopic` enum of fixed constants. `action/docs` reads its own embedded directory (`fs.ReadDir` over the `go:embed content/*.md` filesystem) to get the live topic list, title, and one-line description per doc — title is each file's first `# ` heading, description is the first blockquote line that follows it (both current docs already open with exactly that shape: `# Heading` then a `> ` intro line). `list_docs` exposes that discovery as its own tool (slug + title + description per doc); `get_doc(topic)` then loads one by slug — the same two-step shape as loading a skill/knowledge entry (list what's available, then pull the one you need), not one tool with a dynamically-built description. Both `GET /web/docs` (index) and `list_docs` call the same `docs.Topics()` helper, so both tools stay ordinary package-level `var MCPDefinition = mcp.Tool{...}` values, same as every other tool in this codebase — no dynamic schema/description construction needed. A `topic` unknown to `get_doc` is a runtime error (matches this codebase's existing convention of validating pseudo-enum strings in the handler, e.g. `progress_type`/`status` in `action/progress` — no native JSON-schema `enum` is used anywhere here), not a compile-time-checked type.
 - **Goals sits inside the mechanics/rituals docs, not its own doc**: a goal (`action/goals`) is a target layered on top of data another subdomain already owns (an activity, an exercise, a transaction) — it's cross-domain by nature, same as the doc content itself. Splitting it into its own topic would fragment one coherent "how do I track and aim for things" narrative across docs a reader has to cross-reference.
+- **Doc pages get a sidebar from the same `docs.Topics()` list**: `GET /web/docs/{topic}` renders an `<aside class="docs-sidebar"><nav>` next to the doc (Pico stacks `aside nav` links vertically), listing every topic's title as a link, the current one marked `aria-current="page"` (reuses the shell's existing `nav a[aria-current="page"]` highlight). Lets the user jump between docs that cross-reference each other without going back to the index. Built with a small package-local `html/template` in `docs_web.go` (same as the existing index template), not a new `webui` component — only docs pages need it. The only style addition is one two-column grid rule (`.docs-layout`: fixed-width sidebar + doc, stacking to one column on narrow screens) in the `webui` custom CSS layer (`layout.html`), the one place custom CSS lives
 - **No write path, no versioning UI**: there's no `create_doc`/`edit_doc` MCP tool. Updating content is a normal code change (edit the embedded file, commit, deploy) — same trust model as `life_parts` seeding.
 
 ## Architecture Diagrams
@@ -44,7 +45,7 @@ graph TB
         Get[get_doc MCP tool]
         FS[Embedded content files<br/>action/docs/content/*.md]
 
-        Web -->|Topics: slugs+titles+descriptions, renders content via blackfriday| FS
+        Web -->|Topics: slugs+titles+descriptions for index + doc-page sidebar, renders content via blackfriday| FS
         List -->|Topics: slugs+titles+descriptions| FS
         Get -->|reads one doc's raw markdown| FS
     end
@@ -96,7 +97,10 @@ sequenceDiagram
     FS-->>Handler: raw markdown content
     Handler->>BF: blackfriday.Run(content, CommonExtensions)
     BF-->>Handler: HTML fragment
-    Handler->>Webui: webui.RenderPage(w, PageData{Title, Nav, Content: fragment})
+    Handler->>FS: docs.Topics()
+    FS-->>Handler: slug + title per doc
+    Handler->>Handler: wrap in .docs-layout: sidebar (all topics, current aria-current="page") + doc fragment
+    Handler->>Webui: webui.RenderPage(w, PageData{Title, Nav, Content: layout})
     Webui-->>Browser: full HTML page (shared layout/nav)
 ```
 
@@ -170,7 +174,14 @@ Index page listing the available docs (title + one-line description each, from `
 
 ### GET /web/docs/{topic}
 
-Renders one document as an HTML page under the shared `webui` layout/nav (new "Docs" nav entry), markdown rendered to HTML via `blackfriday` — read-only, no forms, no query params. 404 for an unknown topic.
+Renders one document as an HTML page under the shared `webui` layout/nav (new "Docs" nav entry), markdown rendered to HTML via `blackfriday` — read-only, no forms, no query params. A sidebar next to the doc lists every doc from `docs.Topics()` (title, linking to `/web/docs/{slug}`), current one highlighted via `aria-current="page"` (see Best Practices). 404 for an unknown topic.
+
+## E2E Tests
+
+Changes in `tests/docs_test.go` (`TestDocsWeb` table):
+
+- "doc page renders markdown to HTML": also expects `docs-sidebar`, a link to the other doc (`href="/web/docs/activity-rituals"`), and the current doc's link marked active (`href="/web/docs/activity-mechanics" aria-current="page"`)
+- "index lists docs with links", "unknown topic is 404": unchanged (index page gets no sidebar)
 
 ## `transport/mcp` Instructions Update
 

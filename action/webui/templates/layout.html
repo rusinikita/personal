@@ -56,6 +56,8 @@ nav a[aria-current="page"] { color: var(--webui-accent); font-weight: 700; }
 .webui-steps li { display: flex; align-items: center; gap: 0.5rem; }
 .webui-step-type { font-size: 0.85rem; opacity: 0.85; }
 .webui-tag { padding: 0.15em 0.7em; font-size: 0.75rem; margin: 0; }
+.docs-layout { display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: 2rem; align-items: start; }
+@media (max-width: 768px) { .docs-layout { grid-template-columns: minmax(0, 1fr); gap: 1rem; } }
 </style>
 </head>
 <body>

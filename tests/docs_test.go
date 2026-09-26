@@ -81,7 +81,7 @@ func (s *IntegrationTestSuite) TestDocsWeb() {
 			name:         "doc page renders markdown to HTML",
 			path:         "/web/docs/activity-mechanics",
 			wantStatus:   http.StatusOK,
-			wantContains: []string{"<h1>Механика системы</h1>", "<table>", "<blockquote>"},
+			wantContains: []string{"<h1>Механика системы</h1>", "<table>", "<blockquote>", "docs-sidebar", `href="/web/docs/activity-rituals"`, `href="/web/docs/activity-mechanics" aria-current="page"`},
 		},
 		{
 			name:       "unknown topic is 404",
