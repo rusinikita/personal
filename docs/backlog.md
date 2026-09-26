@@ -20,12 +20,6 @@ Add workout-logging web pages under the existing Workouts section:
 - Start a workout screen mid-session and only have it become a real workout once a set is actually logged.
 - Pick the next exercise quickly from a frequency-sorted list instead of scanning the full exercise list.
 
-## 16-09-26 — Ideas table + MCP tools (separate from activities)
-
-Add a new table (e.g. `ideas`: id, user_id, title, description, created_at, updated_at) plus MCP tools (`create_idea`, `edit_idea` to append/grow the description over time, `list_ideas`) for unformed thoughts that aren't ready to become an activity — no `progress_type`, no `frequency_days`, no progress points. Not auto-converted into an activity — promoting an idea is a manual action (create a new activity referencing the idea's text); the idea stays in its list afterward as a historical record.
-
-**Why:** Ideas don't fit the `activities` schema — `progress_type` and `frequency_days` are `NOT NULL`/`CHECK`-constrained, so a not-yet-decided idea would need fake defaults to live there. A separate table keeps the activities list to genuinely committed, trackable things, and lets an idea's description accumulate freely across multiple sessions without periodic check-in semantics. Came out of a brainstorm on distinguishing "not yet thought through" (idea) from "decided but not started" (activity with future `started_at`) and "started then paused" (see the activity status backlog item above).
-
 ## 21-09-26 — New subdomain: learning (learning_plan, skill, learning_exercise, vocabulary)
 
 New subdomain (`action/learning`) for structured, long-running study tracking — first two use cases are learning Greek and learning Kubernetes, which is why the model needs to cover both a language (vocabulary-heavy) and a technical skill (exercise/practice-heavy) without forcing one shape onto the other.
@@ -42,39 +36,68 @@ New subdomain (`action/learning`) for structured, long-running study tracking �
 - Track a Kubernetes study plan broken into skills (networking, workloads, storage) practiced via hands-on exercises, without a vocabulary component.
 - See progress per skill within a plan rather than one flat undifferentiated activity.
 
-## 21-09-26 — Split notes out of activity_progress into their own table
+## 25-09-26 — Inbox: separate entity for the inbox → someday → spike lifecycle
 
-Move `activity_progress.note` (free-text, variable-length) out of the progress-point row into a separate table referencing the progress point it belongs to, instead of a column mixed in with `activity_progress`'s otherwise narrow, structured numeric/timestamp data.
+New entity (table name to be decided together with the schema — not `notes`; plus MCP tools and a web capture form) implementing the inbox mechanics from `action/docs/content/activity-rituals.md` §2.1–2.5 and the inbox steps of the rituals (§3.2 step 1–2, §3.3 step 2, §3.4 step 2). It replaces the «Inbox» service activity from §2.2 (not created yet), where each thought would have been a `value=0` progress point. Other kinds of notes (notes on activities, diary, retro) are not part of this item.
 
-**Why:** `activity_progress` should stay a uniform table of point-per-progress_type values; a prose-heavy `note` column sitting alongside it doesn't belong there and blocks giving notes their own index strategy. A dedicated notes table can carry a full-text index (`search_progress_notes` today does a plain `ILIKE` scan) or a vector/embedding index for semantic search, without either concern touching the core points table.
+**Data requirements:**
+
+> ⚠️ The schema below is a draft that the user rejected. When implementing, first agree on the database schema with the user (a separate step at the start of Stage 1, before the rest of the feature doc). Don't take the fields below as a given.
+
+- `id`, `user_id`, `created_at`, `updated_at`.
+- `type`: `idea` | `spike`.
+    - `idea`: a captured thought, outside existing activities (§2.2).
+    - `spike`: the outcome of a spike on an idea (§2.5). It has the 4 fixed sections: what changes in 3 months if done / what happens if not / cost, what gets displaced (WIP limit) / first physical step.
+- `body`: the user's own text, required. No-go findings get appended to the idea's `body` (§2.5).
+- `idea_id`: for `spike` only, a required FK to the idea it examined.
+- `status`, for `idea` only:
+    - `inbox`: captured, not reviewed yet.
+    - `someday`: stayed in the inbox after a weekly review (§2.3).
+    - `resolved`: a decision has been made.
+    - The weekly review takes all `inbox`, the monthly review all `someday`, so the "since last retro" boundary through activity 70 isn't needed.
+- Resolution, replacing deletion (§2.4); set only when `status = resolved`:
+    - `resolution`: `dropped` | `merged` | `expired` | `to_step` | `to_activity` | `to_note`.
+    - `resolved_at`.
+    - The target as a typed nullable FK:
+        - `resolved_to_note_id`: for `merged`, the older idea.
+        - `resolved_to_step_id`: for `to_step`.
+        - `resolved_to_activity_id`: for `to_activity` (go after a spike).
+        - `resolved_to_progress_point_id`: for `to_note`, the note in the relevant activity.
+    - Resolved ideas are hidden from lists by default. The quarterly review reads them by `resolved_at` for the quarter, to count inbox conversion. There is no hard delete.
+- Duplicate counter (§2.3):
+    - `surface_count`: default 1. A duplicate gives the old idea +1, and the new one is resolved as `merged` into it. At 3 it becomes a spike trigger (§2.5).
+    - `last_surfaced_at`: updated on +1. It is the basis for `expired` candidates: 3 monthly reviews without promotion and without a new +1.
+- Constraints:
+    - `status`, `surface_count`, `last_surfaced_at` are only for `idea`.
+    - `idea_id` is only for `spike`.
+    - `resolution` + `resolved_at` are set if and only if `status = resolved`.
+- Indexes on `(user_id, type, status)` and on `idea_id`.
+
+**Tools (to be specified in the feature doc):**
+- Capture an idea: a web form (§3.1) plus MCP, for when the user dictates it (§5.1).
+- List by status.
+- Append to an idea's `body`.
+- Move to `someday`.
+- Merge a duplicate.
+- Resolve with a target.
+- Record a spike outcome.
+
+**Open question:** in §2.5 a spike is a step on «Inbox». Without that activity a step has nothing to attach to. Decide in the feature doc where the spike's slot/timebox lives (a calendar event only, or something else).
+
+**Why:** `activity_progress` is an event log. Editing and deleting its points is an exception, so soft delete with a resolution, a duplicate counter, and appending to text don't fit it. Inbox ideas have their own lifecycle (capture → review → someday → spike → decision) and get an entity built for that instead of a hack on points. After implementation, update §2.2–2.5 of the rituals doc and the «Inbox» row in `activity-mechanics.md`.
 
 **Use cases:**
-- Full-text or semantic (vector) search over notes without scanning/indexing the whole `activity_progress` table.
-- Keep `activity_progress` lean if it ever needs its own indexing/partitioning strategy independent of note content.
-
-## 23-09-26 — Separate entity for inbox notes
-
-Introduce a dedicated entity for inbox notes — quick captures that land somewhere first and get sorted later, instead of being forced into an existing entity (activity, progress note, idea) at the moment of capture. The concrete representation (table shape, fields, whether/how an inbox note gets processed into another entity, MCP tools / web UI) is intentionally left undecided and will be defined when this item is turned into a feature document.
-
-**Why:** Capturing a thought today means immediately deciding where it belongs; a separate inbox entity lets capture stay fast and pushes the "what is this?" decision to a later review step.
+- Quick capture of a thought via the web, without choosing an activity.
+- Weekly review: every `inbox` idea gets a decision. The agent suggests duplicates to merge and spike candidates (`surface_count` ≥ 3).
+- Go / no-go on last week's spike, from its `spike` note.
+- Monthly review: the whole `someday` list, `expired` candidates by `last_surfaced_at`.
+- Quarterly review: inbox conversion by `resolution` for the quarter.
 
 ## 23-09-26 — Rename goals to achievements
 
 Rename the `goals` subdomain to "achievements" everywhere it surfaces — table, `goal_type`, domain models, `action/goals` package, MCP tools (`create_goal`, `update_goal`, `get_goal_progress`, `log_goal_progress`, `refresh_goals`), web routes/pages (`/web/goals`, embedded tiles), and `docs/functions/goals-spec.md`. Pure rename — no behavior change.
 
 **Why:** "Goal" causes confusion: these aren't life goals, they're a gamification tool — measurable targets (save X, lift X kg, N-day streak) whose point is the satisfaction of hitting them. Calling them achievements matches what they actually are and frees "goal" from implying something they don't model.
-
-## 23-09-26 — Soft delete for progress points, with resolution tracking
-
-Add a `deleted_at` + `resolution` field to progress points (values: `dropped`, `merged`, `expired`, `→ step`/`→ activity`/`→ note` with a reference id), replacing today's hard `delete_progress_point`. Deleted points are excluded from `get_activity_stats` and `search_progress_notes` by default.
-
-**Why:** The weekly/monthly review ritual (`action/docs/content/activity-rituals.md`, §2.4) requires every inbox note to leave a recorded outcome when it's cleared out — dropped, merged into a duplicate, promoted into a step/activity/note, or expired after three monthly reviews with no traction — but the current hard delete destroys that decision instead of recording it.
-
-## 23-09-26 — Duplicate-surfacing counter on progress points
-
-Add a counter field to progress points that tracks how many times a duplicate idea has resurfaced, instead of tallying it informally in the note's text.
-
-**Why:** The inbox ritual's spike trigger ("idea surfaced 3 times") and someday-expiry rule ("3 monthly reviews with no new bump") both key off this count (`action/docs/content/activity-rituals.md`, §2.3, §2.5) — without a real field, detecting either mechanically means re-parsing note history instead of reading one value.
 
 ## 23-09-26 — Enforce activity/goal limits in create_activity / create_goal
 
