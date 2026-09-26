@@ -2,7 +2,7 @@
 
 ## Overview
 
-Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Goals) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart and a bar chart, a month-grid calendar, a drill-down/detail layout, and a goal-progress tile grid, all themed consistently (light + dark) from a single place.
+Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Goals) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart, a bar chart, a combo chart, a dual-axis line chart, a month-grid calendar, a drill-down/detail layout, and a goal-progress tile grid, all themed consistently (light + dark) from a single place.
 
 Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain.
 
@@ -21,8 +21,9 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Composition via named templates, not Go-side string concatenation**: a page's content is its own `templates/pages/{name}.html` file that lays out `{{.SomeComponentHTML}}` fields declaratively; the handler's only job is building the data (calling `RenderTable`/`RenderStatTiles`/etc. to produce each fragment) and executing the page template once — no handler manually writes `<section>` markup or concatenates HTML strings
 - **Design tokens as CSS custom properties**: custom (non-Pico) colors/spacing defined once as `:root` CSS variables; component CSS never hardcodes a color, so swapping the palette or adding a new theme touches one place
 - **Automatic light/dark via `prefers-color-scheme`**: no theme toggle or stored preference — both Pico CSS and the custom layer (and Chart.js, via a small init script reading the resolved CSS variables) follow the OS/browser setting
-- **Chart.js for three chart types**: server builds the data series as JSON, a thin inline script initializes a Chart.js chart from it — no server-side chart image/SVG generation to maintain. A **line chart** (single series over time — Workouts weight/reps trend, Progress activity value-over-time drill-down), a **bar chart** (categorical comparison — Money spend-by-category), and a **combo chart** (one series over time, rendered as both a bar and a line at once — Money's balance trend) cover every known use
+- **Chart.js for four chart types**: server builds the data series as JSON, a thin inline script initializes a Chart.js chart from it — no server-side chart image/SVG generation to maintain. A **line chart** (single series over time — Progress activity value-over-time drill-down), a **bar chart** (categorical comparison — Money spend-by-category), and a **combo chart** (one series over time, rendered as both a bar and a line at once — Money's balance trend), and a **dual-axis line chart** (two different series over the same x-axis, each on its own Y axis — Workouts weight + reps per set) cover every known use
 - **Combo chart is one series, drawn twice for readability — not two different series**: it plots the *same* `Points[].Value` per x-axis label as both a bar and an overlaid line via Chart.js's native mixed-dataset support (one `type: "bar"` chart with a second dataset overridden to `type: "line"`) — the per-period magnitude reads clearly from the bars, the shape of the trend reads clearly from the line, both for one number. Because both datasets carry identical values, the legend stays off (same convention as the single-series line/bar charts — a legend would just show the same label twice) and a second color token (`--webui-chart-bar`, alongside the existing `--webui-chart-line`) keeps the bar visually distinct from its own line overlay
+- **Dual-axis chart is two different series on two Y axes, modeled on the combo chart**: one Chart.js `type: "line"` chart with two datasets over the shared `Points[].Label` x-axis — the left dataset on the default `y` axis (`position: "left"`), the right one on a secondary `y1` axis (`position: "right"`, `grid.drawOnChartArea: false` so grid lines come from the left axis only). A point's missing value is `null` in JSON (Go `*float64` = nil), which Chart.js draws as a gap in that line only (`spanGaps` left at its default `false`). Unlike the other charts the legend is **on** — the two lines are different series, so the legend is what tells them apart. Colors reuse the existing tokens (left = `--webui-chart-line`, right = `--webui-chart-bar`), no new token
 - **Goal tiles reuse Pico's native `<progress>` element, no Chart.js**: `RenderGoalTiles` renders each goal as its own card with a `<progress value=... max=100>` bar plus a text label — Pico CSS already themes `<progress>` for light/dark, so this needs no canvas, no JS init script, and no new custom CSS beyond the card grid layout. One component, two placements: the dedicated `/web/goals` page renders every goal in one grid, while Money/Progress-browse/Workouts each embed the same component with a `GoalTilesData.Tiles` slice pre-filtered to their own domain's goal types (see `goals-spec.md`)
 - **Typed Go structs, not raw HTML, as the component API**: pages build a `Table`, `StatTile`, `LineChart`, `BarChart`, or `DetailView` struct and hand it to the shell; the shell owns the markup
 - **Responsive by default**: flexbox/grid + relative units (`rem`, `%`, `minmax()`), no fixed `100vw`/`100vh` sizing (that pattern stays confined to the untouched screenshot dashboard)
@@ -62,6 +63,7 @@ graph TB
         Line[Line chart component<br/>JSON data + Chart.js init script]
         Bar[Bar chart component<br/>JSON data + Chart.js init script]
         Combo[Combo chart component<br/>bar+line mixed dataset, Chart.js init script]
+        Dual[Dual-axis line chart component<br/>two series, left + right Y axis, Chart.js init script]
         Detail[Drill-down/detail layout]
         Tile[Goal tile grid component<br/>Pico native progress bar, no Chart.js]
     end
@@ -86,7 +88,7 @@ graph TB
     Demo -->|renders fixture data through every component| Shell
     MoneyH -->|builds Table/StatTile/BarChart/DetailView data,<br/>calls webui.Render*| Shell
     ProgressH -->|builds LineChartData| Shell
-    WorkoutH -->|builds LineChartData| Shell
+    WorkoutH -->|builds DualAxisChartData| Shell
     ImportH --> Shell
     GoalsH -->|builds GoalTilesData, calls webui.RenderGoalTiles| Shell
     MoneyH -.->|"goals.BuildGoalTiles types=money_saving/money_spend"| GoalsH
@@ -98,6 +100,7 @@ graph TB
     Shell --> Line
     Shell --> Bar
     Shell --> Combo
+    Shell --> Dual
     Shell --> Detail
     Shell --> Tile
 
@@ -116,8 +119,8 @@ sequenceDiagram
 
     Browser->>Demo: GET /web/design-system (WebMiddleware already validated session)
     Demo->>Demo: read username set on gin context by WebMiddleware
-    Demo->>Demo: build fixture data:<br/>NavItems, TableData, []StatTileData,<br/>LineChartData (x2: line style variants),<br/>BarChartData, ComboChartData, DetailViewData
-    Demo->>Webui: RenderTable / RenderStatTiles /<br/>RenderLineChart / RenderBarChart /<br/>RenderComboChart / RenderDetailView
+    Demo->>Demo: build fixture data:<br/>NavItems, TableData, []StatTileData,<br/>LineChartData (x2: line style variants),<br/>BarChartData, ComboChartData, DualAxisChartData, DetailViewData
+    Demo->>Webui: RenderTable / RenderStatTiles /<br/>RenderLineChart / RenderBarChart /<br/>RenderComboChart / RenderDualAxisChart / RenderDetailView
     Webui-->>Demo: template.HTML fragments
     Demo->>Webui: RenderPage(w, PageData{UserName: ..., Content: <concatenated fragments>})
     Webui->>Webui: render header with UserName dropdown (Logout link)
@@ -247,8 +250,8 @@ type LineChartPoint struct {
     Value float64 // y-axis value, e.g. weight in kg or rep count
 }
 
-// LineChartData is a single-series line chart (e.g. exercise weight/reps over time,
-// or a Progress activity's value-over-time drill-down).
+// LineChartData is a single-series line chart (e.g. a Progress activity's
+// value-over-time drill-down).
 type LineChartData struct {
     ID         string // unique DOM id for this chart's <canvas>, caller-supplied
     Title      string
@@ -286,6 +289,24 @@ type ComboChartData struct {
     Title      string
     SeriesName string // e.g. "Balance (EUR)" — shown in the tooltip, no legend (see Best Practices)
     Points     []ComboChartPoint
+}
+
+// DualAxisChartPoint is one x position with up to two values, one per Y axis.
+// nil = no value for that series at this point (gap in that line only).
+type DualAxisChartPoint struct {
+    Label string   // x-axis label, e.g. "2026-08-01"
+    Left  *float64 // left Y axis value, e.g. weight in kg
+    Right *float64 // right Y axis value, e.g. rep count
+}
+
+// DualAxisChartData is a two-series line chart, each series on its own Y
+// axis (e.g. Workouts exercise drill-down: weight left, reps right).
+type DualAxisChartData struct {
+    ID              string // unique DOM id for this chart's <canvas>, caller-supplied
+    Title           string
+    LeftSeriesName  string // legend + left axis label, e.g. "Weight (kg)"
+    RightSeriesName string // legend + right axis label, e.g. "Reps"
+    Points          []DualAxisChartPoint
 }
 
 // TableRowTag is one small tag shown next to a table row's first cell (e.g.
@@ -356,6 +377,7 @@ action/webui/templates/
     stat_tiles.html               {{define "components/stat_tiles"}}
     chart.html                    {{define "components/chart"}}       — shared by line + bar (differ by .Type)
     combo_chart.html               {{define "components/combo_chart"}} — one series, bar+line mixed-dataset overlay
+    dual_axis_chart.html           {{define "components/dual_axis_chart"}} — two series, left + right Y axis, legend on
     calendar.html                  {{define "components/calendar"}}
     detail_view.html               {{define "components/detail_view"}}
     goal_tiles.html                 {{define "components/goal_tiles"}}  — one <article> card per GoalTileData, wrapped in a responsive grid
@@ -375,6 +397,7 @@ The one real route this package owns. Renders a single page built entirely from 
 - A line chart with sample time-series data (styled to preview both a Workouts-style "weight over time" and a Progress-style "value over time" use)
 - A bar chart with sample categorical data (previewing a Money-style "spend by category" use)
 - A combo chart with sample data (previewing Money's balance trend: one series drawn as both a bar and a line)
+- A dual-axis line chart with sample data (previewing Workouts' weight + reps per set, including one point with no weight → gap in the weight line)
 - A month-grid calendar with real, correctly-computed leading/trailing days and a few sample linked/unlinked days (previewing the Money transaction calendar use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 - A goal tile grid with a few sample tiles (mixed progress percentages, one with a deadline, one `OverTarget`) previewing both the dedicated Goals page and an embedded subset use
@@ -404,11 +427,21 @@ Same as `RenderLineChart`, but initializes a Chart.js bar chart from `BarChartDa
 ### `webui.RenderComboChart(data ComboChartData) template.HTML`
 Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>` holding the chart title and a `<canvas>` below it, initializing a single Chart.js chart (`type: "bar"`) built from `ComboChartData.Points` with two datasets both plotting the *same* `Points[].Value` against the shared `Points[].Label` x-axis: a bar dataset colored from `--webui-chart-bar`, and a second dataset overridden to `type: "line"` colored from the existing `--webui-chart-line` (same color `RenderLineChart` uses). Legend stays off, same as `RenderLineChart`/`RenderBarChart` — both datasets are the one series, so a legend would just repeat `SeriesName` twice.
 
+### `webui.RenderDualAxisChart(data DualAxisChartData) template.HTML`
+Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>` title and a `<canvas>`, initializing one Chart.js `type: "line"` chart with two datasets: `Points[].Left` on the left `y` axis (`--webui-chart-line`), `Points[].Right` on the right `y1` axis (`yAxisID: "y1"`, `--webui-chart-bar`). nil values render as JSON `null` → gap in that line. Legend on (see Best Practices). Used by the Workouts exercise drill-down (`workout-spec.md`).
+
 ### `webui.RenderCalendar(data CalendarData) template.HTML`
 Renders a Pico card (`<article>`) with a `<header>` holding the month title, and a 7-column grid below (`<table>`, one `<tr>` per `Weeks` entry) — each cell shows the day number plus, when set, `Count` and `Total`. When `PrevURL`/`NextURL` are set, the header also shows a prev/next nav — but a caller stacking several months on one page (e.g. Money's calendar) typically leaves both empty per grid and renders a single page-level Prev/Next control of its own instead, so the header falls back to just the title. A day with `InMonth == false` renders muted/de-emphasized; a day with `LinkURL` set is a clickable link, matching `RenderTable`'s row-link convention. Used by the Money transaction calendar (`money-spec.md`).
 
 ### `webui.RenderDetailView(data DetailViewData) template.HTML`
-Renders the drill-down/detail layout: back link, title, optional description paragraph, optional stat tiles, then an optional table. `Description` renders (as pre-escaped `template.HTML`, so callers can pass through markdown-rendered content) only when non-empty — used by the Progress activity drill-down (`progress-spec.md`) to show `Activity.Description`. When `data.Table.Columns` is empty, the table section is skipped entirely (mirrors the existing "skip stat tiles when `Stats` is empty" behavior) — used by the Workouts exercise drill-down (`workout-spec.md`), which has stat tiles and two charts but no table.
+Renders the drill-down/detail layout: back link, title, optional description paragraph, optional stat tiles, then an optional table. `Description` renders (as pre-escaped `template.HTML`, so callers can pass through markdown-rendered content) only when non-empty — used by the Progress activity drill-down (`progress-spec.md`) to show `Activity.Description`. When `data.Table.Columns` is empty, the table section is skipped entirely (mirrors the existing "skip stat tiles when `Stats` is empty" behavior) — used by the Workouts exercise drill-down (`workout-spec.md`), which has stat tiles and a chart but no table.
 
 ### `webui.RenderGoalTiles(data GoalTilesData) template.HTML`
 Renders `data.Tiles` as a responsive card grid (`<article class="webui-goal-tile">` per tile, CSS grid wrapper — same "no fixed viewport sizing" responsiveness as every other component), each card showing the goal name, a Pico native `<progress value="{{.PercentComplete}}" max="100">` bar, the `ProgressLabel` text below it, and the `Deadline` line when set. When `LinkURL` is set, the goal name is rendered as `<a href="{{.LinkURL}}">{{.Name}}</a>` instead of plain text — the same "link the primary identifier, not the whole card" convention `RenderTable` uses for a row's first cell — otherwise it's plain text (some goal types have no drill-down target, see `goals-spec.md`). A tile with `OverTarget` true gets a warning-tint class (`webui-goal-tile--over`), styled from the same `:root` design tokens as the rest of the custom CSS layer. When `data.Tiles` is empty, renders `data.EmptyMessage` if set, or nothing at all if it's also empty — the dedicated `/web/goals` page always sets a message ("No active goals yet"), while Money/Progress-browse/Workouts leave it unset so an embedded section with no goals of that domain's types simply doesn't appear (see `goals-spec.md`).
+
+## E2E Tests
+
+Changes in `tests/webui_design_system_test.go` for the dual-axis chart:
+
+- NEW `TestDesignSystem_ShowsDualAxisChart`: demo renders `<canvas id="chart-weight-reps-demo">` with `yAxisID: "y1"`, a `null` in the left dataset, and the legend on
+- `TestDesignSystem_ChartsHaveUniqueCanvasIDs`: expected canvas count goes from ≥4 to ≥5 (plus the dual-axis example)

@@ -128,6 +128,24 @@ type ComboChartData struct {
 	Points     []ComboChartPoint
 }
 
+// DualAxisChartPoint is one x position with up to two values, one per Y axis.
+// nil = no value for that series at this point (gap in that line only).
+type DualAxisChartPoint struct {
+	Label string   // x-axis label, e.g. "2026-08-01"
+	Left  *float64 // left Y axis value, e.g. weight in kg
+	Right *float64 // right Y axis value, e.g. rep count
+}
+
+// DualAxisChartData is a two-series line chart, each series on its own Y
+// axis (e.g. Workouts exercise drill-down: weight left, reps right).
+type DualAxisChartData struct {
+	ID              string // unique DOM id for this chart's <canvas>, caller-supplied
+	Title           string
+	LeftSeriesName  string // legend + left axis label, e.g. "Weight (kg)"
+	RightSeriesName string // legend + right axis label, e.g. "Reps"
+	Points          []DualAxisChartPoint
+}
+
 // CalendarDay is one cell in a month-grid calendar.
 type CalendarDay struct {
 	Day     int    // day-of-month number shown in the cell, e.g. 5

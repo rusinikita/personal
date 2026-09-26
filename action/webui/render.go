@@ -158,6 +158,39 @@ func RenderComboChart(data ComboChartData) template.HTML {
 	})
 }
 
+// dualAxisChartTemplateData is the shape components/dual_axis_chart.html
+// renders — nil values marshal to JSON null, which Chart.js draws as a gap.
+type dualAxisChartTemplateData struct {
+	ID              string
+	Title           string
+	LeftSeriesName  string
+	RightSeriesName string
+	Labels          []string
+	LeftValues      []*float64
+	RightValues     []*float64
+}
+
+// RenderDualAxisChart renders a <canvas> plus DualAxisChartData's points as
+// embedded JSON and a small inline script that initializes one Chart.js line
+// chart with two datasets: Left on the left "y" axis (--webui-chart-line),
+// Right on the right "y1" axis (--webui-chart-bar). The legend is on, since
+// the two lines are different series.
+func RenderDualAxisChart(data DualAxisChartData) template.HTML {
+	labels := make([]string, len(data.Points))
+	left := make([]*float64, len(data.Points))
+	right := make([]*float64, len(data.Points))
+	for i, p := range data.Points {
+		labels[i] = p.Label
+		left[i] = p.Left
+		right[i] = p.Right
+	}
+	return execToHTML("components/dual_axis_chart", dualAxisChartTemplateData{
+		ID: data.ID, Title: data.Title,
+		LeftSeriesName: data.LeftSeriesName, RightSeriesName: data.RightSeriesName,
+		Labels: labels, LeftValues: left, RightValues: right,
+	})
+}
+
 // RenderCalendar renders a CalendarData into the shared month-grid calendar
 // component markup.
 func RenderCalendar(data CalendarData) template.HTML {

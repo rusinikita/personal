@@ -1,0 +1,58 @@
+{{define "components/dual_axis_chart"}}
+<article class="webui-chart-container">
+<header>{{.Title}}</header>
+<canvas id="{{.ID}}"></canvas>
+<script>
+(function() {
+  var ctx = document.getElementById({{.ID | toJS}});
+  var style = getComputedStyle(document.documentElement);
+  var leftColor = style.getPropertyValue('--webui-chart-line').trim();
+  var rightColor = style.getPropertyValue('--webui-chart-bar').trim();
+  new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: {{.Labels | toJS}},
+      datasets: [
+        {
+          label: {{.LeftSeriesName | toJS}},
+          data: {{.LeftValues | toJS}},
+          yAxisID: "y",
+          borderColor: leftColor,
+          backgroundColor: leftColor,
+          tension: 0.25
+        },
+        {
+          label: {{.RightSeriesName | toJS}},
+          data: {{.RightValues | toJS}},
+          yAxisID: "y1",
+          borderColor: rightColor,
+          backgroundColor: rightColor,
+          tension: 0.25
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 2,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y: {
+          position: "left",
+          title: { display: true, text: {{.LeftSeriesName | toJS}} }
+        },
+        y1: {
+          position: "right",
+          grid: { drawOnChartArea: false },
+          title: { display: true, text: {{.RightSeriesName | toJS}} }
+        }
+      },
+      plugins: {
+        legend: { display: true }
+      }
+    }
+  });
+})();
+</script>
+</article>
+{{end}}

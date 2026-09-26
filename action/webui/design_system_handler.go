@@ -19,6 +19,7 @@ type designSystemPageData struct {
 	MoodChartHTML   template.HTML
 	SpendChartHTML  template.HTML
 	ComboChartHTML  template.HTML
+	DualAxisHTML    template.HTML
 	CalendarHTML    template.HTML
 	DetailHTML      template.HTML
 	GoalTilesHTML   template.HTML
@@ -63,7 +64,7 @@ func fixtureCalendarWeeks() [][]CalendarDay {
 
 // DesignSystemHandler renders the /web/design-system demo/style-guide page:
 // every shared component (nav, stat tiles, table, line charts, bar chart,
-// calendar, drill-down/detail view) against fixture data, so the visual
+// combo chart, dual-axis chart, calendar, drill-down/detail view) against fixture data, so the visual
 // language can be reviewed before any real dashboard is wired up. It
 // touches no database — every value below is a fixture.
 func DesignSystemHandler(c *gin.Context) {
@@ -137,6 +138,21 @@ func DesignSystemHandler(c *gin.Context) {
 		},
 	}
 
+	fp := func(v float64) *float64 { return &v }
+	weightRepsChart := DualAxisChartData{
+		ID:              "chart-weight-reps-demo",
+		Title:           "Pull-up — weight and reps per set",
+		LeftSeriesName:  "Weight (kg)",
+		RightSeriesName: "Reps",
+		Points: []DualAxisChartPoint{
+			{Label: "2026-08-01", Left: fp(10), Right: fp(6)},
+			{Label: "2026-08-01", Left: fp(10), Right: fp(5)},
+			{Label: "2026-08-08", Left: nil, Right: fp(12)},
+			{Label: "2026-08-15", Left: fp(15), Right: fp(5)},
+			{Label: "2026-08-22", Left: fp(17.5), Right: fp(4)},
+		},
+	}
+
 	calendar := CalendarData{
 		Title:    "August 2026",
 		PrevURL:  "/web/design-system",
@@ -180,6 +196,7 @@ func DesignSystemHandler(c *gin.Context) {
 		MoodChartHTML:   RenderLineChart(moodChart),
 		SpendChartHTML:  RenderBarChart(spendChart),
 		ComboChartHTML:  RenderComboChart(balanceTrendChart),
+		DualAxisHTML:    RenderDualAxisChart(weightRepsChart),
 		CalendarHTML:    RenderCalendar(calendar),
 		DetailHTML:      RenderDetailView(detail),
 		GoalTilesHTML:   RenderGoalTiles(goalTiles),

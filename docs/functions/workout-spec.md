@@ -20,8 +20,9 @@ A **read-only** web dashboard (`GET /web/workouts`, `GET /web/workouts/:id`) sit
 - **"Times performed" counts sets, not workout sessions**: each logged set is one performance of the lift, so the list view's `ListPersonalRecords` sorts by `COUNT(sets)` per exercise, not `COUNT(DISTINCT workout_id)`
 - **List view reuses `GetPersonalRecords` per row**: `ListPersonalRecords` first ranks exercises by set count, then calls the existing single-exercise `GetPersonalRecords` for each — N+1 queries, acceptable for a single-user personal tool with a handful of exercises (same trade-off `BrowseDetailWebHandler` already makes calling `GetTrendStats` three times)
 - **Est. 1RM computed in the handler, not stored**: same Epley formula (`weight × (1 + reps/30)`) `get_personal_records_mcp.go` already computes from `MaxWeight`, kept out of `domain.PersonalRecords` so the DB layer stays formula-agnostic
-- **Drill-down page has no table, only charts**: unlike the Progress browse drill-down (which pairs a chart with a paginated point-history table), the exercise drill-down is stat tiles + two line charts only — `webui.RenderDetailView` is adjusted to skip rendering the table section when `DetailViewData.Table.Columns` is empty (mirrors its existing "skip stat tiles when `Stats` is empty" behavior), instead of showing an empty table box
+- **Drill-down page has no table, only charts**: unlike the Progress browse drill-down (which pairs a chart with a paginated point-history table), the exercise drill-down is stat tiles + one dual-axis chart only — `webui.RenderDetailView` is adjusted to skip rendering the table section when `DetailViewData.Table.Columns` is empty (mirrors its existing "skip stat tiles when `Stats` is empty" behavior), instead of showing an empty table box
 - **List view embeds its own goal tiles, built elsewhere**: `GET /web/workouts` shows an `exercise_max_weight`/`exercise_total_volume` tile grid above the exercise table, via `goals.BuildGoalTiles(ctx, db, userID, now, types)` + `webui.RenderGoalTiles` (see `goals-spec.md`) — `action/workout` owns no goal logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no exercise goals (empty `EmptyMessage`, see `webui-spec.md`)
+- **One dual-axis chart, one point per set**: the drill-down shows weight (left Y axis, kg) and reps (right Y axis) as two lines on one `webui.DualAxisChartData` chart instead of two separate line charts, so a set's weight and reps sit at the same X position. Every set with weight or reps becomes one point (X label = set date, oldest-to-newest); a missing value (`WeightKg = 0`, e.g. bodyweight, or `Reps = 0`, e.g. a duration-only set) becomes `null` — a gap in that line only, the other line still shows the set. Sets with neither are skipped
 - **Exercise `description` is free-text, nullable at the column level but always read back as `""`**: every read query wraps it in `COALESCE(description, '')` so `domain.Exercise.Description` is a plain `string`, never a pointer — existing rows predating the column get `''` instead of `NULL` on first read. `edit_exercise` takes `description` as `*string` specifically so "omitted" (keep current value) is distinguishable from "explicit empty string" (clear it), unlike `name`/`equipment_type` which use the zero-value-means-omitted convention
 
 ## Architecture Diagrams
@@ -192,11 +193,11 @@ sequenceDiagram
     DB-->>Handler: []Workout (sessions containing this exercise)
     Handler->>DB: ListSetsByExerciseAndWorkouts(userID, id, workoutIDs)
     DB-->>Handler: []Set, ordered by created_at ASC
-    Handler->>Handler: build weight-over-time + reps-over-time LineChartData from sets
+    Handler->>Handler: build one DualAxisChartData from sets<br/>(one point per set: Left=weight or null, Right=reps or null)
     Handler->>DB: GetPersonalRecords(userID, id)
     DB-->>Handler: PersonalRecords
     Handler->>Handler: build stat tiles (max weight, max reps, est. 1RM, times performed)
-    Handler->>Webui: RenderStatTiles, RenderLineChart (x2), RenderDetailView (no table), RenderPage
+    Handler->>Webui: RenderStatTiles, RenderDualAxisChart, RenderDetailView (no table), RenderPage
     Webui-->>Browser: 200 text/html
 ```
 
@@ -427,4 +428,12 @@ Returns best-ever results for an exercise: max_weight, max_reps, max_volume (sin
 Read-only list view: an exercise goal tile grid at the top (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderGoalTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
 
 ### GET /web/workouts/:id
-Drill-down for a single exercise: title subtitle shows the exercise's description (if any, HTML-escaped, via `DetailViewData.Description`), then stat tiles (max weight, max reps, est. 1RM, times performed) plus two line charts — weight over time and reps over time — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.
+Drill-down for a single exercise: title subtitle shows the exercise's description (if any, HTML-escaped, via `DetailViewData.Description`), then stat tiles (max weight, max reps, est. 1RM, times performed) plus one dual-axis chart — weight (left Y axis, kg) and reps (right Y axis), one point per set (see "One dual-axis chart, one point per set" above) — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.
+
+## E2E Tests
+
+Changes in `tests/workout_dashboard_web_test.go` for the dual-axis chart:
+
+- `TestExerciseDetail_ShowsStatTilesAndTrendCharts`: expects exactly **one** `<canvas id=` (was two); weight dataset `data: [80,100]` and reps dataset `data: [8,5]` still oldest-to-newest, now in the same chart, reps dataset on the right axis (`yAxisID: "y1"`)
+- NEW `TestExerciseDetail_SetWithoutWeight_GapInWeightLine`: sets `(8 reps, 80 kg)` then `(12 reps, 0 kg)` → weight dataset `data: [80,null]`, reps dataset `data: [8,12]`
+- `TestExerciseDetail_UnknownOrForeignExercise_404s`, `TestExerciseDetail_NoSetsYet_RendersWithoutError`: unchanged

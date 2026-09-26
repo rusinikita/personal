@@ -125,8 +125,8 @@ func PersonalRecordsWebHandler(c *gin.Context) {
 }
 
 // ExerciseDetailWebHandler renders GET /web/workouts/{id}: a drill-down with
-// personal-record stat tiles plus weight-over-time and reps-over-time trend
-// charts built from every set ever logged for the exercise.
+// personal-record stat tiles plus one dual-axis chart (weight left, reps
+// right, one point per set) built from every set ever logged for the exercise.
 func ExerciseDetailWebHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
@@ -169,23 +169,28 @@ func ExerciseDetailWebHandler(c *gin.Context) {
 	}
 	// ListSetsByExerciseAndWorkouts orders by created_at ASC regardless of
 	// workoutIDs order, so the sets below are already oldest-to-newest —
-	// exactly the order the trend charts need.
+	// exactly the order the chart needs.
 	sets, err := db.ListSetsByExerciseAndWorkouts(ctx, userID, exerciseID, workoutIDs)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to load sets: %v", err)
 		return
 	}
 
-	weightPoints := make([]webui.LineChartPoint, 0, len(sets))
-	repPoints := make([]webui.LineChartPoint, 0, len(sets))
+	points := make([]webui.DualAxisChartPoint, 0, len(sets))
 	for _, s := range sets {
-		label := s.CreatedAt.Format("2006-01-02")
+		if s.WeightKg <= 0 && s.Reps <= 0 {
+			continue
+		}
+		point := webui.DualAxisChartPoint{Label: s.CreatedAt.Format("2006-01-02")}
 		if s.WeightKg > 0 {
-			weightPoints = append(weightPoints, webui.LineChartPoint{Label: label, Value: s.WeightKg})
+			weight := s.WeightKg
+			point.Left = &weight
 		}
 		if s.Reps > 0 {
-			repPoints = append(repPoints, webui.LineChartPoint{Label: label, Value: float64(s.Reps)})
+			reps := float64(s.Reps)
+			point.Right = &reps
 		}
+		points = append(points, point)
 	}
 
 	setCount := int64(len(sets))
@@ -205,20 +210,15 @@ func ExerciseDetailWebHandler(c *gin.Context) {
 		Stats:       stats,
 	}
 
-	weightChart := webui.LineChartData{
-		ID:         fmt.Sprintf("chart-weight-%d", exerciseID),
-		Title:      exercise.Name + " — weight over time",
-		SeriesName: "Weight (kg)",
-		Points:     weightPoints,
-	}
-	repChart := webui.LineChartData{
-		ID:         fmt.Sprintf("chart-reps-%d", exerciseID),
-		Title:      exercise.Name + " — reps over time",
-		SeriesName: "Reps",
-		Points:     repPoints,
+	chart := webui.DualAxisChartData{
+		ID:              fmt.Sprintf("chart-weight-reps-%d", exerciseID),
+		Title:           exercise.Name + " — weight and reps per set",
+		LeftSeriesName:  "Weight (kg)",
+		RightSeriesName: "Reps",
+		Points:          points,
 	}
 
-	content := webui.RenderDetailView(detail) + webui.RenderLineChart(weightChart) + webui.RenderLineChart(repChart)
+	content := webui.RenderDetailView(detail) + webui.RenderDualAxisChart(chart)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)

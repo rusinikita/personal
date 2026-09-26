@@ -179,10 +179,32 @@ func (s *IntegrationTestSuite) TestExerciseDetail_ShowsStatTilesAndTrendCharts()
 	body := w.Body.String()
 	assert.Contains(s.T(), body, "Deadlift")
 	assert.Contains(s.T(), body, "webui-stat-tile")
-	assert.Equal(s.T(), 2, strings.Count(body, "<canvas id="), "must render two trend charts: weight and reps")
-	assert.Contains(s.T(), body, "data: [80,100]", "weight-over-time chart must be oldest-to-newest")
-	assert.Contains(s.T(), body, "data: [8,5]", "reps-over-time chart must be oldest-to-newest")
+	assert.Equal(s.T(), 1, strings.Count(body, "<canvas id="), "must render one dual-axis chart for weight and reps")
+	assert.Contains(s.T(), body, "data: [80,100]", "weight line must be oldest-to-newest")
+	assert.Contains(s.T(), body, "data: [8,5]", "reps line must be oldest-to-newest")
+	assert.Contains(s.T(), body, `yAxisID: "y1"`, "reps line must be on the right Y axis")
 	assert.Contains(s.T(), body, `href="/web/workouts"`, "must have a back link to the list")
+}
+
+func (s *IntegrationTestSuite) TestExerciseDetail_SetWithoutWeight_GapInWeightLine() {
+	ctx := s.Context()
+	now := time.Now()
+
+	exID := s.createExercise(ctx, "Pull-up", "bodyweight")
+	w1 := s.createWorkout(ctx, now.AddDate(0, 0, -14))
+	s.createSet(ctx, w1, exID, 8, 80, now.AddDate(0, 0, -14))
+	w2 := s.createWorkout(ctx, now.AddDate(0, 0, -7))
+	s.createSet(ctx, w2, exID, 12, 0, now.AddDate(0, 0, -7))
+
+	r := s.workoutDashboardRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/workouts/%d", exID), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(s.T(), body, "data: [80,null]", "set without weight must be a gap in the weight line")
+	assert.Contains(s.T(), body, "data: [8,12]", "set without weight must still show on the reps line")
 }
 
 func (s *IntegrationTestSuite) TestExerciseDetail_UnknownOrForeignExercise_404s() {

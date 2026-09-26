@@ -147,6 +147,24 @@ func (s *IntegrationTestSuite) TestDesignSystem_ShowsComboChart() {
 		"combo chart must keep the legend off — its bar and line datasets are the same series, not two")
 }
 
+func (s *IntegrationTestSuite) TestDesignSystem_ShowsDualAxisChart() {
+	r := s.designSystemRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/web/design-system", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, `<canvas id="chart-weight-reps-demo">`,
+		"demo must render a dual-axis chart example (Workouts-style weight + reps per set)")
+	assert.Contains(s.T(), body, `yAxisID: "y1"`,
+		"dual-axis chart's right series must be on the secondary Y axis")
+	assert.Contains(s.T(), body, "data: [10,10,null,15,17.5]",
+		"a point without a left value must render as null (gap in that line only)")
+	assert.Contains(s.T(), body, "legend: { display: true }",
+		"dual-axis chart must show the legend — its two lines are different series")
+}
+
 func (s *IntegrationTestSuite) TestDesignSystem_ChartsHaveUniqueCanvasIDs() {
 	r := s.designSystemRouter()
 
@@ -157,7 +175,8 @@ func (s *IntegrationTestSuite) TestDesignSystem_ChartsHaveUniqueCanvasIDs() {
 	body := w.Body.String()
 	canvasCount := strings.Count(body, "<canvas id=")
 	// two line chart examples + one bar chart example + one combo chart example
-	assert.GreaterOrEqual(s.T(), canvasCount, 4)
+	// + one dual-axis chart example
+	assert.GreaterOrEqual(s.T(), canvasCount, 5)
 
 	// Every canvas id referenced in a getElementById call must actually exist
 	// as a rendered <canvas id="..."> element (charts wired to the right canvas).
