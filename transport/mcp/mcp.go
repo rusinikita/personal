@@ -10,6 +10,7 @@ import (
 	"personal/action/achievements"
 	"personal/action/docs"
 	"personal/action/food"
+	"personal/action/ideas"
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/telegram"
@@ -109,6 +110,13 @@ func Server(db gateways.DB, tg gateways.Telegram) *mcp.Server {
 	mcp.AddTool(server, &achievements.RefreshAchievementsMCPDefinition, achievements.RefreshAchievements)
 	mcp.AddTool(server, &achievements.GetAchievementProgressMCPDefinition, achievements.GetAchievementProgress)
 	mcp.AddTool(server, &achievements.LogAchievementProgressMCPDefinition, achievements.LogAchievementProgress)
+
+	// Ideas inbox
+	mcp.AddTool(server, &ideas.CreateIdeaMCPDefinition, ideas.CreateIdea)
+	mcp.AddTool(server, &ideas.ListIdeasMCPDefinition, ideas.ListIdeas)
+	mcp.AddTool(server, &ideas.SearchIdeasMCPDefinition, ideas.SearchIdeas)
+	mcp.AddTool(server, &ideas.UpdateIdeaMCPDefinition, ideas.UpdateIdea)
+	mcp.AddTool(server, &ideas.ResolveIdeaMCPDefinition, ideas.ResolveIdea)
 
 	// Convention docs
 	mcp.AddTool(server, &docs.ListDocsMCPDefinition, docs.ListDocs)

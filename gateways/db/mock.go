@@ -478,3 +478,33 @@ func (m *MockRepository) GetDailyTransactionSummary(_ context.Context, userID in
 	}
 	return result, nil
 }
+
+func (m *MockRepository) ListIdeas(_ context.Context, filter domain.IdeaFilter) ([]domain.Idea, error) {
+	now := time.Now()
+	blocked := domain.IdeaResolutionBlocked
+	ideas := []domain.Idea{
+		{ID: 1, UserID: filter.UserID, Body: "Learn to sail", Status: domain.IdeaStatusSpike, CreatedAt: now.AddDate(0, -2, 0), SurfaceCount: 3, LastSurfacedAt: now.AddDate(0, 0, -3)},
+		{ID: 2, UserID: filter.UserID, Body: "Build a bookshelf for the hallway", Status: domain.IdeaStatusInbox, CreatedAt: now.AddDate(0, 0, -1), SurfaceCount: 1, LastSurfacedAt: now.AddDate(0, 0, -1)},
+		{ID: 3, UserID: filter.UserID, Body: "Write a blog post about the personal tracker", Status: domain.IdeaStatusSomeday, CreatedAt: now.AddDate(0, -1, 0), SurfaceCount: 2, LastSurfacedAt: now.AddDate(0, 0, -10)},
+		{ID: 4, UserID: filter.UserID, Body: "Start a running club", Status: domain.IdeaStatusResolved, Resolution: &blocked, CreatedAt: now.AddDate(0, -3, 0), SurfaceCount: 1, LastSurfacedAt: now.AddDate(0, -3, 0)},
+	}
+	var result []domain.Idea
+	for _, idea := range ideas {
+		if len(filter.Resolutions) > 0 {
+			if idea.Resolution != nil && *idea.Resolution == domain.IdeaResolutionBlocked {
+				result = append(result, idea)
+			}
+		} else if idea.Status != domain.IdeaStatusResolved {
+			result = append(result, idea)
+		}
+	}
+	return result, nil
+}
+
+func (m *MockRepository) CreateIdea(_ context.Context, _ *domain.Idea) (int64, error) {
+	return 100, nil
+}
+
+func (m *MockRepository) GetIdea(_ context.Context, ideaID int64, userID int64) (*domain.Idea, error) {
+	return &domain.Idea{ID: ideaID, UserID: userID, Status: domain.IdeaStatusInbox, CreatedAt: time.Now(), UpdatedAt: time.Now(), SurfaceCount: 1, LastSurfacedAt: time.Now()}, nil
+}

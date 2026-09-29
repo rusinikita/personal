@@ -28,7 +28,10 @@ Required inputs:
 - name: Short next-action description
 - type: one_time|repeatable
 
-Steps created this way always start active with no link back to a progress point — the web progress-point form links a step's creation to the point it's logged alongside internally, this tool does not.
+Optional inputs:
+- created_by_progress_point_id: progress point of the same activity this step was created by (e.g. the point a promoted idea became), so the step is reachable from that point
+
+Steps always start active.
 
 Example:
 User: "Next step on the move is booking the moving truck"
@@ -39,6 +42,8 @@ type CreateStepInput struct {
 	ActivityID int64  `json:"activity_id" jsonschema:"Activity ID this step belongs to"`
 	Name       string `json:"name" jsonschema:"Short next-action description"`
 	Type       string `json:"type" jsonschema:"one_time|repeatable"`
+
+	CreatedByProgressPointID *int64 `json:"created_by_progress_point_id,omitempty" jsonschema:"Progress point of the same activity this step was created by (optional)"`
 }
 
 type StepResult struct {
@@ -86,11 +91,25 @@ func CreateStep(ctx context.Context, _ *mcp.CallToolRequest, input CreateStepInp
 		return nil, CreateStepOutput{}, fmt.Errorf("activity not found")
 	}
 
+	if input.CreatedByProgressPointID != nil {
+		point, err := db.GetProgress(ctx, *input.CreatedByProgressPointID, userID)
+		if err != nil {
+			return nil, CreateStepOutput{}, fmt.Errorf("database error: %w", err)
+		}
+		if point == nil {
+			return nil, CreateStepOutput{}, fmt.Errorf("progress point not found")
+		}
+		if point.ActivityID != input.ActivityID {
+			return nil, CreateStepOutput{}, fmt.Errorf("progress point belongs to another activity")
+		}
+	}
+
 	step := &domain.Step{
-		UserID:     userID,
-		ActivityID: input.ActivityID,
-		Name:       input.Name,
-		Type:       domain.StepType(input.Type),
+		UserID:                   userID,
+		ActivityID:               input.ActivityID,
+		Name:                     input.Name,
+		Type:                     domain.StepType(input.Type),
+		CreatedByProgressPointID: input.CreatedByProgressPointID,
 	}
 
 	id, err := db.CreateStep(ctx, step)

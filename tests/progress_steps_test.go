@@ -44,7 +44,51 @@ func (s *IntegrationTestSuite) TestCreateStep_Success() {
 	steps, err := s.Repo().ListSteps(ctx, domain.StepFilter{UserID: userID, ActivityID: activityID})
 	require.NoError(s.T(), err)
 	require.Len(s.T(), steps, 1)
-	assert.Nil(s.T(), steps[0].CreatedByProgressPointID, "create_step never sets created_by_progress_point_id — only the web form does")
+	assert.Nil(s.T(), steps[0].CreatedByProgressPointID, "created_by_progress_point_id stays NULL when not passed")
+}
+
+func (s *IntegrationTestSuite) TestCreateStep_CreatedByProgressPoint() {
+	ctx := s.Context()
+	userID := gateways.UserIDFromContext(ctx)
+	activityID := s.createActivity(ctx, "Sailing", domain.ProgressTypeProjectProgress, time.Now().AddDate(0, 0, -5))
+	pointID := s.createPoint(ctx, activityID)
+	anotherActivity := s.createActivity(ctx, "Gym", domain.ProgressTypeHabitProgress, time.Now().AddDate(0, 0, -5))
+	anotherActivityPoint := s.createPoint(ctx, anotherActivity)
+
+	otherCtx := s.otherUserContext(ctx)
+	foreignPoint := s.createPoint(otherCtx, s.createActivity(otherCtx, "Other", domain.ProgressTypeProjectProgress, time.Now().AddDate(0, 0, -5)))
+
+	tests := []struct {
+		name    string
+		pointID int64
+		wantErr string
+	}{
+		{name: "link saved", pointID: pointID},
+		{name: "other user's point fails", pointID: foreignPoint, wantErr: "progress point not found"},
+		{name: "point of another activity fails", pointID: anotherActivityPoint, wantErr: "another activity"},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			_, output, err := progress.CreateStep(ctx, nil, progress.CreateStepInput{
+				ActivityID:               activityID,
+				Name:                     "Book a sailing lesson",
+				Type:                     "one_time",
+				CreatedByProgressPointID: &tt.pointID,
+			})
+			if tt.wantErr != "" {
+				require.Error(s.T(), err)
+				assert.Contains(s.T(), err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(s.T(), err)
+
+			step, err := s.Repo().GetStep(ctx, output.Step.ID, userID)
+			require.NoError(s.T(), err)
+			require.NotNil(s.T(), step.CreatedByProgressPointID)
+			assert.Equal(s.T(), pointID, *step.CreatedByProgressPointID)
+		})
+	}
 }
 
 func (s *IntegrationTestSuite) TestCreateStep_InvalidType() {

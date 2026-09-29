@@ -30,6 +30,13 @@ Tools live in `action/progress` and `action/achievements`.
 - Reflection / check-in session: call `get_progress_type_examples` first (metaphor ↔ value mapping), then `get_activity_list` for what's due.
 - Everything else — activity lifecycle, steps, achievements, limits, rituals — isn't repeated here: call `list_docs` then `get_doc` for `activity-mechanics` (schema/tools, normative against the code) or `activity-rituals` (when/why/process, the user's own operating manual).
 
+## Ideas
+
+Tools: `create_idea`, `list_ideas`, `search_ideas`, `update_idea`, `resolve_idea`.
+
+- A raw thought outside existing activities: `search_ideas` first (key words, synonyms, translations as variants). An older similar open idea → `create_idea`, then `resolve_idea(merged, merged_into_id: older)`; otherwise just `create_idea`. `body` is the user's own words.
+- Reviews read by status via `list_ideas`; the lifecycle (inbox → someday → spike → resolved) is in `docs/functions/ideas-spec.md`.
+
 ## Finance
 
 Tools: `add_transactions`, `edit_transactions`, `delete_transaction`, `get_transactions`, `get_spending_by_category`, `get_top_merchants`, `compare_periods`, `get_balance`.

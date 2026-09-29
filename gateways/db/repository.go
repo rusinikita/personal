@@ -155,6 +155,11 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 		return err
 	}
 
+	_, err = r.db.Exec(ctx, `DELETE FROM ideas WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
 	_, err = r.db.Exec(ctx, `DELETE FROM consumption_log WHERE user_id = $1`, userID)
 	if err != nil {
 		return err
@@ -2544,4 +2549,191 @@ func (r *repository) GetExerciseVolume(ctx context.Context, userID int64, exerci
 		userID, exerciseID, since,
 	).Scan(&volume)
 	return volume, err
+}
+
+// ---------------------------------------------------------------------------
+// Ideas (see docs/functions/ideas-spec.md)
+// ---------------------------------------------------------------------------
+
+// ideaSelect selects ideas with surface_count and last_surfaced_at computed
+// from the ideas merged into each one; callers add WHERE clauses on "i".
+func ideaSelect() squirrel.SelectBuilder {
+	return squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar).
+		Select(
+			"i.id", "i.user_id", "i.body", "i.status", "i.resolution", "i.merged_into_id",
+			"i.resolved_progress_point_id", "i.resolved_at", "i.created_at", "i.updated_at",
+			"1 + COUNT(d.id) AS surface_count",
+			"GREATEST(i.created_at, COALESCE(MAX(d.created_at), i.created_at)) AS last_surfaced_at",
+		).
+		From("ideas i").
+		LeftJoin("ideas d ON d.merged_into_id = i.id").
+		GroupBy("i.id")
+}
+
+func (r *repository) queryIdeas(ctx context.Context, query squirrel.SelectBuilder) ([]domain.Idea, error) {
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ideas: %w", err)
+	}
+	defer rows.Close()
+
+	var ideas []domain.Idea
+	for rows.Next() {
+		var idea domain.Idea
+		err := rows.Scan(
+			&idea.ID,
+			&idea.UserID,
+			&idea.Body,
+			&idea.Status,
+			&idea.Resolution,
+			&idea.MergedIntoID,
+			&idea.ResolvedProgressPointID,
+			&idea.ResolvedAt,
+			&idea.CreatedAt,
+			&idea.UpdatedAt,
+			&idea.SurfaceCount,
+			&idea.LastSurfacedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan idea: %w", err)
+		}
+		ideas = append(ideas, idea)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return ideas, nil
+}
+
+func (r *repository) CreateIdea(ctx context.Context, idea *domain.Idea) (int64, error) {
+	query := `
+		INSERT INTO ideas (user_id, body, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $4)
+		RETURNING id`
+
+	if idea.Status == "" {
+		idea.Status = domain.IdeaStatusInbox
+	}
+	if idea.CreatedAt.IsZero() {
+		idea.CreatedAt = time.Now()
+	}
+	idea.UpdatedAt = idea.CreatedAt
+
+	var id int64
+	err := r.db.QueryRow(ctx, query, idea.UserID, idea.Body, idea.Status, idea.CreatedAt).Scan(&id)
+
+	return id, err
+}
+
+func (r *repository) GetIdea(ctx context.Context, ideaID int64, userID int64) (*domain.Idea, error) {
+	ideas, err := r.queryIdeas(ctx, ideaSelect().Where(squirrel.Eq{"i.id": ideaID, "i.user_id": userID}))
+	if err != nil {
+		return nil, err
+	}
+	if len(ideas) == 0 {
+		return nil, nil
+	}
+
+	return &ideas[0], nil
+}
+
+func (r *repository) ListIdeas(ctx context.Context, filter domain.IdeaFilter) ([]domain.Idea, error) {
+	query := ideaSelect().
+		Where(squirrel.Eq{"i.user_id": filter.UserID}).
+		OrderBy("i.created_at ASC", "i.id ASC")
+
+	switch {
+	case len(filter.Statuses) > 0:
+		query = query.Where(squirrel.Eq{"i.status": filter.Statuses})
+	case len(filter.Resolutions) == 0:
+		query = query.Where(squirrel.NotEq{"i.status": domain.IdeaStatusResolved})
+	}
+
+	if len(filter.Resolutions) > 0 {
+		query = query.Where(squirrel.Eq{"i.resolution": filter.Resolutions})
+	}
+
+	if filter.ResolvedFrom != nil {
+		query = query.Where(squirrel.GtOrEq{"i.resolved_at": *filter.ResolvedFrom})
+	}
+
+	if filter.ResolvedTo != nil {
+		query = query.Where(squirrel.Lt{"i.resolved_at": *filter.ResolvedTo})
+	}
+
+	return r.queryIdeas(ctx, query)
+}
+
+func (r *repository) SearchIdeas(ctx context.Context, filter domain.IdeaSearchFilter) ([]domain.Idea, error) {
+	query := ideaSelect().
+		Where(squirrel.Eq{"i.user_id": filter.UserID}).
+		Where(squirrel.ILike{"i.body": "%" + filter.Query + "%"}).
+		OrderBy("i.created_at DESC", "i.id DESC")
+
+	if len(filter.Statuses) > 0 {
+		query = query.Where(squirrel.Eq{"i.status": filter.Statuses})
+	}
+
+	return r.queryIdeas(ctx, query)
+}
+
+func (r *repository) UpdateIdea(ctx context.Context, idea *domain.Idea) error {
+	query := `
+		UPDATE ideas
+		SET body = $1, status = $2, updated_at = $3
+		WHERE id = $4 AND user_id = $5`
+
+	idea.UpdatedAt = time.Now()
+
+	result, err := r.db.Exec(ctx, query, idea.Body, idea.Status, idea.UpdatedAt, idea.ID, idea.UserID)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("idea not found")
+	}
+
+	return nil
+}
+
+func (r *repository) ResolveIdea(ctx context.Context, resolve domain.IdeaResolve) error {
+	update := `
+		UPDATE ideas
+		SET status = 'resolved', resolution = $1, merged_into_id = $2, resolved_progress_point_id = $3, resolved_at = $4, updated_at = $4
+		WHERE id = $5 AND user_id = $6`
+
+	// Re-pointing the duplicate's own duplicates runs in the same statement,
+	// so the merge is atomic without a transaction.
+	if resolve.Resolution == domain.IdeaResolutionMerged {
+		update = `
+		WITH repoint AS (
+			UPDATE ideas SET merged_into_id = $2 WHERE merged_into_id = $5 AND user_id = $6
+		)` + update
+	}
+
+	result, err := r.db.Exec(ctx, update,
+		resolve.Resolution,
+		resolve.MergedIntoID,
+		resolve.ResolvedProgressPointID,
+		resolve.ResolvedAt,
+		resolve.IdeaID,
+		resolve.UserID,
+	)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("idea not found")
+	}
+
+	return nil
 }

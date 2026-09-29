@@ -13,6 +13,7 @@ import (
 	"personal/action/achievements"
 	"personal/action/auth"
 	"personal/action/docs"
+	"personal/action/ideas"
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/webui"
@@ -82,6 +83,11 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/achievements/eink", dbMiddleware(db), achievements.EinkDashboardWebHandler)
 	// Pre-rename e-ink URL, kept because the physical display still points at it.
 	router.GET("/web/goals/eink", achievements.LegacyEinkRedirectWebHandler)
+
+	// Ideas — quick capture form plus the open ideas list; reviews and
+	// resolutions stay MCP-only.
+	router.GET("/web/ideas", webAuth, dbMiddleware(db), ideas.IdeasWebHandler)
+	router.POST("/web/ideas", webAuth, dbMiddleware(db), ideas.CreateIdeaWebHandler)
 
 	// Docs — hand-written convention documents embedded in action/docs,
 	// read-only, no DB access.

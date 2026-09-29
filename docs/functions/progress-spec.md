@@ -106,7 +106,7 @@ erDiagram
         string name
         string type "one_time|repeatable"
         string status "active|finished"
-        bigint created_by_progress_point_id FK "NULL if created via create_step directly"
+        bigint created_by_progress_point_id FK "NULL unless passed to create_step or set by the web form"
         bigint completed_by_progress_point_id FK "NULL while active"
         timestamp closed_at "NULL while active"
         timestamp created_at
@@ -511,7 +511,7 @@ type Step struct {
     Name                        string     `json:"name" db:"name" jsonschema:"Short next-action description"`
     Type                        StepType   `json:"type" db:"type" jsonschema:"one_time|repeatable"`
     Status                      StepStatus `json:"status" db:"status" jsonschema:"active|finished"`
-    CreatedByProgressPointID    *int64     `json:"created_by_progress_point_id,omitempty" db:"created_by_progress_point_id" jsonschema:"Progress point whose text spawned this step (null if created via create_step directly)"`
+    CreatedByProgressPointID    *int64     `json:"created_by_progress_point_id,omitempty" db:"created_by_progress_point_id" jsonschema:"Progress point whose text spawned this step (null unless passed to create_step or set by the web form)"`
     CompletedByProgressPointID  *int64     `json:"completed_by_progress_point_id,omitempty" db:"completed_by_progress_point_id" jsonschema:"Progress point whose checkbox closed this step (null while active)"`
     ClosedAt                    *time.Time `json:"closed_at,omitempty" db:"closed_at"`
     CreatedAt                   time.Time  `json:"created_at" db:"created_at"`
@@ -607,7 +607,7 @@ Deletes a progress point by ID, scoped to the owning user. Errors if the point d
 Searches `activity_progress.note` by 1-5 query variants (ILIKE), with optional activity_id/from/to/value_min/value_max filters. Same match_count ranking pattern as `resolve_food_id_by_name` and `search_exercises`.
 
 ### create_step
-Creates a new step for an activity (activity_id, name, type — one_time|repeatable, required). `status` defaults to `active`. `created_by_progress_point_id` is not a tool input — steps created this way are always chat/direct-initiated, so it stays null (the web progress-point form sets it internally, not through this tool).
+Creates a new step for an activity (activity_id, name, type — one_time|repeatable, required). `status` defaults to `active`. Optional `created_by_progress_point_id` links the step to the point it was created by (e.g. the point a promoted idea became, see `ideas-spec.md`); the point must be the user's own and belong to the same activity. Without it the link stays null.
 
 ### edit_step
 Updates mutable fields (name, status, completed_by_progress_point_id) of an existing step, scoped to the owning user. At least one field required; unspecified fields keep their current value. Moving `status` to `finished` sets `closed_at`; `completed_by_progress_point_id` can be set alongside that to link the closure to a progress point (e.g. one just created earlier in the same chat turn). Same partial-update pointer-field pattern as `edit_activity`/`edit_progress_point`. Dropping a step is not a status — use `delete_step`.
