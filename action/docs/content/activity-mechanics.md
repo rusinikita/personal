@@ -13,6 +13,7 @@
 | **Activity** | Всё, что трекается: привычка, проект, обещание, настроение | Life parts (1..N) |
 | **Progress point** | Чекин: значение −2..+2 и заметка | Activity (1) |
 | **Step** | Next-action: конкретное следующее действие | Activity (1) |
+| **Idea** | Сырая мысль вне activity: inbox → someday → spike → решение | Progress point (0..1, при `promoted`) |
 | **Achievement** | Прогресс-бар на аспект activity, упражнения или денег | Activity / exercise / категория трат (0..1) |
 | **Life part** | Область жизни | — |
 | **Событие календаря** | Слот в Google Calendar | Activity через `activity_id:XX` в description |
@@ -22,6 +23,7 @@ Life part ──< Activity >── Progress point
                  │   └──< Step
                  └── Achievement (0..N за жизнь)
 Google Calendar event ··· activity_id:XX
+Idea ··· Progress point (promoted)
 ```
 
 ---
@@ -84,9 +86,31 @@ Google Calendar event ··· activity_id:XX
 
 | Activity | Назначение |
 |---|---|
-| «Inbox» | Сырые мысли: одна мысль — один progress point с `value=0`. Спайки — steps на ней. *Ещё не создана* |
 | 70 «Еженедельное планирование» | Итоги ритуалов: один progress point `value=1` на сессию |
 | 67 «Дневник и заметки» | Только личная рефлексия; трудные дни — `value=-1` |
+
+### 2.5 Inbox: идеи
+
+Inbox — отдельная сущность `ideas`, не activity (`rituals.md`, 2.2–2.5).
+
+| Поле | Тип | Смысл |
+|---|---|---|
+| `id` | int | `idea_id` |
+| `body` | string | Мои слова; итог спайка и новые мысли дописываются через пустую строку, не перезаписываются |
+| `status` | enum | `inbox` / `someday` / `spike` / `resolved` |
+| `resolution` | enum | Только при `resolved`: `dropped` / `merged` / `expired` / `promoted` / `blocked` |
+| `merged_into_id` | int | Только `merged`: старая идея |
+| `resolved_progress_point_id` | int | Только `promoted`: точка, которой идея стала; NULL, если точку удалили |
+| `resolved_at`, `created_at`, `updated_at` | datetime | `updated_at` — последняя смена статуса или дописанный текст |
+| `surface_count` | int | Только чтение: 1 + число идей, слитых в эту |
+| `last_surfaced_at` | datetime | Только чтение: последний `created_at` среди идеи и её дублей |
+
+- Переходы `update_idea`: `inbox → someday | spike`, `someday → spike`, `spike → someday`. В `inbox` ничего не возвращается; повтор текущего статуса — no-op.
+- В `resolved` — только `resolve_idea`. `blocked` — только из `spike`. Пересмотреть можно только `blocked`: в `promoted` / `dropped` / `expired`, `resolved_at` перезаписывается.
+- `merged` в свою же, чужую или решённую идею не проходит; дубли слитой идеи переходят к цели.
+- `promoted` требует свою точку. Activity и steps идеи видны через точку: её `activity_id` и steps с `created_by_progress_point_id`.
+- Физического удаления идей нет.
+- Web: `/web/ideas` — форма захвата и открытые идеи по статусам плюс `blocked`.
 
 ---
 
@@ -120,7 +144,7 @@ Google Calendar event ··· activity_id:XX
 ### 3.3 Правка и удаление
 
 - `edit_progress_point(progress_id, …)` — поправить `value`, `note`, `progress_at`, `hours_left`. Предпочтительнее, чем добавлять корректирующую точку.
-- `delete_progress_point(progress_id)` — **жёсткое** удаление, возвращает удалённое для подтверждения. Soft delete пока не реализован (раздел 9).
+- `delete_progress_point(progress_id)` — **жёсткое** удаление, возвращает удалённое для подтверждения. Soft delete нет: решения по мыслям inbox живут в идеях (2.5).
 
 ### 3.4 Чтение
 
@@ -140,6 +164,7 @@ Google Calendar event ··· activity_id:XX
 | `name` | string | Физическое действие, близко к моим словам |
 | `type` | enum | `one_time` — сделал и закрыл; `repeatable` — повторяется, пока жива activity |
 | `status` | enum | `active` / `finished` (закрытие ставит `closed_at`) |
+| `created_by_progress_point_id` | int | Чекин, которым шаг создан; `create_step` — необязательный параметр |
 | `completed_by_progress_point_id` | int | Чекин, которым шаг закрыт |
 | `last_executed_at` | datetime | Только чтение: `progress_at` последнего чекина с этим `executed_step_id` |
 | `executions_last_30_days` | int | Только чтение: сколько чекинов выполнили step за 30 дней |
@@ -148,7 +173,7 @@ Google Calendar event ··· activity_id:XX
 
 - Статуса `dropped` у step нет: ненужный step удаляется `delete_step`.
 - `get_step_list` отдаёт steps **только активных activity**. У paused / finished / dropped activity steps не всплывают автоматически.
-- `create_step` через MCP не связывает step с чекином. Веб-форма чекина связывает созданный вместе с ней step с этой точкой.
+- `create_step` связывает step с чекином, только если передан `created_by_progress_point_id` (своя точка той же activity) — например, для идеи, ставшей step. Веб-форма чекина связывает созданный вместе с ней step с этой точкой.
 - Отметка в чекине: one_time закрывается; repeatable остаётся `active`, а чекин получает `executed_step_id` (MCP — параметр `create_progress_point`, веб — radio-группа). Step должен быть active repeatable той же activity. Закрыть repeatable можно только явно — `edit_step status=finished`.
 - Удаление step не удаляет чекины, только обнуляет их `executed_step_id`.
 
@@ -223,9 +248,6 @@ Google Calendar event ··· activity_id:XX
 
 | Процесс требует | Сейчас в MCP | Что сделать |
 |---|---|---|
-| Soft delete заметок inbox с решением (`dropped`, `→ step`, `merged`, `expired`…), удалённое скрыто от выдачи | Только жёсткий `delete_progress_point` | Реализовать soft delete: `deleted_at` + `resolution` (+ ссылка на ID), фильтр в `get_activity_stats` и `search_progress_notes` |
-| Счётчик всплываний `+1` | Нет поля | Пока — в тексте заметки; решить, нужно ли поле |
-| Служебная activity «Inbox» | Не создана | Создать при миграции; выбрать `progress_type` и life part |
 | Лимит 6 achievement, WIP 6 / 3 на тип | Не проверяется | Считает агент на ревью; возможно — проверка в `create_*` |
 | Паузы только через `status=paused` + `deferred_until` | Остались legacy-паузы через `started_at` | Миграция |
 
@@ -245,6 +267,11 @@ Google Calendar event ··· activity_id:XX
 | Удалить чекин | `delete_progress_point(progress_id)` |
 | Поиск по заметкам | `search_progress_notes(query_variants, …)` |
 | Метафоры шкалы | `get_progress_type_examples` |
-| Steps: список / создать / изменить / удалить | `get_step_list` / `create_step` / `edit_step` / `delete_step` |
+| Steps: список / создать / изменить / удалить | `get_step_list` / `create_step(…, created_by_progress_point_id?)` / `edit_step` / `delete_step` |
+| Записать идею | `search_ideas(query_variants)` по дублям, затем `create_idea(body)` |
+| Идеи по статусу / решённые за период | `list_ideas(statuses?, resolutions?, resolved_from?, resolved_to?)` |
+| Поиск похожих идей | `search_ideas(query_variants[1..5], statuses?)` — по умолчанию все статусы, включая решённые |
+| Дописать / сменить статус идеи | `update_idea(idea_id, append_body?, status?)` |
+| Решение по идее | `resolve_idea(idea_id, resolution, merged_into_id?, resolved_progress_point_id?)` |
 | Achievements: список / создать / изменить / +delta / пересчитать | `get_achievement_progress` / `create_achievement` / `update_achievement` / `log_achievement_progress` / `refresh_achievements` |
 | Life parts | `list_life_parts` |
