@@ -109,6 +109,42 @@ func (s *IntegrationTestSuite) TestMoneyDashboard_CategoryTableSortedByAvgMonthl
 	assert.Less(s.T(), iRent, iTransport, "higher avg monthly spend must be listed first")
 }
 
+func (s *IntegrationTestSuite) TestMoneyDashboard_CategoryTableShowsCurrentAndPrevMonthColumns() {
+	ctx := s.Context()
+	now := time.Now().UTC()
+
+	// Start of this month is always <= now, so it lands in "Current month"
+	// even when the test runs on the 1st.
+	startOfThisMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	startOfPrevMonth := startOfThisMonth.AddDate(0, -1, 0)
+	s.addTransaction(ctx, "expense", "coffee", "Cafe", 11.11, startOfPrevMonth.AddDate(0, 0, 14))
+	s.addTransaction(ctx, "expense", "coffee", "Cafe", 22.22, startOfThisMonth)
+
+	r := s.moneyDashboardRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/web/money", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+
+	iCurrentHeader := strings.Index(body, "Current month")
+	iPrevHeader := strings.Index(body, "Prev month")
+	require.NotEqual(s.T(), -1, iCurrentHeader)
+	require.NotEqual(s.T(), -1, iPrevHeader)
+	assert.Less(s.T(), iCurrentHeader, iPrevHeader, "Current month column must come before Prev month")
+	assert.NotContains(s.T(), body, ">Last month<")
+
+	iRow := strings.Index(body, `href="/web/money/transactions?category=coffee"`)
+	require.NotEqual(s.T(), -1, iRow)
+	row := body[iRow:]
+	iCurrent := strings.Index(row, "€22.22")
+	iPrev := strings.Index(row, "€11.11")
+	require.NotEqual(s.T(), -1, iCurrent)
+	require.NotEqual(s.T(), -1, iPrev)
+	assert.Less(s.T(), iCurrent, iPrev, "current month amount must be in the column before prev month")
+}
+
 func (s *IntegrationTestSuite) TestMoneyDashboard_ShowsBalanceTrendAsComboChart() {
 	// Per webui-spec.md, the balance trend is a combo chart — the same
 	// balance value drawn as both a bar and an overlaid line, not two

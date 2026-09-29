@@ -179,30 +179,36 @@ func buildBalanceTrendPoints(ctx context.Context, db gateways.DB, userID int64, 
 	return points, nil
 }
 
-// buildCategoryRows merges all-time and last-month per-category totals,
-// computes each category's average monthly spend (all-time total divided
-// by the account-wide monthsSpan, never the category's own age — see
-// money-spec.md's "Months-span is global, not per-category"), and sorts
-// descending by that average.
-func buildCategoryRows(allTime, lastMonth []domain.SpendingByCategory, monthsSpan int) []webui.TableRow {
+// buildCategoryRows merges all-time, current-month and last-month
+// per-category totals, computes each category's average monthly spend
+// (all-time total divided by the account-wide monthsSpan, never the
+// category's own age — see money-spec.md's "Months-span is global, not
+// per-category"), and sorts descending by that average.
+func buildCategoryRows(allTime, currentMonth, lastMonth []domain.SpendingByCategory, monthsSpan int) []webui.TableRow {
+	currentMonthByCategory := make(map[string]float64, len(currentMonth))
+	for _, c := range currentMonth {
+		currentMonthByCategory[c.Category] = c.TotalEUR
+	}
 	lastMonthByCategory := make(map[string]float64, len(lastMonth))
 	for _, c := range lastMonth {
 		lastMonthByCategory[c.Category] = c.TotalEUR
 	}
 
 	type row struct {
-		category      string
-		totalEUR      float64
-		lastMonthEUR  float64
-		avgMonthlyEUR float64
+		category        string
+		totalEUR        float64
+		currentMonthEUR float64
+		lastMonthEUR    float64
+		avgMonthlyEUR   float64
 	}
 	rows := make([]row, 0, len(allTime))
 	for _, c := range allTime {
 		rows = append(rows, row{
-			category:      c.Category,
-			totalEUR:      c.TotalEUR,
-			lastMonthEUR:  lastMonthByCategory[c.Category],
-			avgMonthlyEUR: c.TotalEUR / float64(monthsSpan),
+			category:        c.Category,
+			totalEUR:        c.TotalEUR,
+			currentMonthEUR: currentMonthByCategory[c.Category],
+			lastMonthEUR:    lastMonthByCategory[c.Category],
+			avgMonthlyEUR:   c.TotalEUR / float64(monthsSpan),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].avgMonthlyEUR > rows[j].avgMonthlyEUR })
@@ -210,7 +216,7 @@ func buildCategoryRows(allTime, lastMonth []domain.SpendingByCategory, monthsSpa
 	tableRows := make([]webui.TableRow, 0, len(rows))
 	for _, r := range rows {
 		tableRows = append(tableRows, webui.TableRow{
-			Cells:   []string{r.category, formatEUR(r.avgMonthlyEUR), formatEUR(r.totalEUR), formatEUR(r.lastMonthEUR)},
+			Cells:   []string{r.category, formatEUR(r.avgMonthlyEUR), formatEUR(r.totalEUR), formatEUR(r.currentMonthEUR), formatEUR(r.lastMonthEUR)},
 			LinkURL: categoryLinkURL(r.category),
 		})
 	}
@@ -270,6 +276,11 @@ func MoneyDashboardWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Failed to load spending by category: %v", err)
 		return
 	}
+	currentMonthCategories, err := db.GetSpendingByCategory(ctx, userID, startOfThisMonth, now, 1)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to load spending by category: %v", err)
+		return
+	}
 
 	stats := buildDashboardStats(summary, allTimeBalance, lastMonthBalance, monthsSpan)
 	table := webui.TableData{
@@ -277,9 +288,10 @@ func MoneyDashboardWebHandler(c *gin.Context) {
 			{Label: "Category"},
 			{Label: "Avg monthly spend", Align: "right"},
 			{Label: "Total (all time)", Align: "right"},
-			{Label: "Last month", Align: "right"},
+			{Label: "Current month", Align: "right"},
+			{Label: "Prev month", Align: "right"},
 		},
-		Rows: buildCategoryRows(allTimeCategories, lastMonthCategories, monthsSpan),
+		Rows: buildCategoryRows(allTimeCategories, currentMonthCategories, lastMonthCategories, monthsSpan),
 	}
 
 	avgMonthlySavings := allTimeBalance.BalanceEUR / float64(monthsSpan)

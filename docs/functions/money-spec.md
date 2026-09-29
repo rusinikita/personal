@@ -208,7 +208,9 @@ sequenceDiagram
     DB-->>Handler: all-time totals per top-level category
     Handler->>DB: GetSpendingByCategory(userID, start_of_last_month, end_of_last_month, depth=1)
     DB-->>Handler: last-month totals per top-level category
-    Handler->>Handler: merge by category: total_eur, last_month_eur,<br/>avg_monthly_eur = total_eur / months_span<br/>sort by avg_monthly_eur DESC
+    Handler->>DB: GetSpendingByCategory(userID, start_of_this_month, now, depth=1)
+    DB-->>Handler: current-month totals per top-level category
+    Handler->>Handler: merge by category: total_eur, current_month_eur, last_month_eur,<br/>avg_monthly_eur = total_eur / months_span<br/>sort by avg_monthly_eur DESC
 
     Handler->>DB: achievements.BuildAchievementTiles(userID, now, types=[money_saving, money_spend])<br/>(see achievements-spec.md)
     DB-->>Handler: []webui.AchievementTileData (may be empty)
@@ -516,7 +518,7 @@ Read-only overview built on the shared `action/webui` design system (see `webui-
 - Stat tiles: last sync date (`GetMoneySummary.LastSyncedAt`), current balance, total income (all time), net for last calendar month, average monthly savings, and projected balance 3 months / 6 months / 1 year out (see the "Web Dashboard" sequence diagram and Best Practices above for how each is derived)
 - A financial achievement tile grid (`money_saving`/`money_spend` types only) via `achievements.BuildAchievementTiles` + `webui.RenderAchievementTiles` (see `achievements-spec.md`), placed directly below the stat tiles — omitted entirely when the user has no money achievements
 - A balance trend combo chart (`webui.RenderComboChart`, see `webui-spec.md`) plotting actual balance 12/9/6/3 months ago through the current balance to a 3/6/9/12-month projection, as one series drawn as both a bar and an overlaid line
-- A table of top-level categories sorted by average monthly spend descending, columns: Category, Avg monthly spend, Total (all time), Last month — each row links to `/web/money/transactions?category=:category`
+- A table of top-level categories sorted by average monthly spend descending, columns: Category, Avg monthly spend, Total (all time), Current month (spend from the 1st of this calendar month to now), Prev month (spend for the whole previous calendar month) — each row links to `/web/money/transactions?category=:category`
 - A "View all transactions" link to `/web/money/transactions` (no filters — most recent first)
 - A "Calendar" link to `/web/money/calendar`
 - A link to `/money/import` for bulk-importing new transactions
