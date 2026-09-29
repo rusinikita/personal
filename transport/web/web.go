@@ -1,8 +1,8 @@
 // Package web wires every browser-facing route (the cookie-session login
 // flow, the /web/* dashboards, and DB-backed /money/import) onto a gin
 // router, the same way transport/mcp wires MCP tools onto an mcp.Server.
-// main.go calls Register with the real repository; cmd/webui-preview calls
-// it with a mock one so the pages can be eyeballed without Postgres.
+// main.go calls Register with the production database; cmd/webui-preview
+// calls it with a local Postgres testcontainer seeded with fixtures.
 package web
 
 import (

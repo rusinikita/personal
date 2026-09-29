@@ -12,6 +12,8 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 
 **Replaces:** the hand-rolled inline `<style>` blocks in `action/money/import_web.go` (`importFormHTML`) — that page's form is rewired to use the shared shell, but its form logic/handler behavior is unchanged.
 
+**Local preview:** `make preview-webui` (`cmd/webui-preview`) serves every `/web/*` route against a reusable Postgres testcontainer — restored on each start from a cached snapshot of migrations + fixture data — using the real `db.NewRepository`, so pages can be eyeballed (and forms submitted) without the production database or Telegram credentials. See "Local Preview" below.
+
 ## Best Practices Applied
 
 - **Pico CSS for the heavy lifting**: base typography, spacing, form controls, and light/dark come from Pico CSS (CDN `<link>`, no build step) instead of hand-writing them — minimizes custom CSS surface area to maintain
@@ -37,6 +39,13 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 - **Calendar cells link like table rows do**: `CalendarDay.LinkURL` is empty for a day with nothing to show (mirrors `TableRow.LinkURL`'s "empty = not clickable" convention) instead of a separate boolean flag
 - **Sub-groups within one table are a heading row, not separate tables**: `TableRow.Heading` (empty = normal row) lets a caller split one logical list into labeled sub-sections (e.g. Progress browse's active list grouping by progress_type) without starting a new `<table>` per group — a heading row renders as a single full-width cell (`colspan` across every column, including the tags column when present) instead of `Cells`. This exists because separate `<table>` elements each size their own columns independently, so column widths visibly jump between sections; one `<table>` with heading rows keeps column widths consistent across the whole list. A group with zero rows still gets its heading row (mirrors the "heading always renders, even with an empty table" convention this replaces), so the section list stays predictable
 - **Row tags get their own column right after the first one, not a cell squeezed with other content**: `TableRow.Cells` stays `[]string` (auto-escaped, no per-cell HTML) — tags are a separate mechanism. `TableRow.Tags []TableRowTag` holds a row's tags (e.g. Progress browse's life_part tags), each with a `Label` and an optional `Tooltip`; `TableData.TagsColumnLabel` (empty = no tags column at all, same "empty = off" convention as `LinkURL`/`EmptyMessage`) turns it on and gives the column its header text. The column is always inserted right after the first `Cells` column (e.g. Name), before the rest, since that's the identifying column a tag most naturally sits next to. Every existing caller (Money, Workouts, Progress finished/future/paused lists) leaves `TagsColumnLabel` unset, so nothing else changes. Each tag is styled with Pico's own `.contrast` button class (`role="button" class="outline contrast webui-tag"`) instead of custom chip CSS — `.webui-tag` only overrides padding/font-size to fit inline, no color of our own. Tooltip renders via Pico CSS's own `data-tooltip` attribute (pure CSS, already loaded on every page), not the native HTML `title` attribute — the native browser tooltip proved unreliable in practice (Chrome/Mac showed nothing on hover)
+
+- **Preview runs the real repository, not a mock**: `cmd/webui-preview` starts a `postgres:16-alpine` testcontainer (same image and colima socket setup as `tests/suite_test.go`), applies migrations via `DBMaintainer.ApplyMigrations`, runs one fixture SQL file, and passes `db.NewRepository(conn)` to `web.Register`. `gateways/db/mock.go` (`MockRepository`) is deleted — no second hand-maintained `gateways.DB` implementation, no mock twin per new repository method, no drift between mock filtering/sorting/aggregates and the real SQL
+- **Fixtures are one plain SQL file, dates relative to `now()`**: `cmd/webui-preview/fixtures.sql` (embedded via `go:embed`) inserts the same kind of sample data the mock returned — activities + points + steps, life parts, exercises + workouts + sets, transactions, achievements, ideas — all for `user_id = 1` (`webui.DefaultUserID`, and the id to give the local user in `USERS`). Timestamps use `now() - interval '...'` so "yesterday"/"this month" pages always have data regardless of when the preview is started
+- **One long-lived container, reused across runs**: started with `testcontainers.WithReuseByName("personal-webui-preview")` and Ryuk disabled (`TESTCONTAINERS_RYUK_DISABLED=true`, set by the preview itself — otherwise Ryuk reaps the container when the process exits). Ctrl+C stops only the Go process; the container keeps running, so the next `make preview-webui` skips container startup entirely
+- **Migrations + fixtures are applied once, then cached as a Postgres template snapshot**: after the first `ApplyMigrations` + `fixtures.sql` run, the preview calls `PostgresContainer.Snapshot(WithSnapshotName("webui_preview_snapshot"))` (testcontainers' built-in `CREATE DATABASE ... WITH TEMPLATE`). Every later start just calls `Restore` with the same name — drop + re-create the working DB from the template in well under a second — instead of re-running migrations and fixtures. Whether a snapshot exists is checked with one `SELECT 1 FROM pg_database WHERE datname = 'webui_preview_snapshot'`, so a run that crashed mid-setup (no snapshot yet) just redoes the setup
+- **Snapshot is invalidated by a content hash label**: the container carries a label `personal.webui-preview.hash` = sha256 of all embedded migration files + `fixtures.sql`. On start the preview looks up the container by name via testcontainers' Docker client; if its label differs from the current hash (a migration or fixture changed), it removes that container first, so `WithReuseByName` creates a fresh one and the migrate → fixtures → snapshot path runs again. One container at a time, never a stale schema
+- **Fresh data every start**: `Restore` runs on every start, so writes made in the preview (added ideas, logged transactions) never survive a restart and the fixtures are always the starting state
 
 ## Architecture Diagrams
 
@@ -126,6 +135,41 @@ sequenceDiagram
     Webui->>Webui: render header with UserName dropdown (Logout link)
     Webui-->>Demo: HTML string
     Demo-->>Browser: 200 text/html — every component visible on one page, including the user menu
+```
+
+### Sequence Diagram: Local preview startup and page render
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant Preview as cmd/webui-preview
+    participant TC as Postgres testcontainer
+    participant Repo as db.NewRepository
+    participant Web as transport/web handlers
+
+    Dev->>Preview: make preview-webui
+    Preview->>Preview: hash = sha256(migrations + fixtures.sql)
+    Preview->>TC: look up container "personal-webui-preview"
+    alt exists with a different hash label
+        Preview->>TC: remove container
+    end
+    Preview->>TC: postgres.Run(WithReuseByName, label hash, Ryuk off)
+    TC-->>Preview: reused or new container
+    Preview->>TC: snapshot DB exists?
+    alt no snapshot (new container)
+        Preview->>Repo: ApplyMigrations
+        Preview->>TC: Exec(fixtures.sql)
+        Preview->>TC: Snapshot(webui_preview_snapshot)
+    else snapshot exists
+        Preview->>TC: Restore(webui_preview_snapshot)
+    end
+    Preview->>Repo: NewRepository(conn)
+    Preview->>Web: web.Register(router, repo, authDisabled)
+    Dev->>Web: GET /web/... (browser)
+    Web->>Repo: real queries
+    Repo->>TC: SQL
+    Web-->>Dev: rendered page
+    Dev->>Preview: Ctrl+C (container keeps running)
 ```
 
 ### Sequence Diagram: Page render flow
@@ -438,6 +482,13 @@ Renders the drill-down/detail layout: back link, title, optional description par
 
 ### `webui.RenderAchievementTiles(data AchievementTilesData) template.HTML`
 Renders `data.Tiles` as a responsive card grid (`<article class="webui-achievement-tile">` per tile, CSS grid wrapper — same "no fixed viewport sizing" responsiveness as every other component), each card showing the achievement name, a Pico native `<progress value="{{.PercentComplete}}" max="100">` bar, the `ProgressLabel` text below it, and the `Deadline` line when set. When `LinkURL` is set, the achievement name is rendered as `<a href="{{.LinkURL}}">{{.Name}}</a>` instead of plain text — the same "link the primary identifier, not the whole card" convention `RenderTable` uses for a row's first cell — otherwise it's plain text (some achievement types have no drill-down target, see `achievements-spec.md`). A tile with `OverTarget` true gets a warning-tint class (`webui-achievement-tile--over`), styled from the same `:root` design tokens as the rest of the custom CSS layer. When `data.Tiles` is empty, renders `data.EmptyMessage` if set, or nothing at all if it's also empty — the dedicated `/web/achievements` page always sets a message ("No active achievements yet"), while Money/Progress-browse/Workouts leave it unset so an embedded section with no achievements of that domain's types simply doesn't appear (see `achievements-spec.md`).
+
+## Local Preview
+
+### `make preview-webui` (`cmd/webui-preview`)
+Dev-only command, not deployed. Reuses (or creates) the `personal-webui-preview` Postgres testcontainer, restores the cached migrations + fixtures snapshot (or builds it on first run / after a migration or `cmd/webui-preview/fixtures.sql` change), and serves every `/web/*` route (via `transport/web.Register`) on the real repository at `http://localhost:$PORT` (default 8082). Auth behaves as before: real `WebMiddleware` with `USERS`/`JWT_SECRET` from `.env.local`, or none when `AUTH_DISABLED` is set. Needs a running Docker (colima). The container stays up after exit; `docker rm -f personal-webui-preview` drops it. `gateways/db/mock.go` is removed.
+
+No E2E test: it's a developer tool, not an HTTP handler; the pages it serves are already covered by the existing `tests/*_web_test.go` suites on the same repository.
 
 ## E2E Tests
 

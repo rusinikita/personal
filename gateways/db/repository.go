@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -144,6 +146,23 @@ func (r *repository) ApplyMigrations(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// WriteMigrations writes every embedded migration file, in the order
+// ApplyMigrations applies them, to w — lets cmd/webui-preview hash the schema
+// to tell when its cached snapshot is stale.
+func WriteMigrations(w io.Writer) error {
+	return fs.WalkDir(migrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		content, err := migrationsFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(content)
+		return err
+	})
 }
 
 func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
