@@ -28,7 +28,7 @@ Triggers aren't stored: at spike choice (§3.2 step 9) the agent flags trigger 1
 It replaces the planned «Inbox» service activity (§2.2), where each thought would have been a `value=0` progress point. Nothing is ever hard-deleted: leaving the list means getting a `resolution`.
 
 Interfaces:
-- **Web**: `GET /web/ideas` has a quick capture form (§3.1) plus the open ideas list. `POST /web/ideas` creates an idea.
+- **Web**: `GET /web/ideas` has a quick capture form (§3.1) plus the `inbox` ideas as cards. `POST /web/ideas` creates an idea. `GET /web/ideas/spike` shows the ideas being spiked this week. `GET /web/ideas/search` finds ideas in any status.
 - **MCP**: `create_idea` (when the user dictates, §5.1), `list_ideas`, `search_ideas` (find similar ideas by text), `update_idea` (append text, change status), `resolve_idea`.
 
 Out of scope: notes on activities, the diary, retro summaries. Those stay progress points.
@@ -68,6 +68,10 @@ Out of scope: notes on activities, the diary, retro summaries. Those stay progre
 - **`search_ideas` searches every status by default, resolved included**: a returning thought shows that it was `dropped` or `expired` before, or is already `blocked`. `statuses` narrows it. A `merged` idea is returned with its `merged_into_id`, so the agent follows it to the idea it was merged into
 - **Resolved ideas are hidden by default**: `list_ideas` without `statuses` returns every open status. The quarterly review asks for `resolved` with a `resolved_from`/`resolved_to` window (§3.4 step 2)
 - **Web page follows the existing write-then-redirect pattern**: plain form, no client-side JS, `POST /web/ideas` → `303` back to `GET /web/ideas`. New top-level nav item «Ideas»
+- **Ideas are shown as cards, not a table**: each idea is a Pico `<article>`: body in the card, `<footer>` with labels on the left (status and resolution on the search page, then `×N` when surface count > 1) and only the created date pinned to the right (a flex footer, `justify-content: space-between`). Cards are laid out with Pico's `.grid` only, no custom CSS: Pico puts every child of one `.grid` in a single row (one column below 768px), so the cards are split into rows of 3, each row a `<div class="grid">`; the last row is padded with empty `<div>`s so its cards keep the same width
+- **Main page is the inbox only**: capture form + `inbox` cards (what's waiting for the weekly review), newest first. `spike` ideas have their own page, `someday` and `blocked` ideas are found on the search page. Links «Spike ideas» and «Search ideas» lead there
+- **Search page is a GET form**: `GET /web/ideas/search?q=…`, so a search is a plain URL, no JS. One `<input type="search">` joined with the «Search» button (`<fieldset role="group">`, as on the money pages). `q` is split by commas into trimmed phrases, empty ones dropped; each phrase is a variant of the same search as `search_ideas` (shared function, same 1-5 limit and ranking), every status included. Card footer shows `status`, plus `resolution` for resolved ideas, on the left
+- **Empty query shows the latest ideas**: no `q` → the 50 newest ideas in any status (`ListIdeas` with every status and `Limit: 50`, `created_at` DESC)
 - **New package `action/ideas`**, migration `gateways/db/migrations/z_ideas.sql` (`z_` so it runs after `progress.sql`, whose `activity_progress` it references)
 
 ## Architecture Diagrams
@@ -135,7 +139,7 @@ graph TB
     Agent[AI agent via MCP]
 
     subgraph App[personal app]
-        Web["GET /web/ideas<br/>POST /web/ideas"]
+        Web["GET /web/ideas<br/>POST /web/ideas<br/>GET /web/ideas/spike<br/>GET /web/ideas/search"]
         MCP["create_idea<br/>list_ideas<br/>search_ideas<br/>update_idea<br/>resolve_idea"]
         Repo[Repository]
     end
@@ -143,7 +147,7 @@ graph TB
     DB[(PostgreSQL: ideas)]
     Progress[(steps / activities / activity_progress)]
 
-    User -->|quick capture| Web
+    User -->|quick capture, search| Web
     User -->|dictates, reviews| Agent
     Agent --> MCP
     Web --> Repo
@@ -165,6 +169,9 @@ sequenceDiagram
     User->>Web: POST /web/ideas (body)
     Web->>DB: CreateIdea(status: inbox)
     Web-->>User: 303 → GET /web/ideas
+    User->>Web: GET /web/ideas/search?q=phrase1, phrase2
+    Web->>DB: SearchIdeas per phrase (every status)
+    Web-->>User: cards ranked by match count
 
     Note over User,DB: Saturday weekly review (§3.2 step 1)
     Agent->>MCP: list_ideas(statuses: [inbox])
@@ -347,6 +354,7 @@ type IdeaFilter struct {
     Resolutions  []IdeaResolution // only resolved ideas with these resolutions, e.g. [blocked] for the portfolio check
     ResolvedFrom *time.Time   // resolved_at >= ResolvedFrom
     ResolvedTo   *time.Time   // resolved_at < ResolvedTo
+    Limit        int          // > 0: only the Limit newest ideas, ordered by created_at DESC; 0 = all, created_at ASC
 }
 
 // IdeaSearchFilter defines parameters for a single-variant body search
@@ -373,7 +381,7 @@ type IdeaResolve struct {
 // Ideas
 CreateIdea(ctx context.Context, idea *domain.Idea) (int64, error)
 GetIdea(ctx context.Context, ideaID int64, userID int64) (*domain.Idea, error) // fills SurfaceCount/LastSurfacedAt
-ListIdeas(ctx context.Context, filter domain.IdeaFilter) ([]domain.Idea, error) // fills SurfaceCount/LastSurfacedAt; ordered by created_at ASC
+ListIdeas(ctx context.Context, filter domain.IdeaFilter) ([]domain.Idea, error) // fills SurfaceCount/LastSurfacedAt; ordered by created_at ASC, or the Limit newest DESC when Limit > 0
 SearchIdeas(ctx context.Context, filter domain.IdeaSearchFilter) ([]domain.Idea, error) // one variant; fills SurfaceCount/LastSurfacedAt; the action merges variants and counts match_count
 UpdateIdea(ctx context.Context, idea *domain.Idea) error // body, status, updated_at; caller has already merged the change onto a fetched idea
 ResolveIdea(ctx context.Context, resolve domain.IdeaResolve) error // sets status=resolved + resolution fields (overwrites them when re-resolving a blocked idea); for merged also re-points ideas merged into IdeaID to MergedIntoID, in one transaction
@@ -399,10 +407,16 @@ Resolves an idea in any open status with a `resolution`, or re-resolves a `block
 ## HTTP Handlers
 
 ### GET /web/ideas
-Capture form (one textarea) on top, then the open ideas grouped by status in the order `spike`, `inbox`, `someday`, then the `blocked` ones: body, created date, surface count when > 1. Nav item «Ideas».
+Capture form (one textarea) on top, links «Spike ideas» to `GET /web/ideas/spike` and «Search ideas» to `GET /web/ideas/search`, then a grid of `inbox` idea cards, newest first: body, `<footer>` with `×N` on the left when surface count > 1 and created date on the right. Nav item «Ideas».
 
 ### POST /web/ideas
 Creates an idea in `inbox` from the form's `body` (empty → re-render with an error), then `303` redirect to `GET /web/ideas`.
+
+### GET /web/ideas/spike
+Grid of `spike` idea cards, newest first, same cards as the main page: body, `<footer>` with `×N` on the left when surface count > 1 and created date on the right. Link back to `/web/ideas`.
+
+### GET /web/ideas/search
+Search input joined with a «Search» button (`q`, comma-separated phrases). Empty `q` → the 50 newest ideas in any status. Non-empty `q` → same search as `search_ideas` over every status, ranked by match count, then newest first; more than 5 phrases → inline error. Cards: body, `<footer>` with status, resolution and `×N` on the left and created date on the right. Link back to `/web/ideas`.
 
 ## Configuration
 
@@ -428,7 +442,9 @@ Creates an idea in `inbox` from the form's `body` (empty → re-render with an e
   - `blocked` idea re-resolved as `promoted` / `dropped` / `expired` succeeds and updates `resolved_at`
   - re-resolving any other resolved idea fails
 - `TestCreateStep_CreatedByProgressPoint` (in `tests/progress_steps_test.go`): link saved; other user's point or a point of another activity fails
-- `TestIdeasWeb`: `GET /web/ideas` shows open ideas grouped by status and the blocked ones, hides other resolved, shows surface count; `POST /web/ideas` creates and redirects `303`; empty body re-renders with an error and creates nothing
+- `TestIdeasWeb`: `GET /web/ideas` shows `inbox` ideas as cards with created date and the spike and search links, hides `someday` / `spike` / resolved, shows surface count; `POST /web/ideas` creates and redirects `303`; empty body re-renders with an error and creates nothing
+- `TestIdeasSpikeWeb`: shows `spike` ideas as cards, newest first, with the back link; hides `inbox` / `someday` / resolved and other user's ideas
+- `TestIdeasSearchWeb`: no `q` shows the 50 newest ideas of any status with status and resolution in the footer (51st oldest is hidden); `q` with two comma-separated phrases finds ideas matching either, case-insensitive, resolved included; more than 5 phrases shows an error; other user's ideas not shown
 
 ## Follow-ups after implementation
 

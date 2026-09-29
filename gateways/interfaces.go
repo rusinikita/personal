@@ -104,7 +104,7 @@ type DB interface {
 	// Ideas (see docs/functions/ideas-spec.md)
 	CreateIdea(ctx context.Context, idea *domain.Idea) (int64, error)
 	GetIdea(ctx context.Context, ideaID int64, userID int64) (*domain.Idea, error)          // fills SurfaceCount/LastSurfacedAt
-	ListIdeas(ctx context.Context, filter domain.IdeaFilter) ([]domain.Idea, error)         // fills SurfaceCount/LastSurfacedAt; ordered by created_at ASC
+	ListIdeas(ctx context.Context, filter domain.IdeaFilter) ([]domain.Idea, error)         // fills SurfaceCount/LastSurfacedAt; ordered by created_at ASC, or the Limit newest DESC when Limit > 0
 	SearchIdeas(ctx context.Context, filter domain.IdeaSearchFilter) ([]domain.Idea, error) // one variant; fills SurfaceCount/LastSurfacedAt; the action merges variants and counts match_count
 	UpdateIdea(ctx context.Context, idea *domain.Idea) error                                // body, status, updated_at; caller has already merged the change onto a fetched idea
 	ResolveIdea(ctx context.Context, resolve domain.IdeaResolve) error                      // sets status=resolved + resolution fields (overwrites them when re-resolving a blocked idea); for merged also re-points ideas merged into IdeaID to MergedIntoID in the same statement

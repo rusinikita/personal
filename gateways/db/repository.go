@@ -2646,8 +2646,13 @@ func (r *repository) GetIdea(ctx context.Context, ideaID int64, userID int64) (*
 
 func (r *repository) ListIdeas(ctx context.Context, filter domain.IdeaFilter) ([]domain.Idea, error) {
 	query := ideaSelect().
-		Where(squirrel.Eq{"i.user_id": filter.UserID}).
-		OrderBy("i.created_at ASC", "i.id ASC")
+		Where(squirrel.Eq{"i.user_id": filter.UserID})
+
+	if filter.Limit > 0 {
+		query = query.OrderBy("i.created_at DESC", "i.id DESC").Limit(uint64(filter.Limit))
+	} else {
+		query = query.OrderBy("i.created_at ASC", "i.id ASC")
+	}
 
 	switch {
 	case len(filter.Statuses) > 0:

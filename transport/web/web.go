@@ -84,10 +84,12 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	// Pre-rename e-ink URL, kept because the physical display still points at it.
 	router.GET("/web/goals/eink", achievements.LegacyEinkRedirectWebHandler)
 
-	// Ideas — quick capture form plus the open ideas list; reviews and
-	// resolutions stay MCP-only.
+	// Ideas — quick capture form plus the inbox cards, the spike ideas, and
+	// a search over every status; reviews and resolutions stay MCP-only.
 	router.GET("/web/ideas", webAuth, dbMiddleware(db), ideas.IdeasWebHandler)
 	router.POST("/web/ideas", webAuth, dbMiddleware(db), ideas.CreateIdeaWebHandler)
+	router.GET("/web/ideas/spike", webAuth, dbMiddleware(db), ideas.SpikeIdeasWebHandler)
+	router.GET("/web/ideas/search", webAuth, dbMiddleware(db), ideas.SearchIdeasWebHandler)
 
 	// Docs — hand-written convention documents embedded in action/docs,
 	// read-only, no DB access.

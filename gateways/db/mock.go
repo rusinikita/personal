@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -490,11 +491,31 @@ func (m *MockRepository) ListIdeas(_ context.Context, filter domain.IdeaFilter) 
 	}
 	var result []domain.Idea
 	for _, idea := range ideas {
-		if len(filter.Resolutions) > 0 {
-			if idea.Resolution != nil && *idea.Resolution == domain.IdeaResolutionBlocked {
+		switch {
+		case len(filter.Statuses) > 0:
+			if slices.Contains(filter.Statuses, idea.Status) {
 				result = append(result, idea)
 			}
-		} else if idea.Status != domain.IdeaStatusResolved {
+		case len(filter.Resolutions) > 0:
+			if idea.Resolution != nil && slices.Contains(filter.Resolutions, *idea.Resolution) {
+				result = append(result, idea)
+			}
+		case idea.Status != domain.IdeaStatusResolved:
+			result = append(result, idea)
+		}
+	}
+	if filter.Limit > 0 {
+		slices.Reverse(result)
+		result = result[:min(filter.Limit, len(result))]
+	}
+	return result, nil
+}
+
+func (m *MockRepository) SearchIdeas(ctx context.Context, filter domain.IdeaSearchFilter) ([]domain.Idea, error) {
+	all, _ := m.ListIdeas(ctx, domain.IdeaFilter{UserID: filter.UserID, Statuses: domain.IdeaStatuses})
+	var result []domain.Idea
+	for _, idea := range all {
+		if strings.Contains(strings.ToLower(idea.Body), strings.ToLower(filter.Query)) {
 			result = append(result, idea)
 		}
 	}

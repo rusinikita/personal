@@ -13,8 +13,8 @@ const (
 	IdeaStatusResolved IdeaStatus = "resolved"
 )
 
-// IdeaOpenStatuses are every status but resolved, in web display order.
-var IdeaOpenStatuses = []IdeaStatus{IdeaStatusSpike, IdeaStatusInbox, IdeaStatusSomeday}
+// IdeaStatuses are every status, resolved included.
+var IdeaStatuses = []IdeaStatus{IdeaStatusInbox, IdeaStatusSomeday, IdeaStatusSpike, IdeaStatusResolved}
 
 // IdeaResolution is the decision made on a resolved idea.
 type IdeaResolution string
@@ -51,6 +51,7 @@ type IdeaFilter struct {
 	Resolutions  []IdeaResolution // only resolved ideas with these resolutions, e.g. [blocked] for the portfolio check
 	ResolvedFrom *time.Time       // resolved_at >= ResolvedFrom
 	ResolvedTo   *time.Time       // resolved_at < ResolvedTo
+	Limit        int              // > 0: only the Limit newest ideas, created_at DESC; 0 = all, created_at ASC
 }
 
 // IdeaSearchFilter defines parameters for a single-variant body search

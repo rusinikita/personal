@@ -61,16 +61,8 @@ func SearchIdeas(ctx context.Context, _ *mcp.CallToolRequest, input SearchIdeasI
 		return nil, SearchIdeasOutput{}, fmt.Errorf("user_id not available in context")
 	}
 
-	if len(input.QueryVariants) == 0 {
-		return nil, SearchIdeasOutput{Error: "query_variants cannot be empty"}, nil
-	}
-	if len(input.QueryVariants) > 5 {
-		return nil, SearchIdeasOutput{Error: "maximum 5 query variants allowed"}, nil
-	}
-	for _, v := range input.QueryVariants {
-		if v == "" {
-			return nil, SearchIdeasOutput{Error: "query variants cannot be empty strings"}, nil
-		}
+	if err := validateQueryVariants(input.QueryVariants); err != nil {
+		return nil, SearchIdeasOutput{Error: err.Error()}, nil
 	}
 
 	statuses, err := parseStatuses(input.Statuses)
@@ -78,31 +70,67 @@ func SearchIdeas(ctx context.Context, _ *mcp.CallToolRequest, input SearchIdeasI
 		return nil, SearchIdeasOutput{Error: err.Error()}, nil
 	}
 
-	// Search per variant, deduplicate by idea ID with match count
-	matches := make(map[int64]*IdeaSearchResult)
-	byID := make(map[int64]domain.Idea)
+	matches, err := searchIdeas(ctx, db, userID, input.QueryVariants, statuses)
+	if err != nil {
+		return nil, SearchIdeasOutput{}, err
+	}
 
-	for _, variant := range input.QueryVariants {
+	results := make([]IdeaSearchResult, len(matches))
+	for i, m := range matches {
+		results[i] = IdeaSearchResult{IdeaResult: ideaToResult(m.Idea), MatchCount: m.MatchCount}
+	}
+
+	return nil, SearchIdeasOutput{Results: results}, nil
+}
+
+// ideaMatch is one idea found by searchIdeas with the number of variants
+// that matched it.
+type ideaMatch struct {
+	Idea       domain.Idea
+	MatchCount int
+}
+
+func validateQueryVariants(variants []string) error {
+	if len(variants) == 0 {
+		return fmt.Errorf("query_variants cannot be empty")
+	}
+	if len(variants) > 5 {
+		return fmt.Errorf("maximum 5 query variants allowed")
+	}
+	for _, v := range variants {
+		if v == "" {
+			return fmt.Errorf("query variants cannot be empty strings")
+		}
+	}
+	return nil
+}
+
+// searchIdeas runs one ILIKE search per variant and merges the results,
+// ranked by match count DESC, then created_at DESC. Shared by search_ideas
+// and GET /web/ideas/search; variants must pass validateQueryVariants.
+func searchIdeas(ctx context.Context, db gateways.DB, userID int64, variants []string, statuses []domain.IdeaStatus) ([]ideaMatch, error) {
+	matches := make(map[int64]*ideaMatch)
+
+	for _, variant := range variants {
 		ideas, err := db.SearchIdeas(ctx, domain.IdeaSearchFilter{
 			UserID:   userID,
 			Query:    variant,
 			Statuses: statuses,
 		})
 		if err != nil {
-			return nil, SearchIdeasOutput{}, fmt.Errorf("search failed: %w", err)
+			return nil, fmt.Errorf("search failed: %w", err)
 		}
 
 		for _, idea := range ideas {
 			if m, ok := matches[idea.ID]; ok {
 				m.MatchCount++
 			} else {
-				matches[idea.ID] = &IdeaSearchResult{IdeaResult: ideaToResult(idea), MatchCount: 1}
-				byID[idea.ID] = idea
+				matches[idea.ID] = &ideaMatch{Idea: idea, MatchCount: 1}
 			}
 		}
 	}
 
-	results := make([]IdeaSearchResult, 0, len(matches))
+	results := make([]ideaMatch, 0, len(matches))
 	for _, m := range matches {
 		results = append(results, *m)
 	}
@@ -111,12 +139,12 @@ func SearchIdeas(ctx context.Context, _ *mcp.CallToolRequest, input SearchIdeasI
 		if results[i].MatchCount != results[j].MatchCount {
 			return results[i].MatchCount > results[j].MatchCount
 		}
-		a, b := byID[results[i].ID], byID[results[j].ID]
+		a, b := results[i].Idea, results[j].Idea
 		if !a.CreatedAt.Equal(b.CreatedAt) {
 			return a.CreatedAt.After(b.CreatedAt)
 		}
 		return a.ID > b.ID
 	})
 
-	return nil, SearchIdeasOutput{Results: results}, nil
+	return results, nil
 }
