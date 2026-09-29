@@ -65,3 +65,17 @@ User-owned markdown documents kept in the database instead of the codebase, edit
 - Edit a document from the web without going through chat.
 
 **Open question:** decide in the feature doc whether this extends `action/docs` (one `list_docs`/`get_doc` over both embedded and DB-stored documents) or is a separate subdomain with its own tools.
+
+## 29-09-26 — Web UI preview on a Postgres testcontainer instead of the mock repository
+
+Rework `cmd/webui-preview` (`make preview-webui`) to start a Postgres testcontainer (same `postgres:16-alpine` + colima setup as `tests/suite_test.go`), apply migrations, load fixture data, and pass the real `db.NewRepository` to `web.Register` instead of `db.NewMockRepository()`. Once nothing uses it, delete `gateways/db/mock.go`.
+
+- Fixtures: seed data covering every web page (activities/progress, achievements, money, ideas, food, workouts), written as SQL or loaded via the repository, applied on startup.
+- Container is torn down when the preview process exits.
+
+**Why:** The mock repository is a second, hand-maintained implementation of `gateways.DB` — every new repository method needs a mock twin, and the mock's behavior (filtering, sorting, aggregates) can drift from the real SQL, so the preview can look right while the real page is broken. Running the real repository on a throwaway database shows the pages exactly as they will render in production and removes the mock upkeep.
+
+**Use cases:**
+- Eyeball a new web page against real queries without touching the production database.
+- Add a repository method without also writing a mock implementation.
+- Submit forms in the preview (add idea, log transaction) and see the write actually persisted and reflected on reload.
