@@ -4,7 +4,10 @@
 
 System for tracking workout exercises, sets, and training history with MCP (Model Context Protocol) interface. Supports different equipment types (machine, barbell, dumbbells, bodyweight) and tracks both rep-based and time-based exercises.
 
-A **read-only** web dashboard (`GET /web/workouts`, `GET /web/workouts/:id`) sits on top of this same data for reviewing personal records and per-exercise trends in a browser. Logging/editing workouts stays MCP/Telegram-bot-only — the dashboard has no write routes. Built on the shared `action/webui` design system (see `webui-spec.md`), the same way `action/progress`'s browse view is.
+A web dashboard sits on top of this same data, built on the shared `action/webui` design system (see `webui-spec.md`), the same way `action/progress`'s browse view is:
+
+- **Personal records** (`GET /web/workouts`, `GET /web/workouts/:id`) — read-only review of personal records and per-exercise trends.
+- **Sessions** (`/web/workouts/sessions/...`) — log sets from the browser (e.g. from the phone mid-workout) without going through the agent: a history of the last 10 workouts, a "New workout" button, and a workout screen with a set-adding form. Editing/deleting sets and exercises stays MCP-only.
 
 ## Best Practices Applied
 
@@ -23,6 +26,14 @@ A **read-only** web dashboard (`GET /web/workouts`, `GET /web/workouts/:id`) sit
 - **Drill-down page has no table, only charts**: unlike the Progress browse drill-down (which pairs a chart with a paginated point-history table), the exercise drill-down is stat tiles + one dual-axis chart only — `webui.RenderDetailView` is adjusted to skip rendering the table section when `DetailViewData.Table.Columns` is empty (mirrors its existing "skip stat tiles when `Stats` is empty" behavior), instead of showing an empty table box
 - **List view embeds its own achievement tiles, built elsewhere**: `GET /web/workouts` shows an `exercise_max_weight`/`exercise_total_volume` tile grid above the exercise table, via `achievements.BuildAchievementTiles(ctx, db, userID, now, types)` + `webui.RenderAchievementTiles` (see `achievements-spec.md`) — `action/workout` owns no achievement logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no exercise achievements (empty `EmptyMessage`, see `webui-spec.md`)
 - **One dual-axis chart, one point per set**: the drill-down shows weight (left Y axis, kg) and reps (right Y axis) as two lines on one `webui.DualAxisChartData` chart instead of two separate line charts, so a set's weight and reps sit at the same X position. Every set with weight or reps becomes one point (X label = set date, oldest-to-newest); a missing value (`WeightKg = 0`, e.g. bodyweight, or `Reps = 0`, e.g. a duration-only set) becomes `null` — a gap in that line only, the other line still shows the set. Sets with neither are skipped
+- **Sessions pages live under `/web/workouts/sessions`, records stay at `/web/workouts`**: existing URLs don't move; both pages carry the same cross-links line ("Personal records · Sessions"), same pattern as `progress`'s `browseCrossLinks`. Gin matches the static `sessions` segment before the `:id` param, so `/web/workouts/:id` keeps working
+- **Lazy workout creation on the web**: "New workout" is a plain link to `GET /web/workouts/sessions/new` — it creates nothing. The workout row is created only by the first `POST /web/workouts/sessions/new/sets`, which then redirects to `/web/workouts/sessions/{real_id}`. An abandoned `new` screen leaves no empty workout behind
+- **Explicit "New workout" always starts a new workout**: unlike `log_workout_set`'s 2-hour reuse rule, the first set from the `new` screen always creates a new workout, closing any still-open one at its last set's time (same `CloseWorkout` call `logCurrent` makes) — the user explicitly asked for a new workout. Sets posted to `/web/workouts/sessions/{id}/sets` go straight into that workout, no 2-hour rule
+- **One validation for MCP and web**: the web form reuses `validateLogWorkoutSetInput` from `log_workout_set_mcp.go`, so the two entry points can't drift apart (same approach as `progress`'s `createProgressPoint`)
+- **Web form is reps + weight only**: exercise selector, weight/difficulty (kg, optional — for machines the stack level goes here) and reps (required). Duration-based sets (planks) stay MCP-only
+- **Exercise selector sorted by usage**: every exercise of the user, most-logged first (set count DESC, then name), never-used exercises at the bottom — via a new `ListExercisesByUsage` (LEFT JOIN, unlike `ListPersonalRecords` which drops unused exercises and runs N+1 record queries the selector doesn't need). After a set is logged, the form is prefilled with the workout's last set — exercise, weight and reps — so a series like 80×6, 80×4, 80×2 is one edit + submit per set. Taken from the DB, not from redirect params, so it survives a page reload
+- **History page reuses `list_workouts`' calls**: `ListWorkouts` (first 10) + `ListSets` from the oldest of them to now, filtered by workout ID + `GetExercisesByIDs` — no new query. Per workout: date, and per exercise (in order of first set) its name and the first set logged for it
+- **Workout screen shows what's already logged**: below the form, the sets of this workout in logging order (exercise, weight, reps), so the user sees each submit landed — same `ListSets` + filter, no new query
 - **Exercise `description` is free-text, nullable at the column level but always read back as `""`**: every read query wraps it in `COALESCE(description, '')` so `domain.Exercise.Description` is a plain `string`, never a pointer — existing rows predating the column get `''` instead of `NULL` on first read. `edit_exercise` takes `description` as `*string` specifically so "omitted" (keep current value) is distinguishable from "explicit empty string" (clear it), unlike `name`/`equipment_type` which use the zero-value-means-omitted convention
 
 ## Architecture Diagrams
@@ -85,6 +96,14 @@ graph TB
     User -->|list_workouts| MCP
     User -->|get_exercise_history| MCP
     User -->|get_personal_records| MCP
+
+    Browser[User in browser]
+    Web[Web handlers /web/workouts/sessions]
+    Web -->|SQL queries| DB
+    Browser -->|GET /web/workouts/sessions| Web
+    Browser -->|GET /web/workouts/sessions/new| Web
+    Browser -->|GET /web/workouts/sessions/:id| Web
+    Browser -->|POST .../sessions/new/sets, .../sessions/:id/sets| Web
     
     DB -.->|exercises table| DB
     DB -.->|workouts table| DB
@@ -199,6 +218,46 @@ sequenceDiagram
     Handler->>Handler: build stat tiles (max weight, max reps, est. 1RM, times performed)
     Handler->>Webui: RenderStatTiles, RenderDualAxisChart, RenderDetailView (no table), RenderPage
     Webui-->>Browser: 200 text/html
+```
+
+### Sequence Diagram: Web Sessions — History, New Workout, Log Sets
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Handler as action/workout web handler
+    participant DB
+
+    Browser->>Handler: GET /web/workouts/sessions
+    Handler->>DB: ListWorkouts(userID) → first 10
+    Handler->>DB: ListSets(userID, oldest.started_at, now) → filter by those workout IDs
+    Handler->>DB: GetExercisesByIDs(userID, exerciseIDs)
+    Handler-->>Browser: 200 history (date + exercises with first set) + "New workout" link
+
+    Browser->>Handler: GET /web/workouts/sessions/new
+    Handler->>DB: ListExercisesByUsage(userID)
+    Handler-->>Browser: 200 empty workout screen with form (no DB write)
+
+    Browser->>Handler: POST /web/workouts/sessions/new/sets (exercise_id, weight_kg, reps)
+    Handler->>Handler: validateLogWorkoutSetInput
+    Handler->>DB: GetLastSet(userID)
+    opt last set's workout still open
+        Handler->>DB: CloseWorkout(oldWorkoutID, lastSet.created_at)
+    end
+    Handler->>DB: CreateWorkout(started_at=now)
+    Handler->>DB: CreateSet(workout_id, ...)
+    Handler-->>Browser: 302 /web/workouts/sessions/{workout_id}
+
+    Browser->>Handler: GET /web/workouts/sessions/{id}
+    Handler->>DB: GetWorkoutsByIDs(userID, [id]) → 404 if missing/foreign
+    Handler->>DB: ListExercisesByUsage(userID)
+    Handler->>DB: ListSets(userID, started_at, now) → filter by workout id
+    Handler-->>Browser: 200 form (prefilled with last set) + logged sets
+
+    Browser->>Handler: POST /web/workouts/sessions/{id}/sets
+    Handler->>DB: GetWorkoutsByIDs(userID, [id]) → 404 if missing/foreign
+    Handler->>DB: CreateSet(workout_id=id, created_at=now)
+    Handler-->>Browser: 302 /web/workouts/sessions/{id}
 ```
 
 ## Database Schema
@@ -363,6 +422,10 @@ type WorkoutRepository interface {
 	// set for, paired with its total set count and personal records, sorted
 	// by set count descending. Powers the web dashboard's list view.
 	ListPersonalRecords(ctx context.Context, userID int64) ([]ExercisePersonalRecords, error)
+	// ListExercisesByUsage returns every exercise of the user, sorted by
+	// set count DESC, then name ASC; never-used exercises come last.
+	// Powers the web workout screen's exercise selector.
+	ListExercisesByUsage(ctx context.Context, userID int64) ([]Exercise, error)
 }
 
 // SetWithExercise is a set joined with its exercise name, used by delete_workout_set
@@ -425,15 +488,35 @@ Returns best-ever results for an exercise: max_weight, max_reps, max_volume (sin
 ## HTTP Handlers
 
 ### GET /web/workouts
-Read-only list view: an exercise achievement tile grid at the top (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderAchievementTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
+Read-only list view: the "Personal records · Sessions" cross-links line, then an exercise achievement tile grid (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderAchievementTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
 
 ### GET /web/workouts/:id
 Drill-down for a single exercise: title subtitle shows the exercise's description (if any, HTML-escaped, via `DetailViewData.Description`), then stat tiles (max weight, max reps, est. 1RM, times performed) plus one dual-axis chart — weight (left Y axis, kg) and reps (right Y axis), one point per set (see "One dual-axis chart, one point per set" above) — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.
 
+### GET /web/workouts/sessions
+History: "Personal records · Sessions" cross-links, a "New workout" button (link to `/web/workouts/sessions/new`), then the last 10 workouts, newest first. Each workout shows its date (links to `/web/workouts/sessions/{id}`) and, per exercise in order of first set, the exercise name and its first set (e.g. "80 kg × 8"). Empty state: "No workouts yet".
+
+### GET /web/workouts/sessions/new
+Empty workout screen: the set-adding form (exercise selector sorted by usage, weight kg, reps) posting to `/web/workouts/sessions/new/sets`. Creates nothing in the DB.
+
+### POST /web/workouts/sessions/new/sets
+Logs the first set of a new workout: validates the form, closes any still-open workout, creates the workout and the set, redirects to `/web/workouts/sessions/{workout_id}`. On a validation error re-renders the `new` screen with an inline error and creates nothing.
+
+### GET /web/workouts/sessions/:id
+Workout screen for an existing workout: header with the workout date, the set-adding form posting to `/web/workouts/sessions/{id}/sets` (prefilled with this workout's last set: exercise, weight, reps), then this workout's sets in logging order. 404s if the workout doesn't exist or doesn't belong to the current user.
+
+### POST /web/workouts/sessions/:id/sets
+Adds a set to the given workout (created_at = now), redirects back to its workout screen. Validation errors re-render the workout screen with an inline error; 404 for a missing/foreign workout.
+
 ## E2E Tests
 
-Changes in `tests/workout_dashboard_web_test.go` for the dual-axis chart:
+New file `tests/workout_sessions_web_test.go`:
 
-- `TestExerciseDetail_ShowsStatTilesAndTrendCharts`: expects exactly **one** `<canvas id=` (was two); weight dataset `data: [80,100]` and reps dataset `data: [8,5]` still oldest-to-newest, now in the same chart, reps dataset on the right axis (`yAxisID: "y1"`)
-- NEW `TestExerciseDetail_SetWithoutWeight_GapInWeightLine`: sets `(8 reps, 80 kg)` then `(12 reps, 0 kg)` → weight dataset `data: [80,null]`, reps dataset `data: [8,12]`
-- `TestExerciseDetail_UnknownOrForeignExercise_404s`, `TestExerciseDetail_NoSetsYet_RendersWithoutError`: unchanged
+- `TestWorkoutSessions_History`: 11 workouts with sets → page shows only the newest 10, newest first; each workout shows its exercises with the first set of each (not later sets); "New workout" link present; empty state when no workouts
+- `TestWorkoutSessions_NewScreen_CreatesNothing`: GET `/new` renders the form, workout count in DB unchanged
+- `TestWorkoutSessions_NewScreen_ExercisesSortedByUsage`: exercises with 3, 1, 0 sets appear in the selector in that order
+- `TestWorkoutSessions_FirstSet_CreatesWorkoutAndRedirects`: POST `/new/sets` → one new workout with one set (weight, reps), 302 to `/web/workouts/sessions/{id}`; a still-open older workout gets closed
+- `TestWorkoutSessions_AddSet_ToExistingWorkout`: POST `/{id}/sets` → set added to that workout, no new workout, redirect back
+- `TestWorkoutSessions_Validation`: missing exercise / missing reps → 200 with inline error, nothing created
+- `TestWorkoutSessions_WorkoutScreen`: shows this workout's sets only; form prefilled with the last set's exercise, weight and reps
+- `TestWorkoutSessions_UnknownOrForeignWorkout_404s`: GET and POST for a missing or another user's workout → 404

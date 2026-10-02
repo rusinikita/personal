@@ -4,22 +4,6 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 21-09-26 — Web UI for logging workout sets (new page under Workouts)
-
-Add workout-logging web pages under the existing Workouts section:
-
-- **History page** (default landing): last 10 workouts, each showing its date, and per exercise the list of exercises done plus the first set logged for that exercise.
-- **"New workout" button**: does not create a workout row itself — it just navigates to a `new` screen.
-- **Workout screen**: shows the set-adding form — exercise selector sorted by frequency of use (most-used exercise first), plus inputs for difficulty/weight and rep count.
-- **Lazy workout creation**: a workout row is only actually created when the first set is submitted from the `new` screen (mirroring how `log_workout_set` today only creates a new workout on the first exercise logged that day/session) — at that point the page redirects from the `new` path to the path with the real workout ID.
-
-**Why:** Sets can currently only be logged via MCP/chat; a lightweight web form lets the user log sets directly mid-workout (e.g. from their phone at the gym) without going through the agent, while keeping the "workout is created lazily on first set" behavior consistent with the existing MCP tool instead of pre-creating empty workouts that never get sets.
-
-**Use cases:**
-- Glance at the last 10 workouts (date, exercises, first set of each) without opening chat.
-- Start a workout screen mid-session and only have it become a real workout once a set is actually logged.
-- Pick the next exercise quickly from a frequency-sorted list instead of scanning the full exercise list.
-
 ## 21-09-26 — New subdomain: learning (learning_plan, skill, learning_exercise, vocabulary)
 
 New subdomain (`action/learning`) for structured, long-running study tracking — first two use cases are learning Greek and learning Kubernetes, which is why the model needs to cover both a language (vocabulary-heavy) and a technical skill (exercise/practice-heavy) without forcing one shape onto the other.

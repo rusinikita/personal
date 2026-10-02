@@ -58,8 +58,14 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.POST("/web/progress/browse/:id/points", webAuth, dbMiddleware(db), progress.BrowseCreatePointWebHandler)
 
 	// Workouts dashboard — read-only personal records list + per-exercise
-	// drill-down, built on the webui design system.
+	// drill-down, plus the sessions pages for logging sets, built on the
+	// webui design system.
 	router.GET("/web/workouts", webAuth, dbMiddleware(db), workout.PersonalRecordsWebHandler)
+	router.GET("/web/workouts/sessions", webAuth, dbMiddleware(db), workout.SessionsWebHandler)
+	router.GET("/web/workouts/sessions/new", webAuth, dbMiddleware(db), workout.NewSessionWebHandler)
+	router.POST("/web/workouts/sessions/new/sets", webAuth, dbMiddleware(db), workout.CreateSessionSetWebHandler)
+	router.GET("/web/workouts/sessions/:id", webAuth, dbMiddleware(db), workout.SessionWebHandler)
+	router.POST("/web/workouts/sessions/:id/sets", webAuth, dbMiddleware(db), workout.AddSessionSetWebHandler)
 	router.GET("/web/workouts/:id", webAuth, dbMiddleware(db), workout.ExerciseDetailWebHandler)
 
 	// Money dashboard — read-only overview, transaction list, calendar, and

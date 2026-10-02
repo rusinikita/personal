@@ -1,7 +1,7 @@
 // Package workout's web dashboard: read-only /web/workouts pages built on
 // the action/webui design system, for reviewing personal records and
-// per-exercise trends in a browser. Logging/editing workouts stays
-// MCP/Telegram-bot-only — this file adds no write routes.
+// per-exercise trends in a browser. Logging sets from the browser lives in
+// sessions_web.go.
 package workout
 
 import (
@@ -110,7 +110,7 @@ func PersonalRecordsWebHandler(c *gin.Context) {
 		Rows: rows,
 	}
 
-	content := webui.RenderAchievementTiles(webui.AchievementTilesData{Tiles: achievementTiles}) + webui.RenderTable(table)
+	content := workoutsCrossLinks + webui.RenderAchievementTiles(webui.AchievementTilesData{Tiles: achievementTiles}) + webui.RenderTable(table)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
