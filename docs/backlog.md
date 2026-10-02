@@ -65,3 +65,36 @@ User-owned markdown documents kept in the database instead of the codebase, edit
 - Edit a document from the web without going through chat.
 
 **Open question:** decide in the feature doc whether this extends `action/docs` (one `list_docs`/`get_doc` over both embedded and DB-stored documents) or is a separate subdomain with its own tools.
+
+## 02-10-26 — Contacts CRM: collecting information about people
+
+New subdomain for a personal contacts CRM — a place to keep what is known about people the user interacts with, instead of keeping it in memory or scattered across chats.
+
+- A contact: name, short description (who this person is, how the user knows them), created_at, updated_at.
+- Notes about a contact: free-text facts and interaction notes added over time (what was discussed, interests, important dates), each with created_at.
+- MCP: create/edit a contact, add a note, search contacts and notes, read a contact with its notes.
+- Web: list and read contacts with their notes.
+
+**Why:** Information about people (what they do, what was discussed last time, what matters to them) currently lives nowhere structured, so it gets lost between conversations. A dedicated subdomain lets the agent save facts mid-conversation and pull them back up before the next meeting or message.
+
+**Use cases:**
+- After a meeting or call, tell the agent what was learned about the person and have it saved as a note.
+- Before meeting someone, ask the agent for everything known about them.
+- Find a person by a remembered detail ("who was the one working on Kubernetes at ...").
+
+**Open question:** decide in the feature doc which fields are structured (birthday, contacts/links, company, tags) and which stay as free-text notes.
+
+## 02-10-26 — User profile with settings
+
+Store users in the database and give each user a profile with their own settings, instead of keeping everything hardcoded for a single implicit user.
+
+- A user: id, name, created_at — the first step to having users as real rows in the DB rather than an implicit single owner.
+- Settings: user-configurable values that are currently fixed in code or docs — first of all the WIP limits (max active activities total, max per `progress_type`, max achievements), plus any other tunable parameters found along the way.
+- Manifest: a per-user manifest stored in the profile. What exactly it contains and how it is used is to be defined later.
+- MCP and web: read and change own settings and manifest.
+
+**Why:** Limits like the WIP caps are personal choices, not universal rules, so they should be adjustable by the user without a code change. Having users in the DB is also the base for anything per-user later (settings, manifest, personal data).
+
+**Depends on:** 23-09-26 — Enforce activity/achievement limits in create_activity / create_achievement (the enforced limits should read their values from the user's settings once this exists).
+
+**Open question:** define what the manifest is and how the agent uses it; decide in the feature doc whether it overlaps with 27-09-26 — Personal documents (e.g. stored as one of those documents instead of a profile field).
