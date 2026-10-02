@@ -109,6 +109,15 @@ func (s *IntegrationTestSuite) TestIdeasWeb() {
 		assert.Equal(s.T(), domain.IdeaStatusInbox, found[0].Status)
 	})
 
+	s.Run("card keeps line breaks of a body captured via the form", func() {
+		w := s.postIdea(r, "multiline first\r\nmultiline second\r\n\r\nmultiline paragraph")
+		require.Equal(s.T(), http.StatusSeeOther, w.Code)
+
+		html := s.getIdeasPage(r, "/web/ideas").Body.String()
+
+		assert.Contains(s.T(), html, "<p>multiline first<br>multiline second</p>\n<p>multiline paragraph</p>")
+	})
+
 	s.Run("POST with empty body re-renders with an error", func() {
 		before, err := s.Repo().ListIdeas(ctx, domain.IdeaFilter{UserID: userID})
 		require.NoError(s.T(), err)

@@ -63,9 +63,10 @@ const searchFormSrc = `<p><a href="/web/ideas">← Ideas</a></p>
 var searchFormTemplate = template.Must(template.New("ideaSearchForm").Parse(searchFormSrc))
 
 // ideaCard is one idea rendered as a Pico <article>; a nil card pads the
-// last grid row. The footer has Labels on the left and Date on the right.
+// last grid row. Each paragraph is a list of lines joined by <br>. The
+// footer has Labels on the left and Date on the right.
 type ideaCard struct {
-	Paragraphs []string
+	Paragraphs [][]string
 	Labels     string
 	Date       string
 }
@@ -79,7 +80,7 @@ type cardGridData struct {
 // .grid sits in a single row, so each row of cards is its own .grid.
 const cardGridSrc = `{{range .Rows}}<div class="grid">
 {{range .}}{{if .}}<article>
-{{range .Paragraphs}}<p>{{.}}</p>
+{{range .Paragraphs}}<p>{{range $i, $line := .}}{{if $i}}<br>{{end}}{{$line}}{{end}}</p>
 {{end}}<footer style="display: flex; justify-content: space-between"><span>{{.Labels}}</span><span>{{.Date}}</span></footer>
 </article>
 {{else}}<div></div>
@@ -261,8 +262,9 @@ func SearchIdeasWebHandler(c *gin.Context) {
 	writePage(c, status, "Search ideas", formHTML+gridHTML)
 }
 
-// newIdeaCard renders body paragraphs, the created date and footer labels:
-// status and resolution (withStatus), then the surface count when > 1.
+// newIdeaCard renders body paragraphs split into lines, the created date
+// and footer labels: status and resolution (withStatus), then the surface
+// count when > 1. Bodies captured via the web form have CRLF line endings.
 func newIdeaCard(idea domain.Idea, withStatus bool) *ideaCard {
 	var labels []string
 	if withStatus {
@@ -275,9 +277,10 @@ func newIdeaCard(idea domain.Idea, withStatus bool) *ideaCard {
 		labels = append(labels, fmt.Sprintf("×%d", idea.SurfaceCount))
 	}
 	card := &ideaCard{Labels: strings.Join(labels, " · "), Date: idea.CreatedAt.Format("2006-01-02")}
-	for _, p := range strings.Split(idea.Body, "\n\n") {
+	body := strings.ReplaceAll(idea.Body, "\r\n", "\n")
+	for _, p := range strings.Split(body, "\n\n") {
 		if p = strings.TrimSpace(p); p != "" {
-			card.Paragraphs = append(card.Paragraphs, p)
+			card.Paragraphs = append(card.Paragraphs, strings.Split(p, "\n"))
 		}
 	}
 	return card
