@@ -8,40 +8,6 @@ System for tracking personal financial transactions, income, and expenses with M
 
 A **read-only** web dashboard (`GET /web/money`, `GET /web/money/transactions`, `GET /web/money/calendar`, `GET /web/money/export`) sits on top of this same data for reviewing the overall financial picture — balance, income/spend trends, category weight, sync freshness, a day-by-day calendar of activity — at a glance, plus a dedicated screen for exporting a category-level spending breakdown as CSV. Adding/editing/deleting transactions stays out of scope for the dashboard; it links out to the existing `/money/import` bulk-import page instead of duplicating it. Built on the shared `action/webui` design system (see `webui-spec.md`), the same way `action/progress`'s browse view is.
 
-## Best Practices Applied
-
-- **Multi-user Support**: All tables have user_id for data isolation (DEFAULT_USER_ID = 1)
-- **User Context**: user_id extracted from authentication context (JWT/session), not passed explicitly
-- **UTC Timezone**: All timestamps in UTC, timezone conversions in action layer
-- **Multi-currency**: Stores original currency + amount alongside EUR equivalent at transaction time
-- **Hierarchical Categories**: Slash-separated paths (e.g. `food/cafe`) — group by prefix for rollups
-- **Original Description**: Raw bank text preserved for future re-categorization without data loss
-- **Flat Schema**: accounts, merchants, and categories are plain strings — no foreign key overhead
-- **Nullable Fields**: note and original_description are nullable for manual entries
-- **Money dashboard embeds its own achievement tiles, built elsewhere**: `GET /web/money` shows a `money_saving`/`money_spend` tile grid between the stat tiles and the category table, via `achievements.BuildAchievementTiles(ctx, db, userID, now, types)` + `webui.RenderAchievementTiles` (see `achievements-spec.md`) — `action/money` doesn't own any achievement logic itself, it just calls the helper and drops the fragment into its page. The section disappears entirely when the user has no money achievements (empty `EmptyMessage`, see `webui-spec.md`)
-- **Web dashboard reuses existing analytics methods**: both the all-time and last-calendar-month figures (current balance, total income, net, per-category totals) are built from the same `GetBalance` and `GetSpendingByCategory` calls the MCP tools already use, just with different `from`/`to` bounds — the only new repository method is `GetMoneySummary`, needed because nothing today exposes the date range itself (see next point)
-- **"Last sync" is import freshness, not transaction age**: `GetMoneySummary.LastSyncedAt` is `MAX(created_at)`, not `MAX(transacted_at)` — a backdated manual entry or an import of old bank history would make the newest transaction's own date look stale even right after a sync. `created_at` answers "when did I last touch this data," which is what the dashboard's sync-freshness indicator is for
-- **Months-span is global, not per-category**: average monthly spend per category divides that category's all-time total by the number of months since the user's overall first transaction (`GetMoneySummary.FirstTransactionAt`), not that category's own first transaction — otherwise a category that only started appearing recently would show an inflated average relative to older categories
-- **Months-span floors at 1**: `max(1, months since FirstTransactionAt)` avoids a divide-by-zero (and a meaningless huge average) for an account with less than a month of history
-- **Average monthly savings drives projections, nothing new to store**: `avg_monthly_savings_eur = current_balance_eur / months_span`; the 3/6/12-month projections are `current_balance_eur + avg_monthly_savings_eur × N` computed in the handler — no repository method needed beyond the pieces above
-- **Balance trend renders as a combo chart, not a plain line**: `webui.RenderComboChart` (see `webui-spec.md`) draws the -12/-9/-6/-3 month actual balances, current balance, and +3/+6/+9/+12 month projections as one series shown both as bars (the per-point magnitude reads clearly) and an overlaid line (the trend's shape reads clearly) — a plain `LineChartData` was tried first and dropped for this reason
-- **One transaction list page, three entry points**: the dashboard's "view all", a category's row, and a calendar day all land on the same `GET /web/money/transactions` — the only difference is which query params (`category`, `from`, `to`) are pre-filled. This matches `TransactionFilter` already having independent `Category` and `From`/`To` fields, so no new filter combination needs to be supported server-side, only surfaced in a GET filter form
-- **Transactions list filters on a from/to range, not a single day**: `?from`/`?to` are independent — either, both, or neither may be set, giving an open-ended range when only one bound is provided. A calendar day click sets both to the same date, which is exactly a one-day range, so no separate single-day query param is needed
-- **Filters live in the URL, not a session**: `category`/`from`/`to`/`page` are query params on `GET /web/money/transactions`, set by an HTML `<form method="GET">` — bookmarkable/shareable, and consistent with pagination already being query-param-driven everywhere else in this design system
-- **Clear sits next to Apply, not on its own line**: on both the transactions list and calendar filter forms, "Clear" is an outline-styled link-button inside the same `<fieldset role="group">` as "Apply" — a reset action, not a second row of content
-- **Calendar totals are spend, not net**: each day cell shows one combined line, spend amount then transaction count in parentheses (e.g. `€42.10 (3)`) — no "transactions" wording, no separate count line — restricted to `type = 'expense'`, matching the category table's expense-only convention. A "how much did I spend that day" read, not a net-including-income one
-- **Calendar day boundaries use the display timezone**: day grouping for `GetDailyTransactionSummary` uses `Asia/Nicosia` (the existing Configuration display timezone), same as the `from`/`to` query params on the transactions list — a day in the calendar and its drill-down link always mean the same 24h window
-- **Calendar is a from/to range, defaulting to the last 3 months**: unlike the single-month `RenderCalendar` component call, the calendar *page* takes `?from`/`?to` and defaults to `[today - 3 calendar months, today]` when absent — 3 single-month grids stacked on one page, so the common case ("what's been going on lately") doesn't require paging month-by-month, while an arbitrary range is still one filter-form edit away
-- **Calendar renders one grid per calendar month in range, newest first, zero-fills client-side**: the handler calls `GetDailyTransactionSummary(from, to)` once for the whole range (it only returns rows for days that actually have transactions), splits the result by calendar month, and calls `webui.RenderCalendar` once per month in descending order (most recent month at the top, oldest at the bottom) — each grid fills its own days with no transactions as zero-count cells rather than the DB padding empty rows
-- **Calendar has one Prev/Next control for the whole page, not one per month grid**: clicking Prev/Next shifts both `from` and `to` by one calendar month and re-renders the whole stack — a single control at the top of the page, never repeated per grid (`webui.RenderCalendar`'s own per-card Prev/Next is left unset here; see webui-spec.md)
-- **Calendar Next is hidden once the range reaches the current month**: shifting forward from there would only move into the future, which has nothing to show — Prev has no such limit, since browsing further into the past is always valid
-- **Spending export reuses `GetSpendingByCategory`, no new repository method**: the export preview is the same top-level (`depth=1`) category breakdown the dashboard already computes for a date range — `from`/`to` are the only new query shape, and both dashboard and export can share one repository call
-- **Export state lives entirely in the URL, GET-only, no session**: same convention as the transactions list and calendar filters — `from`/`to` for the date range, `incl[<category>]=on` per included category (a plain HTML checkbox; an unchecked/absent category is excluded), `amt[<category>]=<value>` per category's exported amount, pre-filled with the real total and directly editable. There is no separate "override" flag: `amt[<category>]` *is* the exported value, it just starts out equal to the real total
-- **One `<form method="GET">`, two submit buttons via `formaction`**: "Update" (`formaction="/web/money/export"`) and "Export CSV" (`formaction="/web/money/export/download"`) submit the same field set — date inputs, one checkbox + one amount input per category row — to two different routes, avoiding a second form or any client-side JS to keep them in sync
-- **Preview computes a running total from the submitted state, not from the DB**: once `incl`/`amt` params are present (i.e. after the first "Update" or "Export"), the preview's total row sums the *submitted* `amt` values for *included* categories — letting the user see the effect of an override or exclusion immediately, without it being silently overwritten by the real DB total on the next render
-- **Export default range is the current calendar month**: unlike the transactions list (no default = all transactions) or the calendar (last 3 months), export's typical use case is "pull this month's spending" — first visit with no `from`/`to` defaults to `[start of current month, today]`, immediately adjustable via the same filter form used for "Update"
-- **Category checkbox/amount table is not a shared `webui` component**: `TableData.Rows` is plain-text `[]string` cells, which can't host a checkbox or a text input — the export preview table is rendered by a local template in `action/money`, the same pattern `renderTransactionsFilterForm` already uses for the transactions filter form, not a new addition to `action/webui`
-
 ## Architecture Diagrams
 
 ### Entity Relation Diagram
@@ -92,202 +58,6 @@ graph TB
     style User fill:#e1f5ff
     style MCP fill:#ffe1e1
     style DB fill:#e1ffe1
-```
-
-### Sequence Diagram: Add Transactions
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant Auth
-    participant DB
-
-    User->>MCP: add_transactions(transactions: [{...}])
-    MCP->>Auth: Get user_id from context
-    Auth-->>MCP: user_id=1
-
-    MCP->>MCP: Validate each: type enum,<br/>amount_original > 0, amount_eur > 0,<br/>currency length == 3
-
-    MCP->>DB: INSERT INTO transactions (...)<br/>VALUES (batch rows)
-    DB-->>MCP: inserted count
-
-    MCP-->>User: {inserted_count, transactions}
-```
-
-### Sequence Diagram: Import CSV via Web UI
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Browser
-    participant WebServer
-    participant DB
-
-    User->>Browser: Open /money/import
-    Browser->>WebServer: GET /money/import
-    WebServer->>WebServer: Check Basic Auth header
-    WebServer-->>Browser: 200 HTML upload form
-
-    User->>Browser: Select CSV file + account name
-    Browser->>WebServer: POST /money/import (multipart/form-data)
-
-    WebServer->>WebServer: Select parser by account name<br/>(Revolut, Bank of Cyprus, ...)
-    WebServer->>WebServer: Parse CSV using account-specific format<br/>→ []RawTransaction{date, description, amount, currency}
-
-    loop For each RawTransaction
-        WebServer->>WebServer: Recognize merchant from description
-        WebServer->>WebServer: Infer category from merchant + description
-        WebServer->>WebServer: Set original_description = raw description
-    end
-
-    WebServer->>DB: INSERT INTO transactions (...)<br/>VALUES (batch rows)
-    DB-->>WebServer: inserted count
-
-    WebServer-->>Browser: HTML result: imported N, skipped M
-```
-
-### Sequence Diagram: Spending Analysis
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant DB
-
-    User->>MCP: get_spending_by_category(from, to, depth)
-    MCP->>DB: SELECT split_part(category,'/',1..depth),<br/>SUM(amount_eur), COUNT(*)<br/>FROM transactions<br/>WHERE user_id=1 AND type='expense'<br/>AND transacted_at BETWEEN from AND to<br/>GROUP BY category_prefix<br/>ORDER BY sum DESC
-    DB-->>MCP: category rows
-
-    MCP-->>User: spending by category
-```
-
-### Sequence Diagram: Compare Periods
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant DB
-
-    User->>MCP: compare_periods(period_a_from, period_a_to,<br/>period_b_from, period_b_to)
-
-    MCP->>DB: SELECT category, SUM(amount_eur)<br/>FROM transactions<br/>WHERE user_id=1 AND type='expense'<br/>AND transacted_at BETWEEN period_a_from AND period_a_to<br/>GROUP BY split_part(category,'/',1)
-    DB-->>MCP: period_a spending
-
-    MCP->>DB: SELECT category, SUM(amount_eur)<br/>FROM transactions<br/>WHERE user_id=1 AND type='expense'<br/>AND transacted_at BETWEEN period_b_from AND period_b_to<br/>GROUP BY split_part(category,'/',1)
-    DB-->>MCP: period_b spending
-
-    MCP->>MCP: Merge results, calculate diff and % change per category
-
-    MCP-->>User: {period_a, period_b, diff_eur, diff_pct} per category
-```
-
-### Sequence Diagram: Web Dashboard — Overview
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as action/money web handler
-    participant DB
-    participant Webui as action/webui
-
-    Browser->>Handler: GET /web/money
-    Handler->>DB: GetMoneySummary(userID)
-    DB-->>Handler: {first_transaction_at, last_synced_at}
-    Handler->>Handler: months_span = max(1, months(first_transaction_at, now))
-
-    Handler->>DB: GetBalance(userID, first_transaction_at, now)
-    DB-->>Handler: {income_eur, balance_eur} — all-time income + current balance
-    Handler->>DB: GetBalance(userID, start_of_last_month, end_of_last_month)
-    DB-->>Handler: {balance_eur} — net for last calendar month
-
-    Handler->>Handler: avg_monthly_savings_eur = current_balance_eur / months_span<br/>projected_3m/6m/1y = current_balance_eur + avg_monthly_savings_eur × N
-
-    Handler->>DB: GetSpendingByCategory(userID, first_transaction_at, now, depth=1)
-    DB-->>Handler: all-time totals per top-level category
-    Handler->>DB: GetSpendingByCategory(userID, start_of_last_month, end_of_last_month, depth=1)
-    DB-->>Handler: last-month totals per top-level category
-    Handler->>DB: GetSpendingByCategory(userID, start_of_this_month, now, depth=1)
-    DB-->>Handler: current-month totals per top-level category
-    Handler->>Handler: merge by category: total_eur, current_month_eur, last_month_eur,<br/>avg_monthly_eur = total_eur / months_span<br/>sort by avg_monthly_eur DESC
-
-    Handler->>DB: achievements.BuildAchievementTiles(userID, now, types=[money_saving, money_spend])<br/>(see achievements-spec.md)
-    DB-->>Handler: []webui.AchievementTileData (may be empty)
-
-    Handler->>Webui: RenderAchievementTiles (omitted if empty), RenderStatTiles, RenderTable, RenderPage
-    Webui-->>Browser: 200 text/html (achievement tiles + stat tiles + category table,<br/>links to /web/money/transactions,<br/>/web/money/calendar, and /money/import)
-```
-
-### Sequence Diagram: Transactions List (shared by all three entry points)
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as action/money web handler
-    participant DB
-    participant Webui as action/webui
-
-    Browser->>Handler: GET /web/money/transactions?category=groceries<br/>(or ?from=2026-08-05&to=2026-08-05, or neither, plus &page=N)
-    Handler->>Handler: build TransactionFilter from query params:<br/>Category (prefix) if ?category set,<br/>From/To = start/end of day in Asia/Nicosia,<br/>independently, if ?from/?to set,<br/>Limit=100, Offset=(page-1)×100
-    Handler->>DB: GetTransactions(filter)
-    DB-->>Handler: []Transaction, total count
-    Handler->>Handler: build filter form (category input, from/to date inputs,<br/>pre-filled from query params, Clear as outline button<br/>next to Apply) + TableData<br/>(Date, Category, Merchant, Amount, Note) + Pagination
-    Handler->>Webui: RenderTable, RenderPage
-    Webui-->>Browser: 200 text/html — same page whether reached from<br/>the dashboard's "view all", a category row, or a calendar day
-```
-
-### Sequence Diagram: Transaction Calendar
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as action/money web handler
-    participant DB
-    participant Webui as action/webui
-
-    Browser->>Handler: GET /web/money/calendar?from=2026-06-01&to=2026-08-22<br/>(defaults to [today - 3 calendar months, today] when absent)
-    Handler->>Handler: from, to resolved to day bounds in Asia/Nicosia
-    Handler->>DB: GetDailyTransactionSummary(userID, from, to)
-    DB-->>Handler: []DailySummary — one row per day that has transactions,<br/>spanning however many calendar months [from, to] covers
-    Handler->>Handler: split DailySummary rows by calendar month, newest first;<br/>for each month, build a 7-column week grid,<br/>filling days with no transactions as zero-count cells;<br/>each day with Count > 0 shows "€spend (count)" and links to<br/>/web/money/transactions?from=YYYY-MM-DD&to=YYYY-MM-DD
-    Handler->>Handler: build one page-level Prev/Next nav<br/>(Next omitted once the range reaches the current month)
-    loop For each calendar month in [from, to], newest first
-        Handler->>Webui: RenderCalendar(monthGrid)<br/>(no per-grid Prev/Next)
-    end
-    Handler->>Webui: RenderPage(page-level nav,<br/>the from/to filter form with Clear next to Apply,<br/>then the calendar grids stacked newest-first)
-    Webui-->>Browser: 200 text/html
-
-    Browser->>Handler: click a day → GET /web/money/transactions?from=2026-08-05&to=2026-08-05
-    Note over Browser,Handler: handled by the Transactions List flow above
-```
-
-### Sequence Diagram: Spending Export
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as action/money web handler
-    participant DB
-
-    Browser->>Handler: GET /web/money/export<br/>(no params on first visit)
-    Handler->>Handler: from, to default to<br/>[start of current month, today] when absent
-    Handler->>DB: GetSpendingByCategory(userID, from, to, depth=1)
-    DB-->>Handler: []SpendingByCategory{category, total_eur, count}
-    Handler->>Handler: incl[], amt[] params absent on first visit →<br/>every category defaults to included,<br/>amt defaults to its real total_eur
-    Handler-->>Browser: 200 HTML: filter form (from/to)<br/>+ one row per category (checkbox, real total, count, editable amount)<br/>+ running total + "Update" / "Export CSV" buttons
-
-    Browser->>Handler: uncheck a category, edit an amount,<br/>click "Update"<br/>(GET /web/money/export?from&to&incl[cat]=on&amt[cat]=value ...)
-    Handler->>DB: GetSpendingByCategory(userID, from, to, depth=1)
-    DB-->>Handler: []SpendingByCategory (real totals, for the Count column<br/>and to list any category not yet represented in incl/amt)
-    Handler->>Handler: for each category: included = incl[category] present,<br/>amount = amt[category] if present else real total_eur<br/>running total = sum(amount) over included categories
-    Handler-->>Browser: 200 HTML: same page,<br/>reflecting the submitted selections/overrides
-
-    Browser->>Handler: click "Export CSV"<br/>(GET /web/money/export/download?from&to&incl[cat]=on&amt[cat]=value ...)
-    Handler->>DB: GetSpendingByCategory(userID, from, to, depth=1)
-    DB-->>Handler: []SpendingByCategory
-    Handler->>Handler: filter to included categories,<br/>amount = amt[category] (falls back to real total_eur if absent)
-    Handler-->>Browser: 200 text/csv, Content-Disposition: attachment<br/>rows: Category, Amount (EUR), Count
 ```
 
 ## Database Schema
@@ -515,7 +285,7 @@ Income minus expenses for a period in one aggregation query; transfer transactio
 **Auth**: `WebMiddleware` session cookie (see `auth-spec.md`), same as every other `/web/*` dashboard
 
 Read-only overview built on the shared `action/webui` design system (see `webui-spec.md`):
-- Stat tiles: last sync date (`GetMoneySummary.LastSyncedAt`), current balance, total income (all time), net for last calendar month, average monthly savings, and projected balance 3 months / 6 months / 1 year out (see the "Web Dashboard" sequence diagram and Best Practices above for how each is derived)
+- Stat tiles: last sync date (`GetMoneySummary.LastSyncedAt`), current balance, total income (all time), net for last calendar month, average monthly savings, and projected balance 3 months / 6 months / 1 year out
 - A financial achievement tile grid (`money_saving`/`money_spend` types only) via `achievements.BuildAchievementTiles` + `webui.RenderAchievementTiles` (see `achievements-spec.md`), placed directly below the stat tiles — omitted entirely when the user has no money achievements
 - A balance trend combo chart (`webui.RenderComboChart`, see `webui-spec.md`) plotting actual balance 12/9/6/3 months ago through the current balance to a 3/6/9/12-month projection, as one series drawn as both a bar and an overlaid line
 - A table of top-level categories sorted by average monthly spend descending, columns: Category, Avg monthly spend, Total (all time), Current month (spend from the 1st of this calendar month to now), Prev month (spend for the whole previous calendar month) — each row links to `/web/money/transactions?category=:category`
@@ -543,7 +313,7 @@ A GET `<form>` at the top of the page (category text input, from/to date inputs,
 **Route**: `GET /web/money/calendar`
 **Auth**: same `WebMiddleware` session cookie
 
-One or more month-grid calendars (weeks as rows, Mon–Sun as columns) stacked on one page in descending order — most recent month at the top, oldest at the bottom — built from a single `GetDailyTransactionSummary` call over the requested range and split by calendar month — one `webui.RenderCalendar` call per month (see `webui-spec.md`; that component itself only ever renders one month, with no per-grid Prev/Next of its own on this page). Each day cell shows one combined line, the day's total spend then transaction count in parentheses (EUR, expense-only — see Best Practices), e.g. `€42.10 (3)` — no separate count line, no "transactions" wording. A day with `Count > 0` links to `/web/money/transactions?from=YYYY-MM-DD&to=YYYY-MM-DD` (both set to that day), a day with no transactions is not a link.
+One or more month-grid calendars (weeks as rows, Mon–Sun as columns) stacked on one page in descending order — most recent month at the top, oldest at the bottom — built from a single `GetDailyTransactionSummary` call over the requested range and split by calendar month — one `webui.RenderCalendar` call per month (see `webui-spec.md`; that component itself only ever renders one month, with no per-grid Prev/Next of its own on this page). Each day cell shows one combined line, the day's total spend then transaction count in parentheses (EUR, expense-only), e.g. `€42.10 (3)` — no separate count line, no "transactions" wording. A day with `Count > 0` links to `/web/money/transactions?from=YYYY-MM-DD&to=YYYY-MM-DD` (both set to that day), a day with no transactions is not a link.
 - `?from=2026-06-01&to=2026-08-22` selects the range; both default to `[today - 3 calendar months, today]` when either is absent — the common case is "what's been going on lately," not a single month
 - A GET `<form>` (from/to date inputs, "Apply" button, "Clear" as an outline-styled link-button next to Apply — "Clear" returns to the 3-month default) lets the user widen or narrow the range directly in the UI, same convention as the Transactions List filter form
 - A single Prev/Next control at the top of the page — not repeated per month grid — shifts both `from` and `to` back/forward by one calendar month. Prev is never disabled (browsing further into the past is always valid); Next is hidden once the range already reaches the current month, since shifting further would only move into the future
@@ -605,10 +375,62 @@ Simple HTML page for uploading bank CSV exports. Not exposed via MCP — intende
 - **Default User ID**: 1 (DEFAULT_USER_ID constant)
 - **Display Timezone**: Asia/Nicosia (for day boundaries in analytics)
 - **Database Timezone**: UTC (all timestamps stored in UTC)
-- **Transaction Types**: expense, income, transfer
 - **Default Query Limit**: 50
 - **Max Query Limit**: 200
 - **Category Depth Default**: 1 (top-level grouping)
 - **Web Money Transactions List Page Size**: 100 (`GET /web/money/transactions`, distinct from the MCP `get_transactions` default limit of 50)
 - **Spending Export Default Range**: current calendar month (`[start of current month, today]`) when `from`/`to` are absent
 - **Spending Export Category Depth**: 1 (top-level grouping, same as the dashboard's category table)
+
+## E2E Tests
+
+In `tests/money_add_transactions_idempotency_test.go`:
+
+- `TestAddTransactions_*`: idempotency, skips duplicate key; idempotency, same key different account does not conflict; idempotency, nil keys do not conflict
+
+In `tests/money_add_transactions_test.go`:
+
+- `TestAddTransactions_*`: success; single income; with note; validation error, invalid type; validation error, zero amount; validation error, bad currency; multi currency
+
+In `tests/money_analytics_test.go`:
+
+- `TestGetSpendingByCategory_*`: depth 1; depth 2; empty period
+- `TestGetTopMerchants_*`: success; limit respected
+- `TestComparePeriods_*`: success; new category in period B
+- `TestGetBalance_*`: success; only expenses; empty period
+
+In `tests/money_dashboard_web_test.go`:
+
+- `TestMoneyDashboard_*`: category table sorted by avg monthly spend desc, with drilldown links; category table shows current and prev month columns; shows balance trend as combo chart; empty state, no transactions yet; last sync uses created at, not backdated transacted at; links to transactions calendar and import; balance trend chart, past actual future projected
+- `TestTransactionsList_*`: no filters, most recent first; filter by category, prefix match; filter by date range, display timezone day bounds; filter by date range, from and to are independent; pagination; filter form prefilled from query params
+- `TestCalendar_*`: default range, last 3 calendar months; custom from to, splits into one grid per month, newest first; day with transactions, links but empty day does not; cell shows combined amount and count, no transactions word; spend is expense only, not net; single page level prev next, not one per month; leading trailing days from adjacent month, show no stats; next hidden when range reaches current month, shown otherwise; filter form clear is outline button next to apply
+
+In `tests/money_edit_delete_test.go`:
+
+- `TestEditTransactions_*`: category; multiple fields; bulk; not found; partial not owned
+- `TestDeleteTransaction_*`: success; not found; other user isolation
+
+In `tests/money_export_web_test.go`:
+
+- `TestExportPreview_*`: default range, current calendar month; custom range, all categories included by default, real totals and count; excluded category, drops out of running total; override amount, reflected in input and running total
+- `TestExportDownload_*`: no selection, all categories at real totals; excluded category, absent from CSV; overridden amount, used instead of real total; category with comma, quoted per RFC 4180
+
+In `tests/money_get_transactions_test.go`:
+
+- `TestGetTransactions_*`: no filters; filter by type; filter by category; filter by date range; filter by merchant; limit and offset
+
+In `tests/money_import_test.go`:
+
+- `TestImport_*`: GET, renders form; POST, revolut, success; POST, revolut, expense income split; POST, revolut, merchant recognized; POST, revolut, category inferred; POST, revolut, original description preserved; POST, bank of cyprus, success; POST, bank of cyprus, debit is expense; POST, bank of cyprus, wolt recognized; POST, unknown account; POST, empty CSV; POST, missing account field; POST, revolut, reimport skips duplicates; POST, revolut, reimport inserts only new rows; POST, bank of cyprus, reimport skips duplicates; POST, bank of cyprus, missing reference never dedups
+
+## Changelog
+
+- **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; Configuration narrowed (enum list dropped); added E2E Tests; added Changelog (Architecture Diagrams, Configuration, E2E Tests, Changelog)
+- **29-09-26** — category table's last-month column split into current and previous month (Web UI)
+- **26-09-26** — goals references renamed to achievements (Overview, Web UI)
+- **06-09-26** — balance trend shown as a combo chart (Web UI)
+- **02-09-26** — budgets (`budgets` table, `set_budget`, `get_budget_progress`) removed in favour of goals; dashboard embeds money goal tiles (Overview, Architecture Diagrams, Database Schema, Go Code Structure, MCP Tools, Web UI, Configuration)
+- **29-08-26** — added the spending export screen (Overview, Web UI, Configuration)
+- **22-08-26** — added the read-only web dashboard, transactions list and transaction calendar (Overview, Go Code Structure, Web UI, Configuration)
+- **19-08-26** — MCP tool sections cut down to short descriptions (MCP Tools)
+- **21-04-26** — initial version

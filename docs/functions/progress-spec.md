@@ -4,53 +4,6 @@
 
 System for tracking progress across life areas, projects, and goals with periodic reflection and statistics. Supports different progress types (mood, habit progress, project progress, promise state), enables daily/weekly reflections, and provides detailed statistics on trends and completion rates. Activities can represent habits (daily recurring), projects (time-bound with completion), or maintenance goals (ongoing without completion). Each activity also carries a set of **steps** — concrete, short-horizon next-actions (days to a couple weeks out) that were previously scattered informally in note text or activity descriptions. A `repeatable` step is **executed** rather than closed: a progress point can mark one repeatable step as done (`executed_step_id`), the step stays active, and its history (last done, times done in the past 30 days) shows in chat and on the drill-down, so the monthly review can find repeatable steps not done for a month.
 
-## Best Practices Applied
-
-- **Multi-user Support**: user_id extracted from JWT/session context on every table, not passed explicitly
-- **Bounded Value Scale**: every progress point is a single int from -2 to +2, interpreted differently per progress_type (mood/habit_progress/project_progress/promise_state)
-- **Natural Language Mapping**: `get_progress_type_examples` is the canonical source of word/emoji → value mappings, used by the AI to parse free-form user responses instead of hardcoded keyword lists
-- **Flexible Activity Shapes**: frequency_days plus nullable ended_at let the same table represent daily habits, weekly check-ins, and time-bound projects
-- **Optional Life-area Categorization**: life_part_ids is an array (an activity can belong to zero or more life parts); life parts themselves are seeded via repository/script, not exposed as an MCP tool
-- **Multi-variant Search**: `search_progress_notes` follows the same 1-5 variant + match_count ranking pattern as `resolve_food_id_by_name` and `search_exercises`
-- **UTC Timezone**: all timestamps in UTC
-- **Browse view reuses the shared design system**: `/web/progress/browse` is built entirely from `action/webui` components (table, stat tiles, line chart, detail view — see `webui-spec.md`); it owns no CSS/JS of its own and adds no database tables
-- **Screenshot dashboard stays untouched**: `dashboard_web.go` (`GET /web/progress`) keeps its separate fixed-viewport, black-and-white, top-5-only implementation; the browse view is new, additional code, not a replacement
-- **Filter extended, not replaced**: `ActivityFilter` gains new fields (`FutureOnly`, `Limit`, `Offset`) instead of new query methods — `applyActivityFilter` grows one more clause per field instead of a new method per query shape, and `LIMIT`/`OFFSET` are one more clause too
-- **Every browse list and the drill-down history are paginated**: fixed page size, `?page=N` query param (1-indexed, defaults to 1); each list handler calls a `Count*` repository method alongside the paginated `List*` call to build `webui.PaginationData` (see `webui-spec.md`)
-- **Browse view embeds its own achievement tiles, built elsewhere**: `GET /web/progress/browse` shows an `activity_occurrence_count`/`activity_streak_count` tile grid above the activities table, via `achievements.BuildAchievementTiles(ctx, db, userID, now, types)` + `webui.RenderAchievementTiles` (see `achievements-spec.md`) — `action/progress` owns no achievement logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no activity achievements (empty `EmptyMessage`, see `webui-spec.md`)
-- **Description shown, not just stored**: `Activity.Description` already rendered on the screenshot dashboard (`dashboard_web.go`'s `activity-desc` div) but was write-only on the browse view; the browse list's table now has a plain-text "Description" column (`webui.TableRow.Cells`, auto-escaped, no markdown rendering) and the drill-down detail view shows it as a paragraph under the title via `webui.DetailViewData.Description`, reusing the same `renderBoldMarkdown` helper the screenshot dashboard uses (see `webui-spec.md`)
-- **Active list is grouped by progress_type within one table, not four separate tables**: `GET /web/progress/browse` (active only) renders a single, unpaginated `webui.TableData` covering all active activities, in fixed group order — Habit, Promise, Project, Mood — via `ActivityFilter.ProgressType` (empty = no filter, existing callers unaffected) added to the shared `applyActivityFilter`. Each group is introduced by one `webui.TableRow{Heading: <type name>}` row (see `webui-spec.md`) followed by that group's activity rows, all inside the same `<table>`, instead of a per-type `<h3>` + separate `RenderTable` call — separate `<table>` elements each auto-size their own column widths, so the four-section layout used to visibly jump between sections; one table keeps column widths consistent across the whole list. A group with zero active activities still renders its heading row with no rows under it, so the four-group layout stays predictable. Since the whole table is already grouped by type, the "Type" column is dropped (`buildActivityTable`'s Type/`progressTypeLabel` column is only used by the still-combined finished/future tables). `GET /web/progress/browse/finished` and `/future` are untouched by this — single combined table across all types, same pagination as before — splitting was judged not worth the complexity for those lower-traffic views
-- **Progress point correction mirrors activity correction**: `edit_progress_point` follows the same partial-update pattern as `edit_activity` — pointer fields, at least one required, unspecified fields keep their current value — scoped to the point's owning activity/user the same way `create_progress_point` already verifies ownership before writing
-- **`progress_type` is just another editable field**: `edit_activity` gains `progress_type` alongside its existing pointer fields, same partial-update pattern (omit to keep current). No new remap mechanism — if old points need new values to match the new type's semantics, the AI calls the existing `edit_progress_point` tool per point, same as any other correction
-- **`status` is the explicit source of truth for lifecycle state**: activities gain a `status` column (`active|paused|finished|dropped`) instead of inferring state purely from `started_at`/`ended_at`. `ended_at` keeps its existing meaning (set once, timestamp of completion) and is only set together with `status` moving to `finished` or `dropped` — it is never set for `paused`. `status` and `deferred_until` are set the same way `progress_type` is: as two more pointer fields on `edit_activity`, no dedicated pause/resume/drop tool — reuses the existing partial-update pattern instead of inventing a new mechanism
-- **`delete_activity` is a new, separate hard delete — `status: "dropped"` is not a delete**: the two are easy to conflate now that both mean "this didn't work out", so they're kept clearly distinct. `status="dropped"`/`"finished"` (via `edit_activity`) keep the row and its `activity_progress` history, just marked over. `delete_activity` is the new tool that actually removes the row (progress points cascade via the existing `fk_progress_activity ON DELETE CASCADE`); it's blocked with a foreign-key error if an `achievements` row still references the activity (`achievements.activity_id` has no `ON DELETE` clause), since silently orphaning or cascading into an achievement would be a worse surprise than a clear error asking to deal with the achievement first
-- **`finish_activity` is removed, not extended**: completion was a dedicated tool only because `edit_activity` couldn't touch `ended_at`/status before this change — now that `edit_activity` has both `status` and `ended_at` as pointer fields, a separate finish tool is a redundant second way to do the same write. Finishing/dropping an activity is `edit_activity(status: "finished" | "dropped", ended_at: <time>)`; the repository's dedicated `FinishActivity` method goes too, folded into the existing `UpdateActivity` path
-- **`ActiveOnly`/`PausedOnly` booleans replaced by `Statuses []ActivityStatus`, not joined by a third bool**: a one-bool-per-status-value field doesn't scale (it was already awkward with two, a third for `PausedOnly` would be worse) and the whole point of adding the `status` column is that it's a real enum now, not a fact worth re-encoding as more booleans. `applyActivityFilter` drops its `ActiveOnly`/`PausedOnly`/default switch entirely: `started_at` gets one unconditional clause (`> NOW()` if `FutureOnly`, else `<= NOW()`), and `status IN (...)` is applied whenever `len(Statuses) > 0` — no branching left except that one `FutureOnly` if/else. Every call site now states its status filter explicitly instead of relying on a bool's implied meaning: active lists pass `Statuses: []ActivityStatus{ActivityStatusActive}`, the finished list passes `Statuses: []ActivityStatus{ActivityStatusFinished, ActivityStatusDropped}` (the old default branch, now explicit), paused passes `Statuses: []ActivityStatus{ActivityStatusPaused}`, and future passes `FutureOnly: true` together with `Statuses: []ActivityStatus{ActivityStatusActive}` to match the old `FutureOnly` behavior (a future activity that's already paused/dropped doesn't belong in the future list either)
-- **`ListActivities`'s `ORDER BY` follows what kind of status was asked for, not a specific bool**: the old switch (`FutureOnly` → `started_at ASC`, `ActiveOnly` → check-in urgency, default → `ended_at DESC`) becomes: `FutureOnly` → `started_at ASC` (unchanged); else if `Statuses` contains `active` or `paused` (an ongoing state) → the same check-in-urgency ordering; else (`finished`/`dropped`, a terminal state) → `ended_at DESC` (unchanged). A mixed `Statuses` list spanning both groups isn't a call any current caller makes, so it's not a case the ordering needs to handle
-- **Paused activities get their own page, not a section bolted onto Active**: `dashboard_web.go` needs no code change at all — since the active-list callers now filter `Statuses: [active]` explicitly, paused activities simply stop appearing there without dashboard code ever mentioning `paused`. `browse_web.go` gets a new `GET /web/progress/browse/paused` route, a fourth entry in `browseCrossLinks` alongside Active/Finished/Future, built with the same `renderActivityList` helper as Finished/Future (paginated, all `progress_type`s combined in one table) — not a fifth section appended to the active page's four `progress_type` tables. Its one differing column is "Deferred until" instead of Finished/Starts. `get_activity_list` returns a second output list, `paused_activities`, populated alongside `activities` when `active_only=true` — no new input parameter, so existing callers are unaffected
-- **Schema change follows the `last_point_at` precedent**: `status`/`deferred_until` are added to the `CREATE TABLE` block for fresh installs only, same as `last_point_at` was — no `ALTER TABLE` in this file. `CREATE TABLE IF NOT EXISTS` is a no-op against the already-deployed `activities` table, so on the live DB the column is added and backfilled (`UPDATE activities SET status = 'finished' WHERE ended_at IS NOT NULL`) by hand, once, out of band, exactly like `last_point_at` was — not through an automated migration statement that would otherwise re-run (and risk re-clobbering data) on every restart. No dedicated `status` index either — the table is small enough (personal, single-user) that one isn't worth the added migration surface
-- **Web point creation shares validation with the MCP tool, not a fork of it**: `POST /web/progress/browse/{id}/points` (new) and `create_progress_point` both funnel through the same internal validation (value range check, ownership via `GetActivity`, `progress_at` parse-or-default-to-now) before calling the shared `CreateProgress` repository method — one rule set, not two that can drift apart
-- **Logging a point is a standalone page, not a form bolted onto the drill-down**: `GET /web/progress/browse/{id}/points/new` is its own page, reached via a "+ Add" button at the top of the drill-down (`GET /web/progress/browse/{id}`) — it isn't embedded inline there, so it doesn't compete for space with the chart/history/stats and its header can clearly name which activity the point is for. The form has no `webui` equivalent to build on (`action/webui` has no form components at all), so it's a local `html/template` constant, matching the existing `achievementsRefreshFormSrc` (`action/achievements/dashboard_web.go`) / `importFormContentSrc` (`action/money/import_web.go`) convention — success redirects to `GET /web/progress/browse/{id}` (`RefreshWebHandler`-style write-then-redirect), a validation or DB failure re-renders the same standalone page in place with an inline error message instead (`import_web.go`-style)
-- **Value picked via a radio group with one fixed emoji-per-value metaphor per `progress_type`, not the full `get_progress_type_examples` set**: the MCP reflection flow benefits from offering several metaphors (weather/light/colors for mood, etc.) so the AI can pick whichever resonates, but a web form needs exactly one label per value, hardcoded per type in the web handler — mood uses "mood as weather" (☀️+2 ⛅+1 ☁️0 🌧️-1 ⛈️-2), habit_progress uses "habit consistency" (💪+2 👍+1 🤔0 😔-1 ❌-2), project_progress uses "project momentum" (🚀+2 ➡️+1 ⏸️0 ↩️-1 🔄-2), promise_state uses "promise awareness" with only 3 options since it has no ±2 anywhere in the domain (✅+1 💭0 🤷-1). No new domain model or MCP-facing change — `get_progress_type_examples`'s full multi-metaphor output is untouched, this is presentation-only data local to the web handler
-- **Steps are owned by an activity, not the progress-point system**: `steps` gets its own table (`activity_id` FK, `ON DELETE CASCADE` same as `activity_progress`) rather than being folded into `activity_progress` — a step is a next-action, not a logged reflection value, and it has its own lifecycle (`active`/`finished`) independent of when/whether a point gets logged
-- **Step ↔ progress-point links are informational, not ownership**: `created_by_progress_point_id`/`completed_by_progress_point_id` are `ON DELETE SET NULL` (not `CASCADE`) against `activity_progress` — deleting the point that spawned or closed a step (via `delete_progress_point`) shouldn't silently delete or reopen the step, it should just drop the audit trail back to that point
-- **`one_time` is closed by doing it, `repeatable` is executed by doing it**: both types share the `status` enum (`active`/`finished`), but ticking a step when logging a point does different things. A ticked `one_time` step is closed (`status=finished`, `closed_at`, `completed_by_progress_point_id`). A ticked `repeatable` step is recorded as the point's `executed_step_id` and **stays `active`**. A `repeatable` step is closed only on purpose (`edit_step status=finished`, e.g. at the monthly review) or removed with `delete_step`. No auto-recurrence or scheduling
-- **Execution is a column on the progress point, not a new table**: `activity_progress.executed_step_id` (nullable FK to `steps`, `ON DELETE SET NULL`). The execution time is the point's `progress_at`, so fixing a point's date via `edit_progress_point` moves the execution too, and `delete_progress_point` removes it. Deleting a step only nulls the link — the progress point itself is kept
-- **At most one repeatable step per progress point**: the single column enforces it at the schema level. The process rule (in `activity-rituals.md` §2.9) is to keep one repeatable step per activity where possible, and if there are several, tick them one at a time in different points
-- **Execution stats are computed when listing steps, not stored**: `ListSteps`/`ListStepsWithActivity` add `last_executed_at` (`MAX(progress_at)`) and `executions_last_30_days` (count with `progress_at >= now - 30 days`) via correlated subqueries over `activity_progress WHERE executed_step_id = steps.id` (the 30-day cutoff is a bound parameter). No counters to keep in sync. For `one_time` steps they are always `NULL`/`0`. The 30-day window is hardcoded to match the monthly review, not a parameter
-- **The monthly review needs no new filter**: `get_step_list` already returns `type` for every active step of active activities; with `last_executed_at` added, "repeatable steps not done in the past month" is filtered by the agent itself
-- **Ticking in chat reuses `create_progress_point`, not a new tool**: optional `executed_step_id` input. The step must be the user's own `repeatable`, `active` step of the **same activity** as the point, otherwise the call fails before anything is written. The web form goes through the same shared validation. No `edit_progress_point` input for it: a tick forgotten at creation is fixed by deleting and re-logging the point
-- **Past closures of repeatable steps are not migrated**: repeatable steps closed earlier just to mark them done (e.g. step 16 on activity 67) are reopened by hand, once, out of band (`UPDATE steps SET status='active', closed_at=NULL, completed_by_progress_point_id=NULL WHERE id=...`); their past closure is not turned into an execution
-- **No `dropped` status for steps — abandoning one is just `delete_step`**: unlike activities, a step's history isn't worth keeping once it's no longer relevant — the things worth auditing are the activity itself and its progress points/notes, not an abandoned one-line next-action. `StepStatus` has only `active`/`finished`; a step nobody wants anymore is hard-deleted (`delete_step`), not marked over
-- **New steps queued via `;`-separated text fields, mirroring the multi-variant pattern used elsewhere** (`resolve_food_id_by_name`, `search_progress_notes`): the progress-point form's two text inputs (one-time, repeatable) each split on `;` server-side into individual `CreateStep` calls tied to the new point's ID — no new batch-input domain type, just string splitting before existing single-item creation
-- **Step creation/closing on the web form shares the write path with the point itself, not a separate request**: `POST /web/progress/browse/{id}/points` creates the `ActivityPoint` first, then in the same handler call closes each checked `one_time` step (`UpdateStep` with `status=finished`, `closed_at=now`, `completed_by_progress_point_id=<new point id>`) and creates each new step from the `;`-split text fields (`CreateStep` with `created_by_progress_point_id=<new point id>`) — one form submission, one redirect, matching the "single 'log progress' submission" requirement instead of a separate step-editing round trip
-- **No `started_at` on steps — visibility is derived from the activity's status, not a step-level date**: a step is only shown in any listing (browse compact list, drill-down full list, progress-point form checkboxes) while its owning activity's `status = active`; a step belonging to a paused/finished/dropped activity is simply not rendered anywhere, with no separate flag or date field on `steps` itself needed to achieve that
-- **`edit_step` also takes `completed_by_progress_point_id` as a pointer field**, alongside name/status — same partial-update pattern as the rest of the subdomain. This lets the AI link a step's closure to a progress point it just created in the same chat turn (not only the web form's same-POST flow)
-- **`get_step_list` reuses the same visibility rule as the web display listings, not a second mechanism**: it only returns steps belonging to an activity with `status = active` — a step whose activity is paused/finished/dropped is invisible everywhere, chat included, not just on the web pages. Backed by a new `ListStepsWithActivity` repository method that joins `steps` to `activities` (filtering `activities.status = 'active'`, also giving the activity's name for context), following the same enrichment pattern `SearchProgressNotes`/`ActivityPointWithActivity` already established in this subdomain
-- **`ListLifeParts` is finally implemented, read-only**: `life_parts` has had a table and an `Activity.LifePartIDs` column since this subdomain's first version, but no repository method ever read it — the browse view now calls `ListLifeParts(ctx, userID)` (plain `SELECT ... ORDER BY name`, no filter beyond `user_id`) to resolve each activity's `LifePartIDs` into names/descriptions for the tag display below. Still no write path (`CreateLifePart` stays undocumented/unbuilt) — rows are inserted by hand, same as before; this only adds the read side, shared by the web browse view and the new `list_life_parts` MCP tool
-- **`life_part_ids` was previously write-only over MCP**: `create_activity`/`edit_activity` have always accepted `life_part_ids`, but nothing let the AI resolve an ID to a name or read back what's already set — it could write an opaque ID blind and never see it again. `list_life_parts` (new, read-only, backed by the same `ListLifeParts`) and `life_part_ids` added to `get_activity_list`'s per-activity output close that loop; `create_activity`/`edit_activity`'s input shape is unchanged
-- **Life parts shown in a dedicated "Life parts" column right after Name, with a hover tooltip, not a second grouping axis**: activities stay grouped exactly as they are today (`activeSectionOrder`'s four progress_type groups, as heading rows within the main browse page's one table; combined single tables on finished/future/paused) — life_part membership is surfaced *within* each existing table instead of introducing a life_part-grouped view. `buildActivityTable` sets `webui.TableData.TagsColumnLabel: "Life parts"` on every activity table (active/paused/finished/future) — `webui.RenderTable` always inserts the tags column right after the first `Columns` entry (Name), before Description/Frequency/etc (see `webui-spec.md`); each row whose activity has a non-empty `LifePartIDs` gets one `webui.TableRowTag` per ID (`Label` = the life part's name, `Tooltip` = its description) in that row's `Tags` field, rendered in its own cell in that column; an activity with no life parts gets an empty cell there. Built once per handler call: each of `BrowseWebHandler`/`renderActivityList` calls `ListLifeParts` once, builds an `id → LifePart` map, and passes it to `buildActivityTable`, which does the `LifePartIDs` → `[]TableRowTag` lookup for every row — one query per page render, not one per activity. Each tag renders as a Pico CSS contrast button (`role="button" class="outline contrast webui-tag"`, see `webui-spec.md`) — no custom chip CSS of our own. The tooltip itself renders via Pico's `data-tooltip` attribute, not the native HTML `title` attribute — `title` proved unreliable in practice (no tooltip on hover in Chrome/Mac)
-
 ## Architecture Diagrams
 
 ### Entity Relation Diagram
@@ -150,110 +103,6 @@ graph TB
     style User fill:#e1f5ff
     style MCP fill:#ffe1e1
     style DB fill:#e1ffe1
-```
-
-### Sequence Diagram: Reflection Check-in
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant DB
-
-    User->>MCP: get_progress_type_examples()
-    MCP-->>User: natural language mappings per progress_type
-
-    User->>MCP: get_activity_list()
-    MCP->>DB: SELECT * FROM activities<br/>WHERE user_id=? AND ended_at IS NULL<br/>ORDER BY frequency_days ASC, name
-    DB-->>MCP: active activities
-    MCP-->>User: activities
-
-    loop For each activity
-        User->>MCP: get_activity_stats(activity_id)
-        MCP->>DB: last 3 points + trend aggregates<br/>(overall / 30d / 7d)
-        DB-->>MCP: ActivityStats
-        MCP-->>User: last_3_points, trend_overall, trend_last_month, trend_last_week
-    end
-
-    User->>MCP: create_progress_point(activity_id, value, note)
-    MCP->>DB: INSERT INTO activity_progress (...)
-    DB-->>MCP: point id
-    MCP-->>User: created progress point
-```
-
-### Sequence Diagram: Browse View Drill-down
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as action/progress browse handlers
-    participant DB
-    participant Webui as action/webui
-
-    Browser->>Handler: GET /web/progress/browse
-    Handler->>DB: achievements.BuildAchievementTiles(userID, now, types=[activity_occurrence_count, activity_streak_count])<br/>(see achievements-spec.md)
-    DB-->>Handler: []webui.AchievementTileData (may be empty)
-    loop For each progress_type in [Habit, Promise, Project, Mood]
-        Handler->>DB: ListActivities(Statuses: [active], ProgressType: type)<br/>(no Limit/Offset — unpaginated)
-        DB-->>Handler: all active activities of that type (may be empty)
-        Handler->>DB: ListSteps(ActivityID: each id, Statuses: [active])
-        DB-->>Handler: open steps per activity (may be empty)
-        Handler->>Handler: append TableRow{Heading: type name},<br/>then that group's activity rows, to one shared Rows slice
-    end
-    Handler->>Webui: RenderTable(one TableData: all groups' Rows,<br/>no Type column, no Pagination,<br/>open steps shown compact under each activity name)
-    Webui-->>Browser: HTML: achievement tiles, then one table with 4 heading rows in order,<br/>rows link to /web/progress/browse/{id}
-
-    Browser->>Handler: GET /web/progress/browse/paused?page=1
-    Handler->>DB: CountActivities(Statuses: [paused]) + ListActivities(Statuses: [paused], Limit, Offset)
-    DB-->>Handler: total count + one page of paused activities (all types combined)
-    Handler-->>Browser: HTML paginated table, "Deferred until" column
-
-    Browser->>Handler: GET /web/progress/browse/finished?page=1
-    Handler->>DB: CountActivities(Statuses: [finished, dropped]) + ListActivities(Statuses: [finished, dropped], Limit, Offset)
-    DB-->>Handler: total count + one page of finished/dropped activities
-    Handler-->>Browser: HTML paginated table
-
-    Browser->>Handler: GET /web/progress/browse/future?page=1
-    Handler->>DB: CountActivities(FutureOnly: true, Statuses: [active]) + ListActivities(FutureOnly: true, Statuses: [active], Limit, Offset)
-    DB-->>Handler: total count + one page of not-yet-started activities
-    Handler-->>Browser: HTML paginated table
-
-    Browser->>Handler: GET /web/progress/browse/{id}?page=1
-    Handler->>DB: GetActivity(id)
-    DB-->>Handler: activity (including description)
-    Handler->>DB: CountProgress(ActivityID: id) + ListProgress(ActivityID: id, Limit, Offset)
-    DB-->>Handler: total count + one page of progress point history (value, note, progress_at)
-    alt activity.Status == active
-        Handler->>DB: ListSteps(ActivityID: id, Statuses: [active])
-        DB-->>Handler: open steps for this activity (may be empty)
-    end
-    Handler->>Webui: RenderLineChart(full value-over-time series, unpaginated) + RenderTable(history page, Pagination) + RenderDetailView(Description: activity.Description, open steps shown in full only if active)
-    Webui-->>Browser: HTML detail page with back link, description paragraph, open steps (if active), prev/next,<br/>and a "+ Add" button
-
-    Browser->>Handler: GET /web/progress/browse/{id}/points/new
-    Handler->>DB: GetActivity(id) (ownership check)
-    alt activity.Status == active
-        Handler->>DB: ListSteps(ActivityID: id, Statuses: [active])
-        DB-->>Handler: open steps for this activity (may be empty)
-    end
-    Handler-->>Browser: standalone page: activity name + progress_type,<br/>radio-group form (emoji set picked by activity.progress_type),<br/>one checkbox per open one_time step, one radio per open repeatable step (+ "none"),<br/>plus new-step text fields (one-time / repeatable)
-
-    Browser->>Handler: POST /web/progress/browse/{id}/points<br/>(value, note, hours_left, progress_at,<br/>close_step_ids[], executed_step_id, new_one_time_steps, new_repeatable_steps — form fields)
-    Handler->>DB: GetActivity(id) (ownership check)
-    Handler->>Handler: validate value range + parse/default progress_at<br/>(same rules as create_progress_point,<br/>incl. executed_step_id: own, repeatable, active, same activity)
-    alt valid
-        Handler->>DB: CreateProgress(..., executed_step_id)
-        DB-->>Handler: point id
-        loop for each checked close_step_id
-            Handler->>DB: UpdateStep(status: finished, closed_at: now,<br/>completed_by_progress_point_id: point id)
-        end
-        loop for each semicolon-split entry in new_one_time_steps / new_repeatable_steps
-            Handler->>DB: CreateStep(type: one_time/repeatable,<br/>created_by_progress_point_id: point id)
-        end
-        Handler-->>Browser: 302 redirect to GET /web/progress/browse/{id}
-    else invalid / DB error
-        Handler-->>Browser: re-render the standalone points/new page in place with inline error message
-    end
 ```
 
 ## Database Schema
@@ -626,7 +475,7 @@ Lists steps, each with its activity's name, optionally filtered to one activity_
 Renders a read-only dashboard of all activities with recent progress, staleness indicators, and trend summaries. Protected by the same auth middleware as other `/web/*` routes. Purpose-built fixed-viewport/B&W/top-5-only screenshot page (`dashboard_web.go`) — untouched by the browse view below.
 
 ### GET /web/progress/browse
-New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity achievement tile grid above the lists (see Best Practices), then **one unpaginated table** covering all active activities, grouped into 4 sections by `progress_type` via heading rows, in fixed order — Habit, Promise, Project, Mood — columns Name, Life parts, Description, Frequency, Last update (no Type column, redundant with the heading rows); a type with no active activities still renders its heading row with no rows under it. Each (active) activity's open steps (`status=active`) are shown compact under its name within the Name/Description cell — this section only lists active activities to begin with, so steps naturally never show for a paused/finished/dropped activity. Each row's "Life parts" cell shows one tag per `LifePartIDs` entry (name + hover tooltip showing the life part's description — see Best Practices); an activity with no life parts gets an empty cell there. Links to the paused/finished/future lists (`browseCrossLinks`: Active · Finished · Future · Paused) and to each activity's drill-down. Protected by `WebMiddleware` like every other `/web/*` route.
+New free-scrolling, full-color browse page built on the `action/webui` design system. Shows an activity achievement tile grid above the lists, then **one unpaginated table** covering all active activities, grouped into 4 sections by `progress_type` via heading rows, in fixed order — Habit, Promise, Project, Mood — columns Name, Life parts, Description, Frequency, Last update (no Type column, redundant with the heading rows); a type with no active activities still renders its heading row with no rows under it. Each (active) activity's open steps (`status=active`) are shown compact under its name within the Name/Description cell — this section only lists active activities to begin with, so steps naturally never show for a paused/finished/dropped activity. Each row's "Life parts" cell shows one tag per `LifePartIDs` entry (name + hover tooltip showing the life part's description); an activity with no life parts gets an empty cell there. Links to the paused/finished/future lists (`browseCrossLinks`: Active · Finished · Future · Paused) and to each activity's drill-down. Protected by `WebMiddleware` like every other `/web/*` route.
 
 ### GET /web/progress/browse/paused
 Lists activities where `status = 'paused'` (`ListActivities(Statuses: [paused])`), same combined-across-types table shape and pagination as `/finished` and `/future` (via `renderActivityList`), with a "Deferred until" column in place of Finished/Starts, a "Life parts" column (same as the main browse page), and a back link.
@@ -641,7 +490,7 @@ Lists activities where `started_at` is in the future (`ListActivities(FutureOnly
 Drill-down for one activity: a `DetailView` with the activity's description (when set) shown as a paragraph under the title, its open steps shown in full (`ListSteps(ActivityID: id, Statuses: [active])`, only fetched/rendered when the activity itself is `status=active` — a drill-down for a paused/finished/dropped activity shows no steps section; each repeatable step also shows "last DD.MM, N× in 30 days" or "never done" from `LastExecutedAt`/`ExecutionsLast30Days`), stat tiles (trend averages, reusing `GetTrendStats`), a line chart of the **full** value-over-time series (`RenderLineChart`, not paginated — the chart is more useful showing the whole trend), a paginated table of progress points (date, value, note) via `ListProgress(ActivityID: id, Limit, Offset)` + `CountProgress`, newest first, `?page=N` (default 1), and a "+ Add" button at the top linking to `GET /web/progress/browse/{id}/points/new`. Back link returns to wherever the user came from (main/finished/future list).
 
 ### GET /web/progress/browse/{id}/points/new
-Standalone "log a point" page, reached via the drill-down's "+ Add" button — not a form embedded on the drill-down itself. Header names the activity (name + `progress_type`) so it's unambiguous which activity the point is for. Form fields: `value` (radio group, one emoji per value, the set picked by the activity's `progress_type` — see Best Practices), `note` (optional text), `hours_left` (optional number), `progress_at` (optional datetime-local; blank defaults to now, same as the MCP tool), one checkbox per currently-open `one_time` step (checked = close it) and a radio group over currently-open `repeatable` steps plus a "none" option (default), so at most one repeatable step can be marked executed, when the activity is `status=active` (`ListSteps(ActivityID: id, Statuses: [active])`; no step controls rendered for a paused/finished/dropped activity's point form), and two `;`-separated text fields for queuing new steps — one for one-time steps, one for repeatable steps. Posts to `POST /web/progress/browse/{id}/points` below. Back link returns to the drill-down.
+Standalone "log a point" page, reached via the drill-down's "+ Add" button — not a form embedded on the drill-down itself. Header names the activity (name + `progress_type`) so it's unambiguous which activity the point is for. Form fields: `value` (radio group, one emoji per value, the set picked by the activity's `progress_type`), `note` (optional text), `hours_left` (optional number), `progress_at` (optional datetime-local; blank defaults to now, same as the MCP tool), one checkbox per currently-open `one_time` step (checked = close it) and a radio group over currently-open `repeatable` steps plus a "none" option (default), so at most one repeatable step can be marked executed, when the activity is `status=active` (`ListSteps(ActivityID: id, Statuses: [active])`; no step controls rendered for a paused/finished/dropped activity's point form), and two `;`-separated text fields for queuing new steps — one for one-time steps, one for repeatable steps. Posts to `POST /web/progress/browse/{id}/points` below. Back link returns to the drill-down.
 
 ### POST /web/progress/browse/{id}/points
 Logs a progress point for the activity directly from the browser, instead of requiring the MCP tool `create_progress_point`. Runs the same value-range + ownership (`GetActivity`) + `executed_step_id` validation as `create_progress_point` before calling `CreateProgress` (the chosen repeatable step goes into the point's `executed_step_id`; `close_step_ids` accepts only `one_time` steps). On success: closes every checked `one_time` step (`UpdateStep` with `status: finished`, `closed_at: now`, `completed_by_progress_point_id` set to the new point's ID) and creates a step per `;`-split entry in each new-step text field (`CreateStep` with `created_by_progress_point_id` set to the new point's ID), then redirects (302) to `GET /web/progress/browse/{id}` (write-then-redirect, same pattern as `POST /web/achievements/refresh`); on validation or DB failure, re-renders the standalone `points/new` page in place with an inline error message instead of redirecting. Protected by `WebMiddleware` like the rest of `/web/progress/browse/*`.
@@ -899,3 +748,71 @@ Use `search_progress_notes` to pull up past reflections on a topic if the user w
 
 **User wants to fix a mis-logged point:**
 - "That was wrong, I meant -1 not +1" / "delete that entry, I logged it twice" → use `edit_progress_point` / `delete_progress_point` on the point in question (find it via `search_progress_notes` or the last-created point's ID from this session)
+
+## E2E Tests
+
+In `tests/progress_browse_web_test.go`:
+
+- `TestBrowse_*`: lists active activities; excludes finished and future activities; shows activity description; has cross links to finished and future; splits active activities by progress type sections; active section renders empty table when no activities of that type; active list is not paginated; shows life part tag in dedicated column; shows trend stat tiles in detail
+- `TestBrowseFinished_*`: pagination; lists only finished activities
+- `TestBrowseFuture_*`: lists only not yet started activities
+- `TestBrowsePaused_*`: lists only paused activities with deferred until column
+- `TestBrowseDetail_*`: shows history note and chart; shows activity description; unknown or foreign activity, 404s; chart shows full history despite pagination; has add point button linking to standalone page
+- `TestBrowseNewPoint_*`: shows which activity and emoji radios per progress type; unknown or foreign activity, 404s
+- `TestBrowseCreatePoint_*`: logs point and redirects to detail; rejects out of range value; unknown or foreign activity, shows error; accepts backdated progress at
+
+In `tests/progress_dashboard_test.go`:
+
+- `TestProgressDashboard_*`: rendering; content validation
+
+In `tests/progress_search_notes_test.go`:
+
+- `TestSearchProgressNotes_*`: by variants; multi variant ranking; case insensitive; filter by activity; filter by date range; filter by value; no results; empty variants; too many variants; user isolation
+
+In `tests/progress_steps_test.go`:
+
+- `TestCreateStep_*`: success; created by progress point; invalid type; empty name; activity not found
+- `TestEditStep_*`: rename; close sets closed at; reopen clears closed at; links completed by progress point; not found; no fields provided
+- `TestDeleteStep_*`: success; not found; keeps progress point that executed it
+- `TestGetStepList_*`: defaults to active; filter by activity; excludes steps of inactive activity; filter by status finished; execution stats count only last 30 days
+- `TestBrowse_*`: shows open steps compact under active activity
+- `TestBrowseDetail_*`: shows open steps for active activity; hides steps for finished activity; shows repeatable step execution history
+- `TestBrowseNewPoint_*`: shows open step checkboxes and new step fields; shows repeatable steps as radio group
+- `TestBrowseCreatePoint_*`: closes checked steps; queues new steps from semicolon separated fields; executes chosen repeatable step; rejects more than one repeatable step
+- `TestCreateProgressPoint_*`: executes repeatable step which stays active; rejects executing one time step; rejects executing step of another activity; rejects executing finished step
+
+In `tests/progress_test.go`:
+
+- `TestGetActivityList_*`: empty; includes life part ids; with activities; only active; sorted by days until check in
+- `TestListLifeParts_*`: empty; returns seeded rows sorted by name
+- `TestGetProgressTypeExamples`
+- `TestCreateProgressPoint_*`: success; invalid value
+- `TestGetActivityStats`: Test Activity
+- `TestEditActivity_*`: mark finished; mark paused with deferred until; invalid status; update name; update description; clear description; update frequency days; update multiple fields; not found; no fields provided; invalid frequency days; update progress type; invalid progress type
+- `TestDeleteActivity_*`: success; not found; blocked by achievement reference
+- `TestCreateActivity_*`: success; with all fields; invalid progress type; invalid frequency days; empty name; future started at, not in list
+- `TestEditProgressPoint_*`: update value; clear note; update hours left and progress at; not found; no fields provided; invalid value; refreshes last point at
+- `TestDeleteProgressPoint_*`: success; not found; refreshes last point at
+
+## Changelog
+
+- **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; added E2E Tests; added Changelog (Architecture Diagrams, E2E Tests, Changelog)
+- **29-09-26** — `create_step` accepts an optional `created_by_progress_point_id` (Architecture Diagrams, Go Code Structure, MCP Tools)
+- **26-09-26** — executions of repeatable steps are tracked (Overview, Architecture Diagrams, Database Schema, Go Code Structure, MCP Tools, HTTP Handlers)
+- **26-09-26** — goals references renamed to achievements (Go Code Structure, MCP Tools, HTTP Handlers)
+- **22-09-26** — active-list section tables merged into one table with heading rows (HTTP Handlers)
+- **22-09-26** — life part tags moved into their own table column (HTTP Handlers)
+- **21-09-26** — life part tags shown on activity lists; added `list_life_parts` (Architecture Diagrams, Go Code Structure, MCP Tools, HTTP Handlers)
+- **21-09-26** — added Steps: next-action tasks tied to an activity (`steps` table, step MCP tools, step controls on the web) (Overview, Architecture Diagrams, Database Schema, Go Code Structure, MCP Tools, HTTP Handlers)
+- **18-09-26** — added the web form for logging a progress point from the browse view (HTTP Handlers)
+- **17-09-26** — table indexes reworked to match query patterns (Database Schema)
+- **17-09-26** — added activity `status` and `deferred_until`; `finish_activity` replaced by `delete_activity` (Architecture Diagrams, Database Schema, Go Code Structure, MCP Tools, HTTP Handlers, Dialog & Conversation Guidelines)
+- **17-09-26** — `edit_activity` can change `progress_type` (Go Code Structure, MCP Tools)
+- **06-09-26** — added `edit_progress_point` and `delete_progress_point` (Architecture Diagrams, Go Code Structure, MCP Tools, Dialog & Conversation Guidelines)
+- **06-09-26** — activity description shown on the web; active list split by progress type (Go Code Structure, HTTP Handlers)
+- **02-09-26** — browse view embeds activity goal tiles (HTTP Handlers)
+- **22-08-26** — added the paginated web browse view (Go Code Structure, HTTP Handlers)
+- **19-08-26** — restructured to one spec per subdomain; tool sections cut down to short descriptions (Overview, Architecture Diagrams, Database Schema, Go Code Structure, MCP Tools, HTTP Handlers, Dialog & Conversation Guidelines)
+- **21-03-26** — added `create_activity` and `edit_activity` (Overview, Go Code Structure, MCP Tools)
+- **16-10-25** — draft finalized: schema, entities and repository adjusted (Database Schema, Go Code Structure, MCP Tools, Dialog & Conversation Guidelines)
+- **16-10-25** — initial version

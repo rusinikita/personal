@@ -4,15 +4,6 @@
 
 MCP tool that lets the agent proactively send a text message to the user's Telegram chat, outside of an active conversation turn (e.g. reminders, background-task completion notices, questions that need attention between sessions). Outbound-only: the app calls the Telegram Bot API's `sendMessage` endpoint over plain HTTP. There is no inbound bot (no long polling / webhook, no bot commands) — receiving messages from Telegram is a separate, future backlog item.
 
-## Best Practices Applied
-
-- **Env-configured recipient**: bot token and destination chat ID come from env vars (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`), read once at startup like `DATABASE_URL`/`BASE_URL` in `main.go`. No DB table, no per-user chat-ID resolution — this app has a single Telegram recipient.
-- **Gateway wraps external API, not DB**: introduces the first non-DB gateway in `gateways/`, following the existing "Gateway: wrapper around external API or database" convention. Implementation lives in `gateways/telegram/client.go`, separate from the Postgres `DB` implementation in `gateways/db/`.
-- **Library**: uses `gopkg.in/telebot.v3` for the Telegram API client rather than hand-rolled HTTP calls. The bot is constructed without starting its update poller (`bot.Start()` is never called) since this feature is outbound-only — `bot.Send(...)` works standalone.
-- **Context-scoped like DB**: the Telegram client is injected into `context.Context` the same way `DB` is (`gateways.WithTelegram` / `gateways.TelegramFromContext`), so the MCP handler reads it from context rather than a package-level global.
-- **No stored message history**: sent messages are not persisted anywhere; Telegram itself is the record of what was sent.
-- **Minimal surface**: one MCP tool, one gateway method. No retry/queueing — a failed send returns an error to the caller (the agent can retry the tool call itself).
-
 ## Architecture Diagrams
 
 ### Entity Relation Diagram
@@ -42,24 +33,6 @@ graph TB
     style MCP fill:#ffe1e1
     style TG fill:#ffe1e1
     style TGAPI fill:#e1ffe1
-```
-
-### Sequence Diagram: Send Telegram Message
-
-```mermaid
-sequenceDiagram
-    participant Agent
-    participant MCP
-    participant TelegramGateway
-    participant TelegramAPI as Telegram Bot API
-
-    Agent->>MCP: send_telegram_message(text)
-    MCP->>MCP: Validate text is non-empty
-    MCP->>TelegramGateway: SendMessage(ctx, text, "Markdown")
-    TelegramGateway->>TelegramAPI: POST /bot{token}/sendMessage<br/>{chat_id, text, parse_mode: "Markdown"}
-    TelegramAPI-->>TelegramGateway: {ok: true, result: {message_id, ...}}
-    TelegramGateway-->>MCP: messageID
-    MCP-->>Agent: {message_id}
 ```
 
 ## Database Schema
@@ -106,4 +79,14 @@ Sends a text message to the user's configured Telegram chat. Input is just `text
 
 - **`TELEGRAM_BOT_TOKEN`**: bot token from BotFather, required — app fails to start if missing (same pattern as `DATABASE_URL`).
 - **`TELEGRAM_CHAT_ID`**: destination chat ID, required — same fail-fast pattern.
-- **Out of scope**: inbound bot commands, long polling/webhook, multi-recipient support, message history storage. Tracked as a separate future backlog item if needed.
+
+## E2E Tests
+
+In `tests/telegram_send_message_test.go`:
+
+- `TestSendTelegramMessage_*`: success; markdown text; empty text; API error; telegram not configured
+
+## Changelog
+
+- **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; Configuration narrowed to environment variables; added E2E Tests; added Changelog (Architecture Diagrams, Configuration, E2E Tests, Changelog)
+- **20-08-26** — initial version: `send_telegram_message` MCP tool

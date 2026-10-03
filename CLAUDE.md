@@ -47,6 +47,29 @@ make down
 *   **Commits:** Follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification. NEVER add `Co-Authored-By` or any co-authorship lines to commit messages.
 *   **Architecture:** Follow project structure and architecture requirements written in docs/architecture.md
 
+## Common Design Practices
+
+Apply to every subdomain. Feature documents do NOT repeat them — a document only states where it deviates.
+
+**Data**
+- **Multi-user:** every table has `user_id`; every read and write is scoped by it. `user_id` comes from the auth context (JWT/session), never from tool or handler input
+- **Time:** all timestamps are stored in UTC; conversion to the display timezone (`Asia/Nicosia`, e.g. for day boundaries) happens in the action layer
+- **Computed, not stored:** derived values (last used at, counters, records, stats) are computed at read time with a JOIN or aggregate. Store a derived value only when computing it on every read is too expensive, and say who refreshes it
+- **Migrations:** `ApplyMigrations` re-runs every `gateways/db/migrations/*.sql` on each startup, so every statement must be idempotent (`IF NOT EXISTS`, guarded `ALTER`). A file that references another subdomain's table gets a `z_` prefix to run after it
+
+**Actions**
+- **Validate before writing:** every rule is checked in the tool/handler and returns a clear error message. DB `CHECK` constraints are a backstop, never the error the caller sees
+- **One validation and one write path per operation:** a web form and an MCP tool doing the same thing share the same validation function and repository calls
+- **Reuse before adding:** use existing repository methods, also for cross-subdomain reads (the repository is shared); extend an existing filter struct rather than add a near-duplicate method
+- **Partial updates:** edit tools take optional (pointer) fields; only provided fields change, and a call with no fields is an error
+- **Text search:** 1-5 query variants, case-insensitive substring match, ranked by number of variants matched, then newest first. No embeddings or full-text index
+- **Configuration:** secrets and deployment settings come from env vars; a missing required one fails the app at startup
+
+**Web pages**
+- Built from `action/webui` components and the shared shell, behind `WebMiddleware`; no client-side JS and no CSS beyond what `webui` provides
+- **State lives in the URL:** filters, ranges and pages are query params on GET forms (`?page=N`, 1-indexed), no session state
+- **Write, then redirect:** a POST form redirects back to a GET page on success and re-renders with an inline error on failure, creating nothing
+
 ## Backlog Convention
 
 `docs/backlog.md` holds ideas for future work that haven't started yet.
@@ -67,10 +90,6 @@ make down
 
 // TODO short description of the system and its purpose
 
-## Best Practices Applied
-
-// TODO bullet list of key design decisions and patterns
-
 ## Architecture Diagrams
 
 ### Entity Relation Diagram
@@ -80,10 +99,6 @@ make down
 ### C4 Context Diagram
 
 // TODO mermaid graph with actors and tool/handler calls
-
-### Sequence Diagram: {Flow of few actions name}
-
-// TODO mermaid sequenceDiagram per main flow, NOT single action
 
 ## Database Schema
 
@@ -106,19 +121,27 @@ make down
 ### {tool_name or route}
 
 // TODO short description. NOT Input, Output, Logic, Errors - only short desc
+
+## Configuration
+
+// TODO optional: environment variables and constants (defaults, limits, timeouts, timezones). Omit section if none
+
+## E2E Tests
+
+// TODO per test file: one bullet per test function (`TestName`: scenarios it covers) or per group sharing a prefix (`TestName_*`: scenarios)
+
+## Changelog
+
+// TODO one entry per change request, newest first: `- **DD-MM-YY** — what changed (sections touched)`
 ```
 
 ### Overview
 
 Agent should write a short description of the system and its purpose. Ask user for missing details: involved entities, database tables, HTTP routes, bot commands, MCP tools.
 
-### Best Practices Applied
-
-Agent should list key design decisions and patterns. Ask about data flow if unclear: input formats, state changes, data mutations.
-
 ### Architecture Diagrams
 
-Agent should produce ER diagram, C4 context diagram, and sequence diagrams for each main flow.
+Agent should produce ER diagram and C4 context diagram. NO sequence diagrams.
 
 ### Database Schema
 
@@ -132,6 +155,18 @@ Agent should write domain structs and repository interface method signatures (NO
 
 Agent should document each tool/handler.
 
+### Configuration
+
+Optional section, omitted when the subdomain has nothing to configure. Agent should list only environment variables (name, purpose, required or not) and constants (defaults, limits, timeouts, timezones), one bullet each. NO enum value lists (they belong to SQL DDL and Domain Models), NO design decisions, NO out-of-scope notes.
+
+### E2E Tests
+
+Agent should name the test files in `tests/` and list one bullet per test function with the scenarios it covers, success and failure cases, in short phrases. Functions sharing a prefix can go in one bullet (`TestCreateActivity_*`: success; empty name; ...). Every HTTP handler, bot handler, MCP tool, and worker of the subdomain MUST be covered by at least one listed test. Stage 2 tests are written from this list.
+
+### Changelog
+
+Last section of the document. Agent should add one entry for every change request to the document, newest first, headed by the date (`DD-MM-YY`). Each entry says in one or two lines what changed and which sections were touched, so a reviewer can find the diff without rereading the whole document. A new document starts with a single "initial version" entry. Existing entries are never rewritten or removed.
+
 ## AI-Driven Development Convention
 
 In each development session, the AI agent MUST follow these instructions. NO EXCEPTIONS.
@@ -142,12 +177,15 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 - Find existing or create NEW feature document in `docs/functions/` folder
 - Document name format: `docs/functions/{subdomain}-spec.md` (MUST include .md extension)
 - One document per subdomain (each subdomain document covers all related actions and handlers: HTTP, bot, MCP tool, worker)
-- Write Overview and Best Practices by asking user for complete information
-- Write Architecture Diagrams (ER, C4 context, sequence diagrams)
+- Write Overview by asking user for complete information
+- Write Architecture Diagrams (ER, C4 context)
 - Write Database Schema (SQL DDL), Go Code Structure (domain models, repository interface)
 - Write handler/tool sections with only short description
+- Write Configuration section (environment variables and constants) if the subdomain has any
+- Write E2E Tests section (test functions and scenarios they cover)
 - Use SHORT, UNDERSTANDABLE style in all sections
 - If feature document already exists - agent MUST EDIT it to add newly appeared requirements
+- Add a Changelog entry for every change made to the feature document
 
 **What agent MUST NOT do:**
 - NEVER write or edit ANY .go files (including test files)
@@ -162,7 +200,7 @@ In each development session, the AI agent MUST follow these instructions. NO EXC
 - Agent can iterate multiple times on feature document based on user feedback
 - Continue to Stage 2 ONLY after user explicitly says "APPROVED" or "proceed to stage 2" or similar explicit approval
 
-**Stage 1 deliverable:** Complete feature document with all sections filled (Overview, Best Practices, Architecture Diagrams, Database Schema, Go Code Structure, handlers/tools, E2E Tests, Configuration)
+**Stage 1 deliverable:** Complete feature document with all sections filled (Overview, Architecture Diagrams, Database Schema, Go Code Structure, handlers/tools, Configuration if any, E2E Tests, Changelog)
 
 ### Stage 2: E2E Tests and Feature Implementation
 

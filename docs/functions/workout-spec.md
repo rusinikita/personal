@@ -9,34 +9,6 @@ A web dashboard sits on top of this same data, built on the shared `action/webui
 - **Personal records** (`GET /web/workouts`, `GET /web/workouts/:id`) — read-only review of personal records and per-exercise trends.
 - **Sessions** (`/web/workouts/sessions/...`) — log sets from the browser (e.g. from the phone mid-workout) without going through the agent: a history of the last 10 workouts, a "New workout" button, and a workout screen with a set-adding form. Editing/deleting sets and exercises stays MCP-only.
 
-## Best Practices Applied
-
-- **Multi-user Support**: All tables have user_id for data isolation
-- **Single Active Workout Pattern**: Only one workout per user can be active at a time (completed_at IS NULL)
-- **Auto-workout Creation**: First log_set call automatically creates active workout if none exists
-- **Flexible Metrics**: Support both reps (dynamic) and duration (static/isometric exercises)
-- **Denormalized Reads**: Calculate last_used_at via JOIN instead of storing redundantly
-- **Progress Tracking**: Weight and time metrics for monitoring improvements
-- **Nullable Fields**: reps, duration_seconds, weight_kg are nullable but at least one must be set
-- **User Context**: user_id extracted from authentication context (JWT/session), not passed explicitly
-- **Web dashboard reuses existing repository methods**: the list view and stat tiles are built from `ListPersonalRecords` / `GetPersonalRecords`. The drill-down's sets come from one dedicated query, `ListExerciseSets` (see "Drill-down page" below), instead of the `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts` pair `get_exercise_history_mcp.go` makes
-- **"Times performed" counts sets, not workout sessions**: each logged set is one performance of the lift, so the list view's `ListPersonalRecords` sorts by `COUNT(sets)` per exercise, not `COUNT(DISTINCT workout_id)`
-- **List view reuses `GetPersonalRecords` per row**: `ListPersonalRecords` first ranks exercises by set count, then calls the existing single-exercise `GetPersonalRecords` for each — N+1 queries, acceptable for a single-user personal tool with a handful of exercises (same trade-off `BrowseDetailWebHandler` already makes calling `GetTrendStats` three times)
-- **Est. 1RM computed in the handler, not stored**: same Epley formula (`weight × (1 + reps/30)`) `get_personal_records_mcp.go` already computes from `MaxWeight`, kept out of `domain.PersonalRecords` so the DB layer stays formula-agnostic
-- **Drill-down page: stat tiles, chart, then the set history**: below the chart sits a table of the exercise's sets from its latest 100 workouts (`exerciseHistoryWorkoutsLimit`), no pagination. One query, `ListExerciseSets`, loads them (sets of the exercise whose workout is among the 100 newest workouts containing it) and feeds the chart, the "Times performed" tile and the table alike — it replaces the previous two calls, so all three are capped at the same 100 workouts. Columns: Date, Set (`formatSet`: "80 kg × 8", "12 reps", "60 s"). Newest workout first, sets inside a workout in logging order, so a series reads top-down as it was done; each row links to its workout screen `/web/workouts/sessions/{workout_id}`. Rendered with a separate `webui.RenderTable` call after the chart, so `DetailViewData.Table` stays empty and `webui.RenderDetailView` keeps skipping its own table section (it would put the table above the chart). No sets → no table
-- **List view embeds its own achievement tiles, built elsewhere**: `GET /web/workouts` shows an `exercise_max_weight`/`exercise_total_volume` tile grid above the exercise table, via `achievements.BuildAchievementTiles(ctx, db, userID, now, types)` + `webui.RenderAchievementTiles` (see `achievements-spec.md`) — `action/workout` owns no achievement logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no exercise achievements (empty `EmptyMessage`, see `webui-spec.md`)
-- **One dual-axis chart, one point per workout — its first set**: the drill-down shows weight (left Y axis, kg) and reps (right Y axis) as two lines on one `webui.DualAxisChartData` chart instead of two separate line charts, so a set's weight and reps sit at the same X position. Only the first set of the exercise in each workout becomes a point (X label = set date, oldest-to-newest) — the same "first set" the history page and the selector hint show; follow-up sets of the same workout (80×6 after 80×8) appear only in the set history table, so the lines show progress between workouts instead of the drop-off inside one. A missing value (`WeightKg = 0`, e.g. bodyweight, or `Reps = 0`, e.g. a duration-only set) becomes `null` — a gap in that line only, the other line still shows the set. A first set with neither is skipped — the workout gets no point, a later set does not replace it. Picked in the handler from the `ListExerciseSets` result, no extra query
-- **Sessions pages live under `/web/workouts/sessions`, records stay at `/web/workouts`**: existing URLs don't move; both pages carry the same cross-links line ("Personal records · Sessions"), same pattern as `progress`'s `browseCrossLinks`. Gin matches the static `sessions` segment before the `:id` param, so `/web/workouts/:id` keeps working
-- **Lazy workout creation on the web**: "New workout" is a plain link to `GET /web/workouts/sessions/new` — it creates nothing. The workout row is created only by the first `POST /web/workouts/sessions/new/sets`, which then redirects to `/web/workouts/sessions/{real_id}`. An abandoned `new` screen leaves no empty workout behind
-- **Explicit "New workout" always starts a new workout**: unlike `log_workout_set`'s 2-hour reuse rule, the first set from the `new` screen always creates a new workout, closing any still-open one at its last set's time (same `CloseWorkout` call `logCurrent` makes) — the user explicitly asked for a new workout. Sets posted to `/web/workouts/sessions/{id}/sets` go straight into that workout, no 2-hour rule
-- **One validation for MCP and web**: the web form reuses `validateLogWorkoutSetInput` from `log_workout_set_mcp.go`, so the two entry points can't drift apart (same approach as `progress`'s `createProgressPoint`)
-- **Web form is reps + weight only**: exercise selector, weight/difficulty (kg, optional — for machines the stack level goes here) and reps (required). Duration-based sets (planks) stay MCP-only
-- **Exercise selector sorted by usage**: every exercise of the user, most-logged first (set count DESC, then name), never-used exercises at the bottom — via a new `ListExercisesByUsage` (LEFT JOIN, unlike `ListPersonalRecords` which drops unused exercises and runs N+1 record queries the selector doesn't need). After a set is logged, the form is prefilled with the workout's last set — exercise, weight and reps — so a series like 80×6, 80×4, 80×2 is one edit + submit per set. Taken from the DB, not from redirect params, so it survives a page reload
-- **Selector options carry the previous workout's first set**: each option reads "Bench press — 80 kg × 8" — the first set logged for that exercise in the latest *other* workout that contains it (the workout on screen is excluded, so the hint stays "what I started with last time" while sets are being added). Looked up only within the last 10 workouts — the same `ListWorkouts` (first 10) + `ListSets` from the oldest of them that the history page makes, no new query; an exercise not done in those 10 workouts shows the name only. Formatted with the same `formatSet` the history page uses. Text only — the weight/reps inputs are still prefilled from the current workout's last set, no JS
-- **History page reuses `list_workouts`' calls**: `ListWorkouts` (first 10) + `ListSets` from the oldest of them to now, filtered by workout ID + `GetExercisesByIDs` — no new query. Per workout: date, and per exercise (in order of first set) its name and the first set logged for it
-- **Workout screen shows what's already logged**: below the form, the sets of this workout in logging order (exercise, weight, reps), so the user sees each submit landed — same `ListSets` + filter, no new query
-- **Exercise `description` is free-text, nullable at the column level but always read back as `""`**: every read query wraps it in `COALESCE(description, '')` so `domain.Exercise.Description` is a plain `string`, never a pointer — existing rows predating the column get `''` instead of `NULL` on first read. `edit_exercise` takes `description` as `*string` specifically so "omitted" (keep current value) is distinguishable from "explicit empty string" (clear it), unlike `name`/`equipment_type` which use the zero-value-means-omitted convention
-
 ## Architecture Diagrams
 
 ### Entity Relation Diagram
@@ -113,155 +85,6 @@ graph TB
     style User fill:#e1f5ff
     style MCP fill:#ffe1e1
     style DB fill:#e1ffe1
-```
-
-### Sequence Diagram: Log Set
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant Auth
-    participant DB
-    
-    User->>MCP: log_set(exercise_id, reps, weight_kg)
-    MCP->>Auth: Get user_id from context
-    Auth-->>MCP: user_id
-    
-    MCP->>DB: SELECT id FROM workouts<br/>WHERE user_id = ? AND completed_at IS NULL<br/>LIMIT 1
-    
-    alt No active workout
-        MCP->>DB: INSERT INTO workouts<br/>(user_id, started_at) VALUES (?, NOW())<br/>RETURNING id
-        DB-->>MCP: workout_id
-    else Active workout exists
-        DB-->>MCP: workout_id
-    end
-    
-    MCP->>DB: INSERT INTO sets<br/>(user_id, workout_id, exercise_id, reps, weight_kg, created_at)<br/>VALUES (...)
-    
-    DB-->>MCP: set_id
-    MCP-->>User: Success: {set_id, workout_id}
-```
-
-### Sequence Diagram: List Exercises
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant Auth
-    participant DB
-    
-    User->>MCP: list_exercises()
-    MCP->>Auth: Get user_id from context
-    Auth-->>MCP: user_id
-    
-    MCP->>DB: SELECT e.*, MAX(s.created_at) as last_used_at<br/>FROM exercises e<br/>LEFT JOIN sets s ON e.id = s.exercise_id AND s.user_id = ?<br/>WHERE e.user_id = ?<br/>GROUP BY e.id<br/>ORDER BY last_used_at DESC NULLS LAST, e.name<br/>LIMIT 20
-    
-    DB-->>MCP: List of exercises with last_used_at
-    
-    MCP-->>User: [{id, name, equipment_type, last_used_at}, ...]
-```
-
-### Sequence Diagram: List Workouts
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant Auth
-    participant DB
-    
-    User->>MCP: list_workouts(limit=10)
-    MCP->>Auth: Get user_id from context
-    Auth-->>MCP: user_id
-    
-    MCP->>DB: SELECT w.*, <br/>COUNT(s.id) as total_sets<br/>FROM workouts w<br/>LEFT JOIN sets s ON w.id = s.workout_id<br/>WHERE w.user_id = ?<br/>GROUP BY w.id<br/>ORDER BY w.started_at DESC<br/>LIMIT 10
-    
-    DB-->>MCP: Workouts list
-    
-    loop For each workout
-        MCP->>DB: SELECT s.*, e.name, e.equipment_type<br/>FROM sets s<br/>JOIN exercises e ON s.exercise_id = e.id<br/>WHERE s.workout_id = ? AND s.user_id = ?<br/>ORDER BY s.created_at
-        DB-->>MCP: Sets with exercise details
-    end
-    
-    MCP-->>User: [{workout, sets: [{set, exercise}, ...]}, ...]
-```
-
-### Sequence Diagram: Web Dashboard — List + Drill-down
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as action/workout web handler
-    participant DB
-    participant Webui as action/webui
-
-    Browser->>Handler: GET /web/workouts
-    Handler->>DB: achievements.BuildAchievementTiles(userID, now, types=[exercise_max_weight, exercise_total_volume])<br/>(see achievements-spec.md)
-    DB-->>Handler: []webui.AchievementTileData (may be empty)
-    Handler->>DB: ListPersonalRecords(userID)
-    DB-->>Handler: []ExercisePersonalRecords, sorted by SetCount DESC
-    Handler->>Handler: build TableData (Name, Equipment, Times performed, Max weight, Max reps, Est. 1RM)<br/>each row links to /web/workouts/{exercise_id}
-    Handler->>Webui: RenderAchievementTiles (omitted if empty), RenderTable, RenderPage
-    Webui-->>Browser: 200 text/html
-
-    Browser->>Handler: GET /web/workouts/{id}
-    Handler->>DB: GetExercise(id, userID)
-    DB-->>Handler: Exercise
-    Handler->>DB: ListExerciseSets(userID, id, workoutLimit=100)
-    DB-->>Handler: []Set of the 100 newest workouts with this exercise, ordered by created_at ASC
-    Handler->>Handler: build one DualAxisChartData from sets<br/>(one point per workout — its first set: Left=weight or null, Right=reps or null)
-    Handler->>DB: GetPersonalRecords(userID, id)
-    DB-->>Handler: PersonalRecords
-    Handler->>Handler: build stat tiles (max weight, max reps, est. 1RM, times performed)
-    Handler->>Handler: build set history TableData from the same sets<br/>(newest workout first, logging order inside; row links to /web/workouts/sessions/{workout_id})
-    Handler->>Webui: RenderStatTiles, RenderDetailView (no table), RenderDualAxisChart, RenderTable (set history), RenderPage
-    Webui-->>Browser: 200 text/html
-```
-
-### Sequence Diagram: Web Sessions — History, New Workout, Log Sets
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as action/workout web handler
-    participant DB
-
-    Browser->>Handler: GET /web/workouts/sessions
-    Handler->>DB: ListWorkouts(userID) → first 10
-    Handler->>DB: ListSets(userID, oldest.started_at, now) → filter by those workout IDs
-    Handler->>DB: GetExercisesByIDs(userID, exerciseIDs)
-    Handler-->>Browser: 200 history (date + exercises with first set) + "New workout" link
-
-    Browser->>Handler: GET /web/workouts/sessions/new
-    Handler->>DB: ListExercisesByUsage(userID)
-    Handler->>DB: ListWorkouts(userID) → first 10
-    Handler->>DB: ListSets(userID, oldest.started_at, now) → first set per exercise in its latest workout
-    Handler-->>Browser: 200 empty workout screen with form, options "name — previous first set" (no DB write)
-
-    Browser->>Handler: POST /web/workouts/sessions/new/sets (exercise_id, weight_kg, reps)
-    Handler->>Handler: validateLogWorkoutSetInput
-    Handler->>DB: GetLastSet(userID)
-    opt last set's workout still open
-        Handler->>DB: CloseWorkout(oldWorkoutID, lastSet.created_at)
-    end
-    Handler->>DB: CreateWorkout(started_at=now)
-    Handler->>DB: CreateSet(workout_id, ...)
-    Handler-->>Browser: 302 /web/workouts/sessions/{workout_id}
-
-    Browser->>Handler: GET /web/workouts/sessions/{id}
-    Handler->>DB: GetWorkoutsByIDs(userID, [id]) → 404 if missing/foreign
-    Handler->>DB: ListExercisesByUsage(userID)
-    Handler->>DB: ListWorkouts(userID) → first 10
-    Handler->>DB: ListSets(userID, oldest.started_at, now) → first set per exercise in its latest workout other than {id}
-    Handler->>DB: ListSets(userID, started_at, now) → filter by workout id
-    Handler-->>Browser: 200 form (prefilled with last set) + logged sets
-
-    Browser->>Handler: POST /web/workouts/sessions/{id}/sets
-    Handler->>DB: GetWorkoutsByIDs(userID, [id]) → 404 if missing/foreign
-    Handler->>DB: CreateSet(workout_id=id, created_at=now)
-    Handler-->>Browser: 302 /web/workouts/sessions/{id}
 ```
 
 ## Database Schema
@@ -496,7 +319,7 @@ Returns best-ever results for an exercise: max_weight, max_reps, max_volume (sin
 ## HTTP Handlers
 
 ### GET /web/workouts
-Read-only list view: the "Personal records · Sessions" cross-links line, then an exercise achievement tile grid (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderAchievementTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
+Read-only list view: the "Personal records · Sessions" cross-links line, then an exercise achievement tile grid, then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderAchievementTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
 
 ### GET /web/workouts/:id
 Drill-down for a single exercise: title subtitle shows the exercise's description (if any, HTML-escaped, via `DetailViewData.Description`), then stat tiles (max weight, max reps, est. 1RM, times performed) plus one dual-axis chart — weight (left Y axis, kg) and reps (right Y axis), one point per workout, its first set (see "One dual-axis chart, one point per workout — its first set" above) — built from the exercise's sets in its latest 100 workouts (one `ListExerciseSets` query, oldest-to-newest). Below the chart: the full set history table (Date, Set), newest workout first, sets inside a workout in logging order, every row linking to its workout screen — same 100-workout window, no pagination (see "Drill-down page: stat tiles, chart, then the set history" above). 404s if the exercise doesn't exist or doesn't belong to the current user.
@@ -522,6 +345,8 @@ In `tests/workout_dashboard_web_test.go`:
 
 - `TestExerciseDetail_Chart_FirstSetPerWorkoutOnly`: two workouts, the older with 60×10 then 60×8, the newer with 80×8 then 80×6 → chart data holds exactly two points, 60/10 and 80/8, oldest first; 60×8 and 80×6 are not in the chart but are in the history table. Existing `TestExerciseDetail_ShowsStatTilesAndTrendCharts` / `TestExerciseDetail_SetWithoutWeight_GapInWeightLine` are adjusted to the one-point-per-workout rule
 - `TestWorkoutsDashboard_ExerciseDetail_SetHistory`: exercise logged in 101 workouts, the newest with sets 80×8 then 80×6, plus a bodyweight set (12 reps) → the page lists the sets of the newest 100 workouts and not the oldest one's; newest workout's rows come first and in logging order (80 kg × 8 before 80 kg × 6); each row links to `/web/workouts/sessions/{workout_id}`; another exercise's and another user's sets are absent; an exercise with no sets renders no history table
+- `TestPersonalRecordsList_*`: sorted by times performed; excludes never performed exercises; shows records and estimated 1 RM; rows link to drill down
+- `TestExerciseDetail_*`: unknown or foreign exercise, 404s; no sets yet, renders without error
 
 In `tests/workout_sessions_web_test.go`:
 
@@ -534,3 +359,59 @@ In `tests/workout_sessions_web_test.go`:
 - `TestWorkoutSessions_Validation`: missing exercise / missing reps → 200 with inline error, nothing created
 - `TestWorkoutSessions_WorkoutScreen`: shows this workout's sets only; form prefilled with the last set's exercise, weight and reps
 - `TestWorkoutSessions_UnknownOrForeignWorkout_404s`: GET and POST for a missing or another user's workout → 404
+- `TestWorkoutSessions_*`: history, empty; cross links
+
+In `tests/workout_create_exercise_test.go`:
+
+- `TestCreateExercise_*`: success; with description; invalid equipment type
+
+In `tests/workout_delete_set_test.go`:
+
+- `TestDeleteWorkoutSet_*`: successfully; not found; other users set
+
+In `tests/workout_edit_exercise_test.go`:
+
+- `TestEditExercise_*`: updates name; updates equipment type; updates both fields; updates description; not found; validation no fields; validation invalid equipment type
+
+In `tests/workout_exercise_history_test.go`:
+
+- `TestGetExerciseHistory_*`: returns multiple workouts; pagination; no history
+
+In `tests/workout_list_exercises_test.go`:
+
+- `TestListExercises_*`: sorted by last used
+
+In `tests/workout_list_workouts_test.go`:
+
+- `TestListWorkouts_*`: with sets
+
+In `tests/workout_log_set_test.go`:
+
+- `TestLogWorkoutSet_*`: with reps creates active workout; with duration; reuses active workout; closes old workout and creates new; validation; with date creates backdated workout; with date reuses existing workout
+
+In `tests/workout_merge_exercises_test.go`:
+
+- `TestMergeExercises_*`: merges sets and deletes source; works with zero sets; error when source not found; error when same ids
+
+In `tests/workout_personal_records_test.go`:
+
+- `TestGetPersonalRecords_*`: returns correct records; bodyweight exercise, max reps with null weight; no sets; estimated 1 RM epley
+
+In `tests/workout_search_exercises_test.go`:
+
+- `TestSearchExercises_*`: returns matching exercises; multiple variants increase match count; case insensitive; returns empty when no matches; returns last used at; validation error for empty variants
+
+## Changelog
+
+- **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; E2E Tests extended with the MCP tests and the remaining web tests; added Changelog (Architecture Diagrams, E2E Tests, Changelog)
+- **03-10-26** — new-workout exercise selector shows the previous workout's first set; exercise page shows set history (Go Code Structure, HTTP Handlers, E2E Tests)
+- **02-10-26** — added web sessions pages: workout history, new workout, logging sets (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
+- **26-09-26** — goals references renamed to achievements (HTTP Handlers)
+- **26-09-26** — exercise page shows weight and reps on one dual-axis chart (HTTP Handlers, E2E Tests)
+- **21-09-26** — added `description` field to exercises (Architecture Diagrams, Database Schema, Go Code Structure, MCP Tools, HTTP Handlers)
+- **17-09-26** — table indexes reworked to match query patterns (Database Schema)
+- **02-09-26** — list view embeds exercise goal tiles (HTTP Handlers)
+- **22-08-26** — added the web dashboard: exercise list and exercise drill-down (Overview, Go Code Structure, MCP Tools, HTTP Handlers)
+- **19-08-26** — MCP tool descriptions merged in from per-action docs (`docs/actions/`) (Architecture Diagrams, Go Code Structure, MCP Tools)
+- **04-10-25** — domain models and repository interface reworked across several drafts (Go Code Structure)
+- **03-10-25** — initial version

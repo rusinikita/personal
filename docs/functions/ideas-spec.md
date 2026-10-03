@@ -33,47 +33,6 @@ Interfaces:
 
 Out of scope: notes on activities, the diary, retro summaries. Those stay progress points.
 
-## Best Practices Applied
-
-- **Multi-user support**: `ideas.user_id` everywhere; every read and write is scoped by it
-- **Own table, not progress points**: `activity_progress` is an event log. Soft delete, a duplicate counter, and appending to text don't belong there (see `docs/wontdo.md`)
-- **`status` + `resolution`**: `status` is `inbox` | `someday` | `spike` | `resolved`: each open status is a separate queue reviewed at its own ritual. `resolution` (`dropped`, `merged`, `expired`, `promoted`, `blocked`) and `resolved_at` are set if and only if `status = resolved`, enforced by a CHECK. `resolved` never goes back to an open status; a returning thought is captured again
-- **Reviews read by status, not by date**: the weekly review takes every `inbox` idea (step 1), every `spike` idea (step 2), and `inbox` + `someday` for the spike choice (step 9); the monthly review takes every `someday` idea (§3.3 step 2) and every idea resolved as `blocked` (portfolio check, §3.3 step 1). The "since the last point in activity 70" boundary from §3.2 is no longer needed
-- **Promotion always lands in one progress point**: whatever an idea becomes is progress on an activity. A step or note on an existing activity is a progress point on it (steps are created by that point via `created_by_progress_point_id`); a new activity after a go gets its initial progress point, which creates the first step. So a promoted idea keeps one link, `resolved_progress_point_id`, a real FK to `activity_progress`. The activity (`activity_progress.activity_id`) and the steps (`steps.created_by_progress_point_id`) are reached through links that already exist. One point can promote several ideas; one idea is promoted by one point
-- **`promoted` replaces `to_step` / `to_activity` / `to_note`**: what the idea became is read from the point (new activity or existing one, which steps it created), not duplicated in the resolution. The quarterly review (§3.4 step 2) counts `promoted` vs `dropped` + `expired`
-- **Deleting the point doesn't block or cascade**: `resolved_progress_point_id` is `ON DELETE SET NULL`, same as the step ↔ point links. Deleting a point is an exceptional correction; the idea stays `promoted` without a link. So the DB only checks "link only for `promoted`", and "`promoted` needs a link" is checked by `resolve_idea` (`GetProgress`, own point)
-- **On the weekly review the idea is resolved with the check-in point, not an extra one**: §5.5 says one clean point beats several fragments. An idea that becomes a step or note on an activity is resolved against that activity's check-in point from step 4 of §3.2. It stays `inbox` until that point exists
-- **`merged_into_id`** is a real self-FK, set only for `merged`: a merge always goes into exactly one older idea
-- **Surface count is computed, not stored**: `surface_count` = 1 + number of ideas with `merged_into_id = id`. `last_surfaced_at` = the latest `created_at` among the idea and those merged into it. `ListIdeas` computes both with a `LEFT JOIN`, so there are no counters to keep in sync
-- **`create_step` gets an optional `created_by_progress_point_id`** (change in `progress`): today only the web form links a step to the point it's logged with; MCP `create_step` always leaves it NULL. Without it a step created in chat from an idea isn't reachable from `resolved_progress_point_id`. The point must be the user's own and belong to the same activity as the step
-- **Merging re-points the duplicate's own duplicates**: when idea B is merged into A, every idea already merged into B is re-pointed to A in the same transaction. A keeps the full count, and `merged_into_id` never points at a `merged` idea. A merge target must be the user's own, not `resolved`, and not the idea itself
-- **Spike is a status of the idea, not a separate entity**: choosing an idea for a spike this week (§3.2 step 9) moves it to `status = spike`, so the DB knows which ideas are being spiked; the next weekly review (§3.2 step 2) takes every idea in `spike` instead of parsing the summary in activity 70. Each spike's slot is only a calendar event. The number of spikes per week (1 in §2.5, possibly 2) is a ritual rule, not checked in code
-- **Spike outcome goes into `body`**: the 4 sections from §2.5 are appended with `update_idea(append_body)`. The go / no-go at the next weekly review ends in one of these:
-  - **go** → `create_activity`, its initial `create_progress_point` (spike summary as note), `create_step` for the first physical step linked to that point, then `resolve_idea` `promoted` with the point's ID. If the WIP limit is full and the spike showed the idea is stronger than some current activity, that activity is paused or dropped (`edit_activity`) in the same session: displacement, not waiting (principle 3)
-  - **needed, but weaker than every current activity** → `resolve_idea` `blocked`
-  - **not needed** → `resolve_idea` `dropped`
-  - **no answer** (not enough information) → `someday`, the findings are already in `body`
-  - If the spike wasn't done, the idea goes back to `someday` (a skip is not a debt, principle 6), or stays `spike` if it is chosen again at step 9
-- **`blocked` is a resolution, but not a final one**: the decision is made ("needed, not now"), so the idea leaves the open queues. It waits for a free slot, not for a new spike. At the monthly portfolio check (§3.3 step 1), or whenever an activity is paused, finished or dropped, `resolve_idea` re-resolves it as `promoted`, or as `dropped` / `expired`. This is the only resolution that can be changed; `resolved_at` is overwritten, so the quarterly review counts the final outcome
-- **Expiry is the same for `someday` and `blocked` ideas**: an `expired` candidate is an idea with no movement for 3 months, where movement = the latest of `last_surfaced_at` and `updated_at` (a new +1, a status change, or appended text). Computed by the agent from `list_ideas` output, no server-side flag (§2.3)
-- **Append only, no rewriting**: `update_idea.append_body` adds `"\n\n" + text` to `body`. `body` holds the user's own words (MCP cross-cutting rule), so overwriting isn't offered
-- **Transitions via `update_idea`**; setting the current status again is a no-op, nothing moves back to `inbox`, every open status goes to `resolved` through `resolve_idea`:
-
-  | From | To |
-  |---|---|
-  | `inbox` | `someday`, `spike` |
-  | `someday` | `spike` |
-  | `spike` | `someday` (no answer or spike not done) |
-- **Similar ideas found by `search_ideas`, same pattern as `search_progress_notes`**: 1-5 query variants, each an ILIKE substring match on `body`, ranked by `match_count` (variants matched) DESC, then `created_at` DESC. No embeddings or full-text index: the agent supplies synonyms and translations as variants. Used before `create_idea` in chat (§5.1) and at the weekly review (§3.2 step 1) to find an older duplicate in any status, not just among `inbox` ideas
-- **`search_ideas` searches every status by default, resolved included**: a returning thought shows that it was `dropped` or `expired` before, or is already `blocked`. `statuses` narrows it. A `merged` idea is returned with its `merged_into_id`, so the agent follows it to the idea it was merged into
-- **Resolved ideas are hidden by default**: `list_ideas` without `statuses` returns every open status. The quarterly review asks for `resolved` with a `resolved_from`/`resolved_to` window (§3.4 step 2)
-- **Web page follows the existing write-then-redirect pattern**: plain form, no client-side JS, `POST /web/ideas` → `303` back to `GET /web/ideas`. New top-level nav item «Ideas»
-- **Ideas are shown as cards, not a table**: each idea is a Pico `<article>`: body in the card, `<footer>` with labels on the left (status and resolution on the search page, then `×N` when surface count > 1) and only the created date pinned to the right (a flex footer, `justify-content: space-between`). Cards are laid out with Pico's `.grid` only, no custom CSS: Pico puts every child of one `.grid` in a single row (one column below 768px), so the cards are split into rows of 3, each row a `<div class="grid">`; the last row is padded with empty `<div>`s so its cards keep the same width
-- **Main page is the inbox only**: capture form + `inbox` cards (what's waiting for the weekly review), newest first. `spike` ideas have their own page, `someday` and `blocked` ideas are found on the search page. Links «Spike ideas» and «Search ideas» lead there
-- **Search page is a GET form**: `GET /web/ideas/search?q=…`, so a search is a plain URL, no JS. One `<input type="search">` joined with the «Search» button (`<fieldset role="group">`, as on the money pages). `q` is split by commas into trimmed phrases, empty ones dropped; each phrase is a variant of the same search as `search_ideas` (shared function, same 1-5 limit and ranking), every status included. Card footer shows `status`, plus `resolution` for resolved ideas, on the left
-- **Empty query shows the latest ideas**: no `q` → the 50 newest ideas in any status (`ListIdeas` with every status and `Limit: 50`, `created_at` DESC)
-- **New package `action/ideas`**, migration `gateways/db/migrations/z_ideas.sql` (`z_` so it runs after `progress.sql`, whose `activity_progress` it references)
-
 ## Architecture Diagrams
 
 ### Entity Relation Diagram
@@ -154,123 +113,6 @@ graph TB
     MCP --> Repo
     Repo --> DB
     Repo -->|resolve_idea target check| Progress
-```
-
-### Sequence Diagram: Capture and Weekly Review
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant Web as /web/ideas
-    participant Agent
-    participant MCP as MCP tools
-    participant DB
-
-    User->>Web: POST /web/ideas (body)
-    Web->>DB: CreateIdea(status: inbox)
-    Web-->>User: 303 → GET /web/ideas
-    User->>Web: GET /web/ideas/search?q=phrase1, phrase2
-    Web->>DB: SearchIdeas per phrase (every status)
-    Web-->>User: cards ranked by match count
-
-    Note over User,DB: Saturday weekly review (§3.2 step 1)
-    Agent->>MCP: list_ideas(statuses: [inbox])
-    MCP->>DB: ListIdeas (+ surface_count, last_surfaced_at)
-    MCP-->>Agent: inbox ideas
-    loop each inbox idea
-        Agent->>MCP: search_ideas(query_variants: key words + synonyms)
-        MCP->>DB: SearchIdeas per variant
-        MCP-->>Agent: similar ideas ranked by match_count
-    end
-    Agent->>User: proposes duplicates to merge, flags surface_count ≥ 3
-    alt duplicate
-        Agent->>MCP: resolve_idea(new id, merged, merged_into_id: old id)
-        MCP->>DB: ResolveIdea (+ re-point new id's duplicates to old id)
-    else step / note in an existing activity
-        Note over Agent,MCP: after the activity's check-in (§3.2 step 4)
-        Agent->>MCP: create_progress_point(activity, note) → point id
-        Agent->>MCP: create_step(..., created_by_progress_point_id: point id) (if a step)
-        Agent->>MCP: resolve_idea(id, promoted, resolved_progress_point_id: point id)
-    else drop
-        Agent->>MCP: resolve_idea(id, dropped)
-    else keep
-        Agent->>MCP: update_idea(id, status: someday)
-    end
-```
-
-### Sequence Diagram: Spike and Go / No-go
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant Agent
-    participant MCP as MCP tools
-    participant DB
-
-    Note over User,DB: Weekly review, phase 3 (§3.2 step 9)
-    Agent->>MCP: list_ideas(statuses: [inbox, someday])
-    Agent->>User: flags surface_count ≥ 3
-    User->>Agent: picks idea X for a spike this week (3 surfacings, risk or benefit)
-    Agent->>MCP: update_idea(X, status: spike)
-    MCP->>DB: UpdateIdea(status: spike)
-    Note over User: spike slot = calendar event, 30–60 min
-
-    User->>Agent: spike outcome (4 sections)
-    Agent->>MCP: update_idea(X, append_body: outcome)
-    MCP->>DB: UpdateIdea(body += "\n\n" + outcome)
-
-    Note over User,DB: Next weekly review (§3.2 step 2)
-    Agent->>MCP: list_ideas(statuses: [spike]) → X with its body
-    User->>Agent: decision
-    alt go
-        opt WIP full, X stronger than activity A
-            Agent->>MCP: edit_activity(A, status: paused | dropped)
-        end
-        Agent->>MCP: create_activity → activity id
-        Agent->>MCP: create_progress_point(activity id, note: spike summary) → initial point id
-        Agent->>MCP: create_step(first physical step, created_by_progress_point_id: point id)
-        Agent->>MCP: resolve_idea(X, promoted, resolved_progress_point_id: point id)
-    else needed, weaker than every current activity
-        Agent->>MCP: resolve_idea(X, blocked)
-    else not needed
-        Agent->>MCP: resolve_idea(X, dropped)
-    else no answer
-        Agent->>MCP: update_idea(X, status: someday)
-    else spike not done, not chosen again
-        Agent->>MCP: update_idea(X, status: someday)
-    end
-```
-
-### Sequence Diagram: Monthly and Quarterly Review
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant Agent
-    participant MCP as MCP tools
-    participant DB
-
-    Note over User,DB: Monthly block, portfolio (§3.3 step 1)
-    Agent->>MCP: list_ideas(statuses: [resolved], resolutions: [blocked])
-    Agent->>User: blocked ideas next to the WIP check, expired candidates (no movement > 3 months)
-    alt a slot freed
-        Agent->>MCP: create_activity, initial point, first step
-        Agent->>MCP: resolve_idea(id, promoted, resolved_progress_point_id) (re-resolve)
-    else
-        Agent->>MCP: resolve_idea(id, expired | dropped) (re-resolve) or leave blocked
-    end
-
-    Note over User,DB: Monthly block, someday (§3.3 step 2)
-    Agent->>MCP: list_ideas(statuses: [someday])
-    Agent->>User: expired candidates (no movement > 3 months), surface_count ≥ 3
-    User->>Agent: decision per idea
-    Agent->>MCP: resolve_idea(id, expired | dropped) or leave as is
-
-    Note over User,DB: Quarterly review (§3.4 step 2)
-    Agent->>MCP: list_ideas(statuses: [resolved], resolved_from, resolved_to)
-    MCP->>DB: ListIdeas(resolved_at in quarter)
-    MCP-->>Agent: resolved ideas
-    Agent->>User: conversion by resolution
 ```
 
 ## Database Schema
@@ -399,7 +241,7 @@ Lists the user's ideas with `surface_count` and `last_surfaced_at`. Optional `st
 Searches the user's ideas by `body` with 1-5 `query_variants` (ILIKE), optional `statuses` (default: every status, resolved included). Returns ideas with `surface_count`, `last_surfaced_at`, `resolution`, `merged_into_id` and `match_count`, ranked by `match_count` DESC, then `created_at` DESC. Same pattern as `search_progress_notes`.
 
 ### update_idea
-Appends text to an idea's `body` (`append_body`) and/or changes `status` along the allowed transitions (see Best Practices). Fails on a `resolved` idea or a transition not in the table.
+Appends text to an idea's `body` (`append_body`) and/or changes `status` along the allowed transitions. Fails on a `resolved` idea or a transition that is not allowed.
 
 ### resolve_idea
 Resolves an idea in any open status with a `resolution`, or re-resolves a `blocked` idea as `promoted`, `dropped` or `expired`. `blocked` is accepted only from `spike`. `merged` requires `merged_into_id` (own, unresolved, not itself). `promoted` requires `resolved_progress_point_id`, checked to exist and belong to the user. `dropped` / `expired` take neither.
@@ -421,7 +263,6 @@ Search input joined with a «Search» button (`q`, comma-separated phrases). Emp
 ## Configuration
 
 - **Append separator**: `"\n\n"` between the existing `body` and the appended text
-- **Expired window**: none in code. The agent uses "latest of `last_surfaced_at` and `updated_at` older than 3 months" as the approximation of "3 monthly reviews without movement" (§2.3), for `someday` and `blocked` ideas
 
 ## E2E Tests
 
@@ -430,7 +271,7 @@ Search input joined with a «Search» button (`q`, comma-separated phrases). Emp
 - `TestCreateIdea`: created in `inbox` with body; empty body fails
 - `TestListIdeas`: default hides `resolved`; `statuses` filter; `resolutions: [blocked]` returns only blocked ideas; `resolved_from` / `resolved_to` window; other user's ideas not returned
 - `TestSearchIdeas`: case-insensitive substring match; ranked by `match_count`, then newest first; an idea matched by several variants appears once; default includes resolved ideas; `statuses` filter; merged idea returned with `merged_into_id`; 0 or more than 5 variants, or an empty variant, fails; other user's ideas not returned
-- `TestUpdateIdea`: append adds `"\n\n" + text`; every transition from the table succeeds; setting the current status is a no-op; transitions not in the table fail (e.g. `someday → inbox`, `spike → inbox`); any change on a `resolved` idea fails
+- `TestUpdateIdea`: append adds `"\n\n" + text`; every allowed transition succeeds; setting the current status is a no-op; transitions that are not allowed fail (e.g. `someday → inbox`, `spike → inbox`); any change on a `resolved` idea fails
 - `TestResolveIdea`:
   - `dropped` / `expired` set `status=resolved`, `resolution`, `resolved_at`
   - `merged` into an older idea → older idea's `surface_count` = 2 and `last_surfaced_at` = duplicate's `created_at`
@@ -453,3 +294,9 @@ Search input joined with a «Search» button (`q`, comma-separated phrases). Emp
 - Update `progress-spec.md`: `create_step` input `created_by_progress_point_id`
 - `activity-rituals.md` §2.5: trigger 3 (benefit over the current portfolio), spike outcomes (go with displacement / resolution blocked / dropped / someday), the spike limit (1 or 2 per week, also §3.2 step 9); §3.3 step 1: review ideas resolved as `blocked` at the portfolio check
 - Remove the backlog item
+
+## Changelog
+
+- **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; Configuration narrowed to constants; added Changelog (Architecture Diagrams, Configuration, Changelog)
+- **29-09-26** — web UI reworked into inbox cards, a spike page and a search page (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
+- **29-09-26** — initial version: ideas inbox with MCP tools and a web capture page

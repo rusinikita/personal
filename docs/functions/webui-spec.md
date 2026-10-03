@@ -14,39 +14,6 @@ This is a **presentation-only, infrastructure layer**: it owns no database table
 
 **Local preview:** `make preview-webui` (`cmd/webui-preview`) serves every `/web/*` route against a reusable Postgres testcontainer — restored on each start from a cached snapshot of migrations + fixture data — using the real `db.NewRepository`, so pages can be eyeballed (and forms submitted) without the production database or Telegram credentials. See "Local Preview" below.
 
-## Best Practices Applied
-
-- **Pico CSS for the heavy lifting**: base typography, spacing, form controls, and light/dark come from Pico CSS (CDN `<link>`, no build step) instead of hand-writing them — minimizes custom CSS surface area to maintain
-- **Minimal custom CSS on top**: only what Pico doesn't provide — nav active-link state, stat tile emphasis styling, table drill-down link affordance, chart container sizing — kept in one small stylesheet, not per-page
-- **No CSS build step, no JS framework**: Pico CSS and Chart.js are both plain CDN `<script>`/`<link>` tags, matching the existing codebase style (no bundler, no npm) — consistent with `dashboard_web.go` and `import_web.go`
-- **Real `.html` template files, not Go string constants**: every template — shell, each component, each page — is its own file under `action/webui/templates/`, embedded via `go:embed` and parsed with `html/template`'s named `{{define "..."}}` blocks, instead of large HTML strings living inside `.go` files
-- **Composition via named templates, not Go-side string concatenation**: a page's content is its own `templates/pages/{name}.html` file that lays out `{{.SomeComponentHTML}}` fields declaratively; the handler's only job is building the data (calling `RenderTable`/`RenderStatTiles`/etc. to produce each fragment) and executing the page template once — no handler manually writes `<section>` markup or concatenates HTML strings
-- **Design tokens as CSS custom properties**: custom (non-Pico) colors/spacing defined once as `:root` CSS variables; component CSS never hardcodes a color, so swapping the palette or adding a new theme touches one place
-- **Automatic light/dark via `prefers-color-scheme`**: no theme toggle or stored preference — both Pico CSS and the custom layer (and Chart.js, via a small init script reading the resolved CSS variables) follow the OS/browser setting
-- **Chart.js for four chart types**: server builds the data series as JSON, a thin inline script initializes a Chart.js chart from it — no server-side chart image/SVG generation to maintain. A **line chart** (single series over time — Progress activity value-over-time drill-down), a **bar chart** (categorical comparison — Money spend-by-category), and a **combo chart** (one series over time, rendered as both a bar and a line at once — Money's balance trend), and a **dual-axis line chart** (two different series over the same x-axis, each on its own Y axis — Workouts weight + reps per set) cover every known use
-- **Combo chart is one series, drawn twice for readability — not two different series**: it plots the *same* `Points[].Value` per x-axis label as both a bar and an overlaid line via Chart.js's native mixed-dataset support (one `type: "bar"` chart with a second dataset overridden to `type: "line"`) — the per-period magnitude reads clearly from the bars, the shape of the trend reads clearly from the line, both for one number. Because both datasets carry identical values, the legend stays off (same convention as the single-series line/bar charts — a legend would just show the same label twice) and a second color token (`--webui-chart-bar`, alongside the existing `--webui-chart-line`) keeps the bar visually distinct from its own line overlay
-- **Dual-axis chart is two different series on two Y axes, modeled on the combo chart**: one Chart.js `type: "line"` chart with two datasets over the shared `Points[].Label` x-axis — the left dataset on the default `y` axis (`position: "left"`), the right one on a secondary `y1` axis (`position: "right"`, `grid.drawOnChartArea: false` so grid lines come from the left axis only). A point's missing value is `null` in JSON (Go `*float64` = nil), which Chart.js draws as a gap in that line only (`spanGaps` left at its default `false`). Unlike the other charts the legend is **on** — the two lines are different series, so the legend is what tells them apart. Colors reuse the existing tokens (left = `--webui-chart-line`, right = `--webui-chart-bar`), no new token
-- **Achievement tiles reuse Pico's native `<progress>` element, no Chart.js**: `RenderAchievementTiles` renders each achievement as its own card with a `<progress value=... max=100>` bar plus a text label — Pico CSS already themes `<progress>` for light/dark, so this needs no canvas, no JS init script, and no new custom CSS beyond the card grid layout. One component, two placements: the dedicated `/web/achievements` page renders every achievement in one grid, while Money/Progress-browse/Workouts each embed the same component with an `AchievementTilesData.Tiles` slice pre-filtered to their own domain's achievement types (see `achievements-spec.md`)
-- **Typed Go structs, not raw HTML, as the component API**: pages build a `Table`, `StatTile`, `LineChart`, `BarChart`, or `DetailView` struct and hand it to the shell; the shell owns the markup
-- **Responsive by default**: flexbox/grid + relative units (`rem`, `%`, `minmax()`), no fixed `100vw`/`100vh` sizing (that pattern stays confined to the untouched screenshot dashboard)
-- **Pagination lives on `TableData`, not as a separate component call**: a table and its pagination controls are one visual unit, so `TableData.Pagination *PaginationData` is enough for any caller (list page or drill-down history table) to get consistent prev/next + "page X of Y" controls without composing an extra fragment
-- **Pico's card is a bare `<article>`**: table, stat tile, and chart components render as `<article>` (Pico styles it as a card automatically — background, border-radius, shadow — no extra class needed); `<header>`/`<footer>` are used only where content actually maps to them (chart title in `<header>`, table pagination in `<footer>`) rather than on every card
-- **Single shared Go package (`action/webui`)**: matches `action/{subdomain}` convention; the package exposes one real route (the demo page below) plus render functions other subdomains' handlers call directly
-- **Demo page doubles as living documentation**: `GET /web/design-system` renders every component (nav, stat tiles, table, line chart, bar chart, calendar, drill-down/detail layout, user menu) against fixture data, so visual regressions are caught by looking at one page instead of hunting through whichever real dashboard happens to use a given component
-- **User menu is a Pico dropdown, no custom JS**: the shell header shows `PageData.UserName` as a `<details class="dropdown"><summary>` element (Pico CSS v2's built-in disclosure pattern); clicking it opens a one-item menu with a "Logout" link — no click-outside/open-state JS to write or maintain
-- **Every shell-rendered page carries a username**: `action/auth`'s `WebMiddleware` (see `auth-spec.md`) puts the logged-in username on the gin context; every `/web/*` handler (including this package's own `GET /web/design-system`) reads it and sets `PageData.UserName` before calling `RenderPage`
-- **Calendar is Go-computed weeks, not template date math**: `CalendarData.Weeks` is a pre-built `[][]CalendarDay` (7 columns per week, including the leading/trailing days of adjacent months needed to fill the grid) — the template just ranges over rows and cells, it never computes a weekday or month boundary itself (`html/template` has no date arithmetic to do that safely anyway)
-- **Calendar cells link like table rows do**: `CalendarDay.LinkURL` is empty for a day with nothing to show (mirrors `TableRow.LinkURL`'s "empty = not clickable" convention) instead of a separate boolean flag
-- **Sub-groups within one table are a heading row, not separate tables**: `TableRow.Heading` (empty = normal row) lets a caller split one logical list into labeled sub-sections (e.g. Progress browse's active list grouping by progress_type) without starting a new `<table>` per group — a heading row renders as a single full-width cell (`colspan` across every column, including the tags column when present) instead of `Cells`. This exists because separate `<table>` elements each size their own columns independently, so column widths visibly jump between sections; one `<table>` with heading rows keeps column widths consistent across the whole list. A group with zero rows still gets its heading row (mirrors the "heading always renders, even with an empty table" convention this replaces), so the section list stays predictable
-- **Row tags get their own column right after the first one, not a cell squeezed with other content**: `TableRow.Cells` stays `[]string` (auto-escaped, no per-cell HTML) — tags are a separate mechanism. `TableRow.Tags []TableRowTag` holds a row's tags (e.g. Progress browse's life_part tags), each with a `Label` and an optional `Tooltip`; `TableData.TagsColumnLabel` (empty = no tags column at all, same "empty = off" convention as `LinkURL`/`EmptyMessage`) turns it on and gives the column its header text. The column is always inserted right after the first `Cells` column (e.g. Name), before the rest, since that's the identifying column a tag most naturally sits next to. Every existing caller (Money, Workouts, Progress finished/future/paused lists) leaves `TagsColumnLabel` unset, so nothing else changes. Each tag is styled with Pico's own `.contrast` button class (`role="button" class="outline contrast webui-tag"`) instead of custom chip CSS — `.webui-tag` only overrides padding/font-size to fit inline, no color of our own. Tooltip renders via Pico CSS's own `data-tooltip` attribute (pure CSS, already loaded on every page), not the native HTML `title` attribute — the native browser tooltip proved unreliable in practice (Chrome/Mac showed nothing on hover)
-
-- **Preview runs the real repository, not a mock**: `cmd/webui-preview` starts a `postgres:16-alpine` testcontainer (same image and colima socket setup as `tests/suite_test.go`), applies migrations via `DBMaintainer.ApplyMigrations`, runs one fixture SQL file, and passes `db.NewRepository(conn)` to `web.Register`. `gateways/db/mock.go` (`MockRepository`) is deleted — no second hand-maintained `gateways.DB` implementation, no mock twin per new repository method, no drift between mock filtering/sorting/aggregates and the real SQL
-- **Fixtures are one plain SQL file, dates relative to `now()`**: `cmd/webui-preview/fixtures.sql` (embedded via `go:embed`) inserts the same kind of sample data the mock returned — activities + points + steps, life parts, exercises + workouts + sets, transactions, achievements, ideas — all for `user_id = 1` (`webui.DefaultUserID`, and the id to give the local user in `USERS`). Timestamps use `now() - interval '...'` so "yesterday"/"this month" pages always have data regardless of when the preview is started
-- **One long-lived container, reused across runs**: started with `testcontainers.WithReuseByName("personal-webui-preview")` and Ryuk disabled (`TESTCONTAINERS_RYUK_DISABLED=true`, set by the preview itself — otherwise Ryuk reaps the container when the process exits). Ctrl+C stops only the Go process; the container keeps running, so the next `make preview-webui` skips container startup entirely
-- **Migrations + fixtures are applied once, then cached as a Postgres template snapshot**: after the first `ApplyMigrations` + `fixtures.sql` run, the preview calls `PostgresContainer.Snapshot(WithSnapshotName("webui_preview_snapshot"))` (testcontainers' built-in `CREATE DATABASE ... WITH TEMPLATE`). Every later start just calls `Restore` with the same name — drop + re-create the working DB from the template in well under a second — instead of re-running migrations and fixtures. Whether a snapshot exists is checked with one `SELECT 1 FROM pg_database WHERE datname = 'webui_preview_snapshot'`, so a run that crashed mid-setup (no snapshot yet) just redoes the setup
-- **Snapshot is invalidated by a content hash label**: the container carries a label `personal.webui-preview.hash` = sha256 of all embedded migration files + `fixtures.sql`. On start the preview looks up the container by name via testcontainers' Docker client; if its label differs from the current hash (a migration or fixture changed), it removes that container first, so `WithReuseByName` creates a fresh one and the migrate → fixtures → snapshot path runs again. One container at a time, never a stale schema
-- **Fresh data every start**: `Restore` runs on every start, so writes made in the preview (added ideas, logged transactions) never survive a restart and the fixtures are always the starting state
-
 ## Architecture Diagrams
 
 ### Entity Relation Diagram
@@ -116,96 +83,6 @@ graph TB
     style Browser fill:#e1f5ff
     style Shell fill:#ffe1e1
     style Demo fill:#fff3cd
-```
-
-### Sequence Diagram: Demo page render flow
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Demo as action/webui demo handler
-    participant Webui as action/webui render funcs
-
-    Browser->>Demo: GET /web/design-system (WebMiddleware already validated session)
-    Demo->>Demo: read username set on gin context by WebMiddleware
-    Demo->>Demo: build fixture data:<br/>NavItems, TableData, []StatTileData,<br/>LineChartData (x2: line style variants),<br/>BarChartData, ComboChartData, DualAxisChartData, DetailViewData
-    Demo->>Webui: RenderTable / RenderStatTiles /<br/>RenderLineChart / RenderBarChart /<br/>RenderComboChart / RenderDualAxisChart / RenderDetailView
-    Webui-->>Demo: template.HTML fragments
-    Demo->>Webui: RenderPage(w, PageData{UserName: ..., Content: <concatenated fragments>})
-    Webui->>Webui: render header with UserName dropdown (Logout link)
-    Webui-->>Demo: HTML string
-    Demo-->>Browser: 200 text/html — every component visible on one page, including the user menu
-```
-
-### Sequence Diagram: Local preview startup and page render
-
-```mermaid
-sequenceDiagram
-    participant Dev as Developer
-    participant Preview as cmd/webui-preview
-    participant TC as Postgres testcontainer
-    participant Repo as db.NewRepository
-    participant Web as transport/web handlers
-
-    Dev->>Preview: make preview-webui
-    Preview->>Preview: hash = sha256(migrations + fixtures.sql)
-    Preview->>TC: look up container "personal-webui-preview"
-    alt exists with a different hash label
-        Preview->>TC: remove container
-    end
-    Preview->>TC: postgres.Run(WithReuseByName, label hash, Ryuk off)
-    TC-->>Preview: reused or new container
-    Preview->>TC: snapshot DB exists?
-    alt no snapshot (new container)
-        Preview->>Repo: ApplyMigrations
-        Preview->>TC: Exec(fixtures.sql)
-        Preview->>TC: Snapshot(webui_preview_snapshot)
-    else snapshot exists
-        Preview->>TC: Restore(webui_preview_snapshot)
-    end
-    Preview->>Repo: NewRepository(conn)
-    Preview->>Web: web.Register(router, repo, authDisabled)
-    Dev->>Web: GET /web/... (browser)
-    Web->>Repo: real queries
-    Repo->>TC: SQL
-    Web-->>Dev: rendered page
-    Dev->>Preview: Ctrl+C (container keeps running)
-```
-
-### Sequence Diagram: Page render flow
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as Consuming handler<br/>(e.g. action/money)
-    participant DB
-    participant Webui as action/webui
-
-    Browser->>Handler: GET /web/money
-    Handler->>DB: fetch domain data (balance, categories, ...)
-    DB-->>Handler: rows
-    Handler->>Handler: map rows into webui.TableData / webui.StatTileData
-    Handler->>Webui: webui.RenderPage(w, PageData{Title, Nav, Content: ...})
-    Webui->>Webui: execute shell template with content template
-    Webui-->>Handler: HTML string
-    Handler-->>Browser: 200 text/html
-```
-
-### Sequence Diagram: Drill-down navigation
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Handler as Consuming handler
-    participant Webui as action/webui
-
-    Browser->>Handler: GET /web/money (table view)
-    Handler->>Webui: RenderPage(..., Content: TableData)
-    Webui-->>Browser: HTML with row links to detail URL
-
-    Browser->>Handler: GET /web/money/category/groceries
-    Handler->>Webui: RenderPage(..., Content: DetailViewData)
-    Webui-->>Browser: HTML detail page with "back" link
 ```
 
 ## Database Schema
@@ -331,7 +208,7 @@ type ComboChartPoint struct {
 type ComboChartData struct {
     ID         string // unique DOM id for this chart's <canvas>, caller-supplied
     Title      string
-    SeriesName string // e.g. "Balance (EUR)" — shown in the tooltip, no legend (see Best Practices)
+    SeriesName string // e.g. "Balance (EUR)" — shown in the tooltip, no legend
     Points     []ComboChartPoint
 }
 
@@ -472,7 +349,7 @@ Same as `RenderLineChart`, but initializes a Chart.js bar chart from `BarChartDa
 Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>` holding the chart title and a `<canvas>` below it, initializing a single Chart.js chart (`type: "bar"`) built from `ComboChartData.Points` with two datasets both plotting the *same* `Points[].Value` against the shared `Points[].Label` x-axis: a bar dataset colored from `--webui-chart-bar`, and a second dataset overridden to `type: "line"` colored from the existing `--webui-chart-line` (same color `RenderLineChart` uses). Legend stays off, same as `RenderLineChart`/`RenderBarChart` — both datasets are the one series, so a legend would just repeat `SeriesName` twice.
 
 ### `webui.RenderDualAxisChart(data DualAxisChartData) template.HTML`
-Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>` title and a `<canvas>`, initializing one Chart.js `type: "line"` chart with two datasets: `Points[].Left` on the left `y` axis (`--webui-chart-line`), `Points[].Right` on the right `y1` axis (`yAxisID: "y1"`, `--webui-chart-bar`). nil values render as JSON `null` → gap in that line. Legend on (see Best Practices). Used by the Workouts exercise drill-down (`workout-spec.md`).
+Renders a Pico card (`<article class="webui-chart-container">`) with a `<header>` title and a `<canvas>`, initializing one Chart.js `type: "line"` chart with two datasets: `Points[].Left` on the left `y` axis (`--webui-chart-line`), `Points[].Right` on the right `y1` axis (`yAxisID: "y1"`, `--webui-chart-bar`). nil values render as JSON `null` → gap in that line. Legend on. Used by the Workouts exercise drill-down (`workout-spec.md`).
 
 ### `webui.RenderCalendar(data CalendarData) template.HTML`
 Renders a Pico card (`<article>`) with a `<header>` holding the month title, and a 7-column grid below (`<table>`, one `<tr>` per `Weeks` entry) — each cell shows the day number plus, when set, `Count` and `Total`. When `PrevURL`/`NextURL` are set, the header also shows a prev/next nav — but a caller stacking several months on one page (e.g. Money's calendar) typically leaves both empty per grid and renders a single page-level Prev/Next control of its own instead, so the header falls back to just the title. A day with `InMonth == false` renders muted/de-emphasized; a day with `LinkURL` set is a clickable link, matching `RenderTable`'s row-link convention. Used by the Money transaction calendar (`money-spec.md`).
@@ -492,7 +369,33 @@ No E2E test: it's a developer tool, not an HTTP handler; the pages it serves are
 
 ## E2E Tests
 
-Changes in `tests/webui_design_system_test.go` for the dual-axis chart:
+In `tests/webui_design_system_test.go`:
 
-- NEW `TestDesignSystem_ShowsDualAxisChart`: demo renders `<canvas id="chart-weight-reps-demo">` with `yAxisID: "y1"`, a `null` in the left dataset, and the legend on
-- `TestDesignSystem_ChartsHaveUniqueCanvasIDs`: expected canvas count goes from ≥4 to ≥5 (plus the dual-axis example)
+- `TestDesignSystem_*`: renders OK; loads pico CSS from CDN; loads chart JS from CDN; supports light and dark via media query; nav has active item; shows stat tiles plain and emphasized; shows table with drill down link; shows line charts; shows bar chart; shows combo chart; shows dual axis chart; charts have unique canvas ids; shows drill down detail view; escapes fixture text containing markup
+
+In `tests/webui_user_menu_test.go`:
+
+- `TestRenderPage_*`: user name set, shows dropdown with logout link; user name empty, hides dropdown; user name containing markup, is escaped
+- `TestDesignSystem_*`: shows logged in user dropdown
+
+## Changelog
+
+- **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; E2E Tests rewritten as a list of the current tests; added Changelog (Architecture Diagrams, E2E Tests, Changelog)
+- **29-09-26** — local preview runs on a Postgres testcontainer restored from a cached fixture snapshot (Overview, Local Preview)
+- **26-09-26** — goal tiles renamed to achievement tiles (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers)
+- **26-09-26** — added the dual-axis chart component (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
+- **22-09-26** — table rows can be section headings (`TableRow.Heading`) (Go Code Structure, HTTP Handlers)
+- **22-09-26** — row tags moved into their own table column (`TableData.TagsColumnLabel`) (Go Code Structure, HTTP Handlers)
+- **21-09-26** — added table row tags (`TableRow.Tags`) (Go Code Structure, HTTP Handlers)
+- **06-09-26** — added the combo chart component (Architecture Diagrams, Go Code Structure, HTTP Handlers)
+- **06-09-26** — goal tiles get a drill-down `LinkURL` (Go Code Structure, HTTP Handlers)
+- **06-09-26** — detail view gets an optional `Description` subtitle (Go Code Structure, HTTP Handlers)
+- **02-09-26** — added the goal tile grid component (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers)
+- **22-08-26** — Overview no longer lists the navigation home page (Overview)
+- **22-08-26** — added the calendar component (Overview, Go Code Structure, HTTP Handlers)
+- **22-08-26** — detail view's table became optional (HTTP Handlers)
+- **22-08-26** — components render as Pico cards (`<article>`) (HTTP Handlers)
+- **22-08-26** — added table pagination (`TableData.Pagination`) (Go Code Structure, HTTP Handlers)
+- **22-08-26** — added the user menu with a logout link to the shell (Go Code Structure, HTTP Handlers)
+- **22-08-26** — templates moved to real `.html` files; added Template File Layout (Go Code Structure, HTTP Handlers)
+- **22-08-26** — initial version

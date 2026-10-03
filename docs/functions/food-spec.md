@@ -4,18 +4,6 @@
 
 System for tracking food consumption, nutritional intake, and meal history with MCP (Model Context Protocol) interface. Supports comprehensive nutrient tracking, recipe composition, and flexible food logging with multiple search strategies.
 
-## Best Practices Applied
-
-- **Multi-user Support**: All tables have user_id for data isolation (DEFAULT_USER_ID = 1)
-- **Comprehensive Nutrition Data**: Detailed nutrients stored as JSONB (macros, vitamins, minerals, amino acids)
-- **Flexible Food Types**: Support for components, products, and dishes (recipes)
-- **Recipe Composition**: Dishes can be composed of other foods with automatic nutrient calculation
-- **Multiple Search Strategies**: Search by ID, name, barcode, or log custom foods directly
-- **Denormalized Reads**: Calculate last_consumed_at via JOIN instead of storing redundantly
-- **Nullable Fields**: All nutritional values are nullable for incomplete data
-- **User Context**: user_id extracted from authentication context (JWT/session), not passed explicitly
-- **UTC Timezone**: All timestamps in UTC, timezone conversions in action layer
-
 ## Architecture Diagrams
 
 ### Entity Relation Diagram
@@ -84,80 +72,6 @@ graph TB
     style User fill:#e1f5ff
     style MCP fill:#ffe1e1
     style DB fill:#e1ffe1
-```
-
-### Sequence Diagram: Log Food
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant Auth
-    participant DB
-
-    User->>MCP: log_food_by_id(food_id, amount_g)
-    MCP->>Auth: Get user_id from context
-    Auth-->>MCP: user_id=1
-
-    MCP->>DB: SELECT * FROM food WHERE id = ?
-    DB-->>MCP: food with nutrients
-
-    MCP->>MCP: Calculate proportional nutrients<br/>(nutrients * amount_g / 100)
-
-    MCP->>DB: INSERT INTO consumption_log<br/>(user_id, consumed_at, food_id, nutrients, ...)<br/>VALUES (...)
-
-    DB-->>MCP: success
-    MCP-->>User: Success message
-```
-
-### Sequence Diagram: Add Food with Recipe
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant DB
-
-    User->>MCP: add_food(name, food_type=dish,<br/>food_composition=[{food_id:1, amount_g:100}])
-
-    MCP->>MCP: Validate input
-
-    loop For each component
-        MCP->>DB: GetFood(component.food_id)
-        DB-->>MCP: component with nutrients
-        MCP->>MCP: Calculate proportional nutrients
-    end
-
-    MCP->>MCP: Aggregate total nutrients
-
-    MCP->>DB: INSERT INTO food<br/>(name, food_type, nutrients, food_composition)<br/>VALUES (...)
-
-    DB-->>MCP: food_id
-    MCP-->>User: Success: {id, message}
-```
-
-### Sequence Diagram: Get Nutrition Stats
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant MCP
-    participant DB
-
-    User->>MCP: get_nutrition_stats()
-
-    MCP->>DB: SELECT MAX(consumed_at)<br/>FROM consumption_log<br/>WHERE user_id = 1
-    DB-->>MCP: last_consumption_time
-
-    MCP->>DB: SELECT SUM(nutrients) as stats<br/>FROM consumption_log<br/>WHERE consumed_at BETWEEN<br/>(last_time - 1h) AND last_time
-    DB-->>MCP: last_meal stats
-
-    MCP->>MCP: Calculate 4-day window<br/>in Asia/Nicosia timezone
-
-    MCP->>DB: SELECT date, SUM(nutrients)<br/>FROM consumption_log<br/>WHERE consumed_at >= 4_days_ago<br/>GROUP BY date_trunc('day', consumed_at)<br/>ORDER BY date ASC
-    DB-->>MCP: daily stats array
-
-    MCP-->>User: {last_meal, last_4_days}
 ```
 
 ## Database Schema
@@ -428,5 +342,34 @@ Returns the 30 most frequently logged products over the last 3 months. Groups co
 - **Default User ID**: 1 (DEFAULT_USER_ID constant)
 - **Stats Timezone**: Asia/Nicosia (for day boundaries)
 - **Database Timezone**: UTC (all timestamps stored in UTC)
-- **Food Types**: component, product, dish
-- **Meal Types**: breakfast, lunch, dinner, snack, other
+
+## E2E Tests
+
+In `tests/food_add_test.go`:
+
+- `TestAddFood_*`: success; duplicate checking; validation errors
+
+In `tests/food_find_test.go`:
+
+- `TestResolveFoodIdByName_*`: success; validation errors
+
+In `tests/food_log_test.go`:
+
+- `TestLogFoodById_*`: success; with serving count; not found
+- `TestLogFoodByBarcode_*`: success; not found
+- `TestLogCustomFood_*`: success; with optional nutrients
+- `TestValidationErrors`
+
+In `tests/food_nutrition_stats_test.go`:
+
+- `TestGetNutritionStats_*`: success; empty database; timezone boundaries
+
+In `tests/food_top_products_test.go`:
+
+- `TestGetTopProducts_*`: success
+
+## Changelog
+
+- **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; Configuration narrowed (enum lists dropped); added E2E Tests; added Changelog (Architecture Diagrams, Configuration, E2E Tests, Changelog)
+- **19-08-26** — removed `log_food_by_name`, added `get_top_products` (Architecture Diagrams, MCP Tools)
+- **03-10-25** — initial version
