@@ -19,19 +19,20 @@ A web dashboard sits on top of this same data, built on the shared `action/webui
 - **Progress Tracking**: Weight and time metrics for monitoring improvements
 - **Nullable Fields**: reps, duration_seconds, weight_kg are nullable but at least one must be set
 - **User Context**: user_id extracted from authentication context (JWT/session), not passed explicitly
-- **Web dashboard reuses existing repository methods**: the drill-down page's trend charts are built from `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, the exact same two calls `get_exercise_history_mcp.go` already makes — no new query needed for chart data, only for the list view's per-exercise usage count
+- **Web dashboard reuses existing repository methods**: the list view and stat tiles are built from `ListPersonalRecords` / `GetPersonalRecords`. The drill-down's sets come from one dedicated query, `ListExerciseSets` (see "Drill-down page" below), instead of the `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts` pair `get_exercise_history_mcp.go` makes
 - **"Times performed" counts sets, not workout sessions**: each logged set is one performance of the lift, so the list view's `ListPersonalRecords` sorts by `COUNT(sets)` per exercise, not `COUNT(DISTINCT workout_id)`
 - **List view reuses `GetPersonalRecords` per row**: `ListPersonalRecords` first ranks exercises by set count, then calls the existing single-exercise `GetPersonalRecords` for each — N+1 queries, acceptable for a single-user personal tool with a handful of exercises (same trade-off `BrowseDetailWebHandler` already makes calling `GetTrendStats` three times)
 - **Est. 1RM computed in the handler, not stored**: same Epley formula (`weight × (1 + reps/30)`) `get_personal_records_mcp.go` already computes from `MaxWeight`, kept out of `domain.PersonalRecords` so the DB layer stays formula-agnostic
-- **Drill-down page has no table, only charts**: unlike the Progress browse drill-down (which pairs a chart with a paginated point-history table), the exercise drill-down is stat tiles + one dual-axis chart only — `webui.RenderDetailView` is adjusted to skip rendering the table section when `DetailViewData.Table.Columns` is empty (mirrors its existing "skip stat tiles when `Stats` is empty" behavior), instead of showing an empty table box
+- **Drill-down page: stat tiles, chart, then the set history**: below the chart sits a table of the exercise's sets from its latest 100 workouts (`exerciseHistoryWorkoutsLimit`), no pagination. One query, `ListExerciseSets`, loads them (sets of the exercise whose workout is among the 100 newest workouts containing it) and feeds the chart, the "Times performed" tile and the table alike — it replaces the previous two calls, so all three are capped at the same 100 workouts. Columns: Date, Set (`formatSet`: "80 kg × 8", "12 reps", "60 s"). Newest workout first, sets inside a workout in logging order, so a series reads top-down as it was done; each row links to its workout screen `/web/workouts/sessions/{workout_id}`. Rendered with a separate `webui.RenderTable` call after the chart, so `DetailViewData.Table` stays empty and `webui.RenderDetailView` keeps skipping its own table section (it would put the table above the chart). No sets → no table
 - **List view embeds its own achievement tiles, built elsewhere**: `GET /web/workouts` shows an `exercise_max_weight`/`exercise_total_volume` tile grid above the exercise table, via `achievements.BuildAchievementTiles(ctx, db, userID, now, types)` + `webui.RenderAchievementTiles` (see `achievements-spec.md`) — `action/workout` owns no achievement logic, it just calls the helper and drops the fragment in. The section disappears entirely when the user has no exercise achievements (empty `EmptyMessage`, see `webui-spec.md`)
-- **One dual-axis chart, one point per set**: the drill-down shows weight (left Y axis, kg) and reps (right Y axis) as two lines on one `webui.DualAxisChartData` chart instead of two separate line charts, so a set's weight and reps sit at the same X position. Every set with weight or reps becomes one point (X label = set date, oldest-to-newest); a missing value (`WeightKg = 0`, e.g. bodyweight, or `Reps = 0`, e.g. a duration-only set) becomes `null` — a gap in that line only, the other line still shows the set. Sets with neither are skipped
+- **One dual-axis chart, one point per workout — its first set**: the drill-down shows weight (left Y axis, kg) and reps (right Y axis) as two lines on one `webui.DualAxisChartData` chart instead of two separate line charts, so a set's weight and reps sit at the same X position. Only the first set of the exercise in each workout becomes a point (X label = set date, oldest-to-newest) — the same "first set" the history page and the selector hint show; follow-up sets of the same workout (80×6 after 80×8) appear only in the set history table, so the lines show progress between workouts instead of the drop-off inside one. A missing value (`WeightKg = 0`, e.g. bodyweight, or `Reps = 0`, e.g. a duration-only set) becomes `null` — a gap in that line only, the other line still shows the set. A first set with neither is skipped — the workout gets no point, a later set does not replace it. Picked in the handler from the `ListExerciseSets` result, no extra query
 - **Sessions pages live under `/web/workouts/sessions`, records stay at `/web/workouts`**: existing URLs don't move; both pages carry the same cross-links line ("Personal records · Sessions"), same pattern as `progress`'s `browseCrossLinks`. Gin matches the static `sessions` segment before the `:id` param, so `/web/workouts/:id` keeps working
 - **Lazy workout creation on the web**: "New workout" is a plain link to `GET /web/workouts/sessions/new` — it creates nothing. The workout row is created only by the first `POST /web/workouts/sessions/new/sets`, which then redirects to `/web/workouts/sessions/{real_id}`. An abandoned `new` screen leaves no empty workout behind
 - **Explicit "New workout" always starts a new workout**: unlike `log_workout_set`'s 2-hour reuse rule, the first set from the `new` screen always creates a new workout, closing any still-open one at its last set's time (same `CloseWorkout` call `logCurrent` makes) — the user explicitly asked for a new workout. Sets posted to `/web/workouts/sessions/{id}/sets` go straight into that workout, no 2-hour rule
 - **One validation for MCP and web**: the web form reuses `validateLogWorkoutSetInput` from `log_workout_set_mcp.go`, so the two entry points can't drift apart (same approach as `progress`'s `createProgressPoint`)
 - **Web form is reps + weight only**: exercise selector, weight/difficulty (kg, optional — for machines the stack level goes here) and reps (required). Duration-based sets (planks) stay MCP-only
 - **Exercise selector sorted by usage**: every exercise of the user, most-logged first (set count DESC, then name), never-used exercises at the bottom — via a new `ListExercisesByUsage` (LEFT JOIN, unlike `ListPersonalRecords` which drops unused exercises and runs N+1 record queries the selector doesn't need). After a set is logged, the form is prefilled with the workout's last set — exercise, weight and reps — so a series like 80×6, 80×4, 80×2 is one edit + submit per set. Taken from the DB, not from redirect params, so it survives a page reload
+- **Selector options carry the previous workout's first set**: each option reads "Bench press — 80 kg × 8" — the first set logged for that exercise in the latest *other* workout that contains it (the workout on screen is excluded, so the hint stays "what I started with last time" while sets are being added). Looked up only within the last 10 workouts — the same `ListWorkouts` (first 10) + `ListSets` from the oldest of them that the history page makes, no new query; an exercise not done in those 10 workouts shows the name only. Formatted with the same `formatSet` the history page uses. Text only — the weight/reps inputs are still prefilled from the current workout's last set, no JS
 - **History page reuses `list_workouts`' calls**: `ListWorkouts` (first 10) + `ListSets` from the oldest of them to now, filtered by workout ID + `GetExercisesByIDs` — no new query. Per workout: date, and per exercise (in order of first set) its name and the first set logged for it
 - **Workout screen shows what's already logged**: below the form, the sets of this workout in logging order (exercise, weight, reps), so the user sees each submit landed — same `ListSets` + filter, no new query
 - **Exercise `description` is free-text, nullable at the column level but always read back as `""`**: every read query wraps it in `COALESCE(description, '')` so `domain.Exercise.Description` is a plain `string`, never a pointer — existing rows predating the column get `''` instead of `NULL` on first read. `edit_exercise` takes `description` as `*string` specifically so "omitted" (keep current value) is distinguishable from "explicit empty string" (clear it), unlike `name`/`equipment_type` which use the zero-value-means-omitted convention
@@ -208,15 +209,14 @@ sequenceDiagram
     Browser->>Handler: GET /web/workouts/{id}
     Handler->>DB: GetExercise(id, userID)
     DB-->>Handler: Exercise
-    Handler->>DB: GetExerciseHistory(userID, id, limit, 0)
-    DB-->>Handler: []Workout (sessions containing this exercise)
-    Handler->>DB: ListSetsByExerciseAndWorkouts(userID, id, workoutIDs)
-    DB-->>Handler: []Set, ordered by created_at ASC
-    Handler->>Handler: build one DualAxisChartData from sets<br/>(one point per set: Left=weight or null, Right=reps or null)
+    Handler->>DB: ListExerciseSets(userID, id, workoutLimit=100)
+    DB-->>Handler: []Set of the 100 newest workouts with this exercise, ordered by created_at ASC
+    Handler->>Handler: build one DualAxisChartData from sets<br/>(one point per workout — its first set: Left=weight or null, Right=reps or null)
     Handler->>DB: GetPersonalRecords(userID, id)
     DB-->>Handler: PersonalRecords
     Handler->>Handler: build stat tiles (max weight, max reps, est. 1RM, times performed)
-    Handler->>Webui: RenderStatTiles, RenderDualAxisChart, RenderDetailView (no table), RenderPage
+    Handler->>Handler: build set history TableData from the same sets<br/>(newest workout first, logging order inside; row links to /web/workouts/sessions/{workout_id})
+    Handler->>Webui: RenderStatTiles, RenderDetailView (no table), RenderDualAxisChart, RenderTable (set history), RenderPage
     Webui-->>Browser: 200 text/html
 ```
 
@@ -236,7 +236,9 @@ sequenceDiagram
 
     Browser->>Handler: GET /web/workouts/sessions/new
     Handler->>DB: ListExercisesByUsage(userID)
-    Handler-->>Browser: 200 empty workout screen with form (no DB write)
+    Handler->>DB: ListWorkouts(userID) → first 10
+    Handler->>DB: ListSets(userID, oldest.started_at, now) → first set per exercise in its latest workout
+    Handler-->>Browser: 200 empty workout screen with form, options "name — previous first set" (no DB write)
 
     Browser->>Handler: POST /web/workouts/sessions/new/sets (exercise_id, weight_kg, reps)
     Handler->>Handler: validateLogWorkoutSetInput
@@ -251,6 +253,8 @@ sequenceDiagram
     Browser->>Handler: GET /web/workouts/sessions/{id}
     Handler->>DB: GetWorkoutsByIDs(userID, [id]) → 404 if missing/foreign
     Handler->>DB: ListExercisesByUsage(userID)
+    Handler->>DB: ListWorkouts(userID) → first 10
+    Handler->>DB: ListSets(userID, oldest.started_at, now) → first set per exercise in its latest workout other than {id}
     Handler->>DB: ListSets(userID, started_at, now) → filter by workout id
     Handler-->>Browser: 200 form (prefilled with last set) + logged sets
 
@@ -426,6 +430,10 @@ type WorkoutRepository interface {
 	// set count DESC, then name ASC; never-used exercises come last.
 	// Powers the web workout screen's exercise selector.
 	ListExercisesByUsage(ctx context.Context, userID int64) ([]Exercise, error)
+	// ListExerciseSets returns the sets of one exercise from the user's
+	// workoutLimit newest workouts containing it, ordered by created_at ASC.
+	// Powers the web exercise drill-down (chart + set history table).
+	ListExerciseSets(ctx context.Context, userID int64, exerciseID int64, workoutLimit int) ([]Set, error)
 }
 
 // SetWithExercise is a set joined with its exercise name, used by delete_workout_set
@@ -491,30 +499,36 @@ Returns best-ever results for an exercise: max_weight, max_reps, max_volume (sin
 Read-only list view: the "Personal records · Sessions" cross-links line, then an exercise achievement tile grid (see Best Practices), then every exercise the user has ever logged a set for, sorted by times performed (set count) descending. Columns: Name, Equipment, Description, Times performed, Max weight, Max reps, Est. 1RM (same Epley formula as `get_personal_records`). Each row links to `/web/workouts/{exercise_id}`. Built via `webui.RenderAchievementTiles` + `webui.RenderTable` on the shared design system shell (see `webui-spec.md`), behind the same `WebMiddleware` session auth as every other `/web/*` dashboard.
 
 ### GET /web/workouts/:id
-Drill-down for a single exercise: title subtitle shows the exercise's description (if any, HTML-escaped, via `DetailViewData.Description`), then stat tiles (max weight, max reps, est. 1RM, times performed) plus one dual-axis chart — weight (left Y axis, kg) and reps (right Y axis), one point per set (see "One dual-axis chart, one point per set" above) — built from every set ever logged for the exercise (via `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, oldest-to-newest). No history table (see "Drill-down page has no table, only charts" above). 404s if the exercise doesn't exist or doesn't belong to the current user.
+Drill-down for a single exercise: title subtitle shows the exercise's description (if any, HTML-escaped, via `DetailViewData.Description`), then stat tiles (max weight, max reps, est. 1RM, times performed) plus one dual-axis chart — weight (left Y axis, kg) and reps (right Y axis), one point per workout, its first set (see "One dual-axis chart, one point per workout — its first set" above) — built from the exercise's sets in its latest 100 workouts (one `ListExerciseSets` query, oldest-to-newest). Below the chart: the full set history table (Date, Set), newest workout first, sets inside a workout in logging order, every row linking to its workout screen — same 100-workout window, no pagination (see "Drill-down page: stat tiles, chart, then the set history" above). 404s if the exercise doesn't exist or doesn't belong to the current user.
 
 ### GET /web/workouts/sessions
 History: "Personal records · Sessions" cross-links, a "New workout" button (link to `/web/workouts/sessions/new`), then the last 10 workouts, newest first. Each workout shows its date (links to `/web/workouts/sessions/{id}`) and, per exercise in order of first set, the exercise name and its first set (e.g. "80 kg × 8"). Empty state: "No workouts yet".
 
 ### GET /web/workouts/sessions/new
-Empty workout screen: the set-adding form (exercise selector sorted by usage, weight kg, reps) posting to `/web/workouts/sessions/new/sets`. Creates nothing in the DB.
+Empty workout screen: the set-adding form (exercise selector sorted by usage, each option labelled "name — first set of the previous workout with it", e.g. "Bench press — 80 kg × 8"; weight kg, reps) posting to `/web/workouts/sessions/new/sets`. Creates nothing in the DB.
 
 ### POST /web/workouts/sessions/new/sets
 Logs the first set of a new workout: validates the form, closes any still-open workout, creates the workout and the set, redirects to `/web/workouts/sessions/{workout_id}`. On a validation error re-renders the `new` screen with an inline error and creates nothing.
 
 ### GET /web/workouts/sessions/:id
-Workout screen for an existing workout: header with the workout date, the set-adding form posting to `/web/workouts/sessions/{id}/sets` (prefilled with this workout's last set: exercise, weight, reps), then this workout's sets in logging order. 404s if the workout doesn't exist or doesn't belong to the current user.
+Workout screen for an existing workout: header with the workout date, the set-adding form posting to `/web/workouts/sessions/{id}/sets` (prefilled with this workout's last set: exercise, weight, reps; selector options labelled with the first set of the previous workout, this workout excluded), then this workout's sets in logging order. 404s if the workout doesn't exist or doesn't belong to the current user.
 
 ### POST /web/workouts/sessions/:id/sets
 Adds a set to the given workout (created_at = now), redirects back to its workout screen. Validation errors re-render the workout screen with an inline error; 404 for a missing/foreign workout.
 
 ## E2E Tests
 
-New file `tests/workout_sessions_web_test.go`:
+In `tests/workout_dashboard_web_test.go`:
+
+- `TestExerciseDetail_Chart_FirstSetPerWorkoutOnly`: two workouts, the older with 60×10 then 60×8, the newer with 80×8 then 80×6 → chart data holds exactly two points, 60/10 and 80/8, oldest first; 60×8 and 80×6 are not in the chart but are in the history table. Existing `TestExerciseDetail_ShowsStatTilesAndTrendCharts` / `TestExerciseDetail_SetWithoutWeight_GapInWeightLine` are adjusted to the one-point-per-workout rule
+- `TestWorkoutsDashboard_ExerciseDetail_SetHistory`: exercise logged in 101 workouts, the newest with sets 80×8 then 80×6, plus a bodyweight set (12 reps) → the page lists the sets of the newest 100 workouts and not the oldest one's; newest workout's rows come first and in logging order (80 kg × 8 before 80 kg × 6); each row links to `/web/workouts/sessions/{workout_id}`; another exercise's and another user's sets are absent; an exercise with no sets renders no history table
+
+In `tests/workout_sessions_web_test.go`:
 
 - `TestWorkoutSessions_History`: 11 workouts with sets → page shows only the newest 10, newest first; each workout shows its exercises with the first set of each (not later sets); "New workout" link present; empty state when no workouts
 - `TestWorkoutSessions_NewScreen_CreatesNothing`: GET `/new` renders the form, workout count in DB unchanged
 - `TestWorkoutSessions_NewScreen_ExercisesSortedByUsage`: exercises with 3, 1, 0 sets appear in the selector in that order
+- `TestWorkoutSessions_Selector_ShowsPreviousWorkoutFirstSet`: exercise A logged in an older workout (60×10) and a newer one (80×8, then 80×6), exercise B bodyweight (12 reps), exercise C never logged, exercise D logged only in a workout older than the last 10 → on `/new` options read "A — 80 kg × 8", "B — 12 reps", "C", "D"; on the newer workout's own screen A's option reads "A — 60 kg × 10" (current workout excluded); another user's sets never show up
 - `TestWorkoutSessions_FirstSet_CreatesWorkoutAndRedirects`: POST `/new/sets` → one new workout with one set (weight, reps), 302 to `/web/workouts/sessions/{id}`; a still-open older workout gets closed
 - `TestWorkoutSessions_AddSet_ToExistingWorkout`: POST `/{id}/sets` → set added to that workout, no new workout, redirect back
 - `TestWorkoutSessions_Validation`: missing exercise / missing reps → 200 with inline error, nothing created

@@ -153,14 +153,59 @@ func (s *IntegrationTestSuite) TestWorkoutSessions_NewScreen_ExercisesSortedByUs
 
 	body := s.getSessionsPage(ctx, "/web/workouts/sessions/new").Body.String()
 
-	iOften := strings.Index(body, ">Often<")
-	iRare := strings.Index(body, ">Rare<")
+	iOften := strings.Index(body, ">Often —")
+	iRare := strings.Index(body, ">Rare —")
 	iNever := strings.Index(body, ">Never<")
 	require.NotEqual(s.T(), -1, iOften)
 	require.NotEqual(s.T(), -1, iRare)
 	require.NotEqual(s.T(), -1, iNever)
 	assert.Less(s.T(), iOften, iRare)
 	assert.Less(s.T(), iRare, iNever)
+}
+
+func (s *IntegrationTestSuite) TestWorkoutSessions_Selector_ShowsPreviousWorkoutFirstSet() {
+	ctx := s.Context()
+	alphaID := s.createExercise(ctx, "Alpha", "barbell")
+	betaID := s.createExercise(ctx, "Beta", "bodyweight")
+	gammaID := s.createExercise(ctx, "Gamma", "machine")
+	deltaID := s.createExercise(ctx, "Delta", "machine")
+	fillerID := s.createExercise(ctx, "Filler", "machine")
+
+	now := time.Now()
+	// Delta was only done in a workout older than the last 10.
+	deltaAt := now.AddDate(0, 0, -20)
+	s.createSet(ctx, s.createWorkout(ctx, deltaAt), deltaID, 10, 40, deltaAt)
+	for i := 15; i >= 8; i-- {
+		at := now.AddDate(0, 0, -i)
+		s.createSet(ctx, s.createWorkout(ctx, at), fillerID, 10, 20, at)
+	}
+	olderAt := now.AddDate(0, 0, -2)
+	older := s.createWorkout(ctx, olderAt)
+	s.createSet(ctx, older, alphaID, 10, 60, olderAt)
+	newerAt := now.AddDate(0, 0, -1)
+	newer := s.createWorkout(ctx, newerAt)
+	s.createSet(ctx, newer, alphaID, 8, 80, newerAt)
+	s.createSet(ctx, newer, alphaID, 6, 80, newerAt.Add(time.Minute))
+	s.createSet(ctx, newer, betaID, 12, 0, newerAt.Add(2*time.Minute))
+
+	otherCtx := s.otherUserContext(ctx)
+	// The other user's set references this user's exercise, so it has to go
+	// before the suite truncates this user's data.
+	defer func() {
+		require.NoError(s.T(), s.dbMaintainer.TruncateUserData(context.Background(), gateways.UserIDFromContext(otherCtx)))
+	}()
+	otherAt := now.Add(-time.Hour)
+	s.createSet(otherCtx, s.createWorkout(otherCtx, otherAt), gammaID, 9, 99, otherAt)
+
+	body := s.getSessionsPage(ctx, "/web/workouts/sessions/new").Body.String()
+	assert.Contains(s.T(), body, ">Alpha — 80 kg × 8</option>", "first set of the latest workout with the exercise")
+	assert.Contains(s.T(), body, ">Beta — 12 reps</option>")
+	assert.Contains(s.T(), body, ">Gamma</option>", "never logged by this user")
+	assert.Contains(s.T(), body, ">Delta</option>", "not done in the last 10 workouts")
+
+	body = s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/%d", newer)).Body.String()
+	assert.Contains(s.T(), body, ">Alpha — 60 kg × 10</option>", "the workout on screen is excluded")
+	assert.Contains(s.T(), body, ">Beta</option>", "only logged in the workout on screen")
 }
 
 // --- POST /web/workouts/sessions/new/sets ------------------------------------
@@ -279,7 +324,7 @@ func (s *IntegrationTestSuite) TestWorkoutSessions_WorkoutScreen() {
 	require.NotEqual(s.T(), -1, i1)
 	require.NotEqual(s.T(), -1, i2)
 	assert.Less(s.T(), i1, i2, "sets must be listed in logging order")
-	assert.NotContains(s.T(), body, "90 kg × 3", "sets of another workout must not be shown")
+	assert.NotContains(s.T(), body, ">90 kg × 3</td>", "sets of another workout must not be shown")
 }
 
 func (s *IntegrationTestSuite) TestWorkoutSessions_UnknownOrForeignWorkout_404s() {

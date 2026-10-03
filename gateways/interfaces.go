@@ -39,6 +39,7 @@ type DB interface {
 	GetPersonalRecords(ctx context.Context, userID int64, exerciseID int64) (*domain.PersonalRecords, error)
 	ListPersonalRecords(ctx context.Context, userID int64) ([]domain.ExercisePersonalRecords, error)
 	ListExercisesByUsage(ctx context.Context, userID int64) ([]domain.Exercise, error)
+	ListExerciseSets(ctx context.Context, userID int64, exerciseID int64, workoutLimit int) ([]domain.Set, error)
 
 	// Workout methods
 	CreateWorkout(ctx context.Context, workout *domain.Workout) (int64, error)

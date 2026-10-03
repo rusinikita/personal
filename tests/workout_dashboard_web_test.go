@@ -207,6 +207,91 @@ func (s *IntegrationTestSuite) TestExerciseDetail_SetWithoutWeight_GapInWeightLi
 	assert.Contains(s.T(), body, "data: [8,12]", "set without weight must still show on the reps line")
 }
 
+func (s *IntegrationTestSuite) TestExerciseDetail_Chart_FirstSetPerWorkoutOnly() {
+	ctx := s.Context()
+	now := time.Now()
+
+	exID := s.createExercise(ctx, "Bench Press", "barbell")
+	at1 := now.AddDate(0, 0, -14)
+	w1 := s.createWorkout(ctx, at1)
+	s.createSet(ctx, w1, exID, 10, 60, at1)
+	s.createSet(ctx, w1, exID, 8, 60, at1.Add(time.Minute))
+	at2 := now.AddDate(0, 0, -7)
+	w2 := s.createWorkout(ctx, at2)
+	s.createSet(ctx, w2, exID, 8, 80, at2)
+	s.createSet(ctx, w2, exID, 6, 80, at2.Add(time.Minute))
+
+	r := s.workoutDashboardRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/workouts/%d", exID), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(s.T(), body, "data: [60,80]", "one weight point per workout, its first set")
+	assert.Contains(s.T(), body, "data: [10,8]", "one reps point per workout, its first set")
+	assert.Contains(s.T(), body, ">60 kg × 8</td>", "follow-up sets stay in the history table")
+	assert.Contains(s.T(), body, ">80 kg × 6</td>", "follow-up sets stay in the history table")
+}
+
+func (s *IntegrationTestSuite) TestWorkoutsDashboard_ExerciseDetail_SetHistory() {
+	ctx := s.Context()
+	now := time.Now()
+
+	exID := s.createExercise(ctx, "Bench Press", "barbell")
+	otherExID := s.createExercise(ctx, "Squat", "barbell")
+
+	var newest int64
+	for i := 101; i >= 1; i-- {
+		at := now.AddDate(0, 0, -i)
+		wID := s.createWorkout(ctx, at)
+		switch i {
+		case 101:
+			s.createSet(ctx, wID, exID, 3, 33, at)
+		case 1:
+			newest = wID
+			s.createSet(ctx, wID, exID, 8, 80, at)
+			s.createSet(ctx, wID, exID, 6, 80, at.Add(time.Minute))
+			s.createSet(ctx, wID, exID, 12, 0, at.Add(2*time.Minute))
+			s.createSet(ctx, wID, otherExID, 7, 77, at.Add(3*time.Minute))
+		default:
+			s.createSet(ctx, wID, exID, 5, 50, at)
+		}
+	}
+
+	otherCtx := s.otherUserContext(ctx)
+	// The other user's set references this user's exercise, so it has to go
+	// before the suite truncates this user's data.
+	defer func() {
+		require.NoError(s.T(), s.dbMaintainer.TruncateUserData(context.Background(), gateways.UserIDFromContext(otherCtx)))
+	}()
+	s.createSet(otherCtx, s.createWorkout(otherCtx, now), exID, 6, 66, now)
+
+	r := s.workoutDashboardRouter(ctx)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/web/workouts/%d", exID), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(s.T(), http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Equal(s.T(), 99, strings.Count(body, ">50 kg × 5</td>"), "every set of the newest 100 workouts is listed")
+	assert.NotContains(s.T(), body, "33 kg × 3", "the 101st newest workout is outside the window")
+	assert.NotContains(s.T(), body, "77 kg × 7", "another exercise's sets must not be shown")
+	assert.NotContains(s.T(), body, "66 kg × 6", "another user's sets must not be shown")
+
+	i1 := strings.Index(body, ">80 kg × 8</td>")
+	i2 := strings.Index(body, ">80 kg × 6</td>")
+	i3 := strings.Index(body, ">12 reps</td>")
+	i4 := strings.Index(body, ">50 kg × 5</td>")
+	require.NotEqual(s.T(), -1, i1)
+	require.NotEqual(s.T(), -1, i2)
+	require.NotEqual(s.T(), -1, i3)
+	assert.Less(s.T(), i1, i2, "sets of a workout must be in logging order")
+	assert.Less(s.T(), i2, i3, "sets of a workout must be in logging order")
+	assert.Less(s.T(), i3, i4, "newest workout must come first")
+	assert.Contains(s.T(), body, fmt.Sprintf(`<a href="/web/workouts/sessions/%d">`, newest), "rows link to their workout screen")
+}
+
 func (s *IntegrationTestSuite) TestExerciseDetail_UnknownOrForeignExercise_404s() {
 	r := s.workoutDashboardRouter(s.Context())
 	req := httptest.NewRequest(http.MethodGet, "/web/workouts/999999999", nil)
@@ -227,4 +312,5 @@ func (s *IntegrationTestSuite) TestExerciseDetail_NoSetsYet_RendersWithoutError(
 
 	assert.Equal(s.T(), http.StatusOK, w.Code)
 	assert.Contains(s.T(), w.Body.String(), "Fresh Exercise")
+	assert.NotContains(s.T(), w.Body.String(), "<table", "no sets means no history table")
 }

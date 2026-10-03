@@ -53,9 +53,12 @@ const historySrc = `<p><a href="/web/workouts/sessions/new" role="button">New wo
 
 var historyTemplate = template.Must(template.New("workoutHistory").Parse(historySrc))
 
+// exerciseOption is one selector option. PrevSet is the first set logged for
+// the exercise in the previous workout that had it, empty when there is none.
 type exerciseOption struct {
 	ID       int64
 	Name     string
+	PrevSet  string
 	Selected bool
 }
 
@@ -77,7 +80,7 @@ const setFormSrc = `<p><a href="/web/workouts/sessions">← Sessions</a></p>
     <label for="exercise-id">Exercise</label>
     <select id="exercise-id" name="exercise_id" required>
         <option value="">Choose exercise</option>
-        {{range .Exercises}}<option value="{{.ID}}"{{if .Selected}} selected{{end}}>{{.Name}}</option>
+        {{range .Exercises}}<option value="{{.ID}}"{{if .Selected}} selected{{end}}>{{.Name}}{{if .PrevSet}} — {{.PrevSet}}{{end}}</option>
         {{end}}
     </select>
     <div class="grid">
@@ -374,6 +377,49 @@ func createWebSet(ctx context.Context, db gateways.DB, userID, workoutID int64, 
 	return err
 }
 
+// previousFirstSets returns, per exercise ID, the first set logged for it in
+// the latest workout containing it, looking only at the last
+// historyWorkoutsLimit workouts and skipping excludeWorkoutID (0 = skip
+// nothing). Same ListWorkouts + ListSets calls the history page makes.
+func previousFirstSets(ctx context.Context, db gateways.DB, userID, excludeWorkoutID int64) (map[int64]domain.Set, error) {
+	workouts, err := db.ListWorkouts(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(workouts) > historyWorkoutsLimit {
+		workouts = workouts[:historyWorkoutsLimit]
+	}
+	if len(workouts) == 0 {
+		return nil, nil
+	}
+
+	// ListWorkouts returns newest first, so a lower rank is a newer workout.
+	rank := make(map[int64]int, len(workouts))
+	for i, w := range workouts {
+		if w.ID != excludeWorkoutID {
+			rank[w.ID] = i
+		}
+	}
+
+	sets, err := db.ListSets(ctx, userID, workouts[len(workouts)-1].StartedAt, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	first := map[int64]domain.Set{}
+	// ListSets returns newest first; walk it backwards to keep logging order.
+	for i := len(sets) - 1; i >= 0; i-- {
+		s := sets[i]
+		r, ok := rank[s.WorkoutID]
+		if !ok {
+			continue
+		}
+		if cur, found := first[s.ExerciseID]; !found || r < rank[cur.WorkoutID] {
+			first[s.ExerciseID] = s
+		}
+	}
+	return first, nil
+}
+
 // setFormDataFromPost keeps the submitted values so a re-rendered form with
 // an error doesn't lose what was typed.
 func setFormDataFromPost(c *gin.Context, errMsg string) setFormData {
@@ -401,6 +447,16 @@ func renderSessionPage(c *gin.Context, w *domain.Workout, form setFormData) {
 	exercises, err := db.ListExercisesByUsage(ctx, userID)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to load exercises: %v", err)
+		return
+	}
+
+	var excludeWorkoutID int64
+	if w != nil {
+		excludeWorkoutID = w.ID
+	}
+	prevSets, err := previousFirstSets(ctx, db, userID, excludeWorkoutID)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to load previous sets: %v", err)
 		return
 	}
 
@@ -435,11 +491,15 @@ func renderSessionPage(c *gin.Context, w *domain.Workout, form setFormData) {
 	form.Exercises = make([]exerciseOption, 0, len(exercises))
 	for _, ex := range exercises {
 		exerciseNames[ex.ID] = ex.Name
-		form.Exercises = append(form.Exercises, exerciseOption{
+		option := exerciseOption{
 			ID:       ex.ID,
 			Name:     ex.Name,
 			Selected: strconv.FormatInt(ex.ID, 10) == selected,
-		})
+		}
+		if prev, ok := prevSets[ex.ID]; ok {
+			option.PrevSet = formatSet(prev)
+		}
+		form.Exercises = append(form.Exercises, option)
 	}
 
 	form.Title = "New workout"

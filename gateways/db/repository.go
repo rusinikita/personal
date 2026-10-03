@@ -1572,6 +1572,47 @@ func (r *repository) ListExercisesByUsage(ctx context.Context, userID int64) ([]
 	return exercises, nil
 }
 
+// ListExerciseSets returns the sets of one exercise from the user's
+// workoutLimit newest workouts containing it, oldest set first.
+// Used by the workouts web exercise drill-down (chart + set history table).
+func (r *repository) ListExerciseSets(ctx context.Context, userID int64, exerciseID int64, workoutLimit int) ([]domain.Set, error) {
+	query := `
+		SELECT s.id, s.user_id, s.workout_id, s.exercise_id,
+		       COALESCE(s.reps, 0), COALESCE(s.duration_seconds, 0), COALESCE(s.weight_kg, 0),
+		       s.created_at
+		FROM sets s
+		WHERE s.user_id = $1
+		  AND s.exercise_id = $2
+		  AND s.workout_id IN (
+			SELECT w.id
+			FROM workouts w
+			WHERE EXISTS (
+				SELECT 1 FROM sets ws
+				WHERE ws.workout_id = w.id AND ws.user_id = $1 AND ws.exercise_id = $2
+			)
+			ORDER BY w.started_at DESC
+			LIMIT $3
+		  )
+		ORDER BY s.created_at ASC, s.id ASC`
+
+	rows, err := r.db.Query(ctx, query, userID, exerciseID, workoutLimit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query exercise sets: %w", err)
+	}
+	defer rows.Close()
+
+	var sets []domain.Set
+	for rows.Next() {
+		var s domain.Set
+		if err := rows.Scan(&s.ID, &s.UserID, &s.WorkoutID, &s.ExerciseID, &s.Reps, &s.DurationSeconds, &s.WeightKg, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan set: %w", err)
+		}
+		sets = append(sets, s)
+	}
+
+	return sets, rows.Err()
+}
+
 func (r *repository) ListSetsByExerciseAndWorkouts(ctx context.Context, userID int64, exerciseID int64, workoutIDs []int64) ([]domain.Set, error) {
 	if len(workoutIDs) == 0 {
 		return []domain.Set{}, nil

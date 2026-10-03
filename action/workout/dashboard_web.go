@@ -23,12 +23,9 @@ import (
 // shows (see docs/functions/achievements-spec.md).
 var workoutAchievementTypes = []domain.AchievementType{domain.AchievementTypeExerciseMaxWeight, domain.AchievementTypeExerciseTotalVolume}
 
-// historyLimit bounds the exercise-history query used to build the
-// drill-down's trend charts. A single-user personal tool won't log anywhere
-// near this many sessions for one exercise, so this is effectively
-// "unlimited" while still satisfying GetExerciseHistory's required limit
-// param (a literal 0 would mean "return zero rows", not "no limit").
-const historyLimit = 10000
+// exerciseHistoryWorkoutsLimit is how many newest workouts containing the
+// exercise the drill-down loads sets from, for its chart and history table.
+const exerciseHistoryWorkoutsLimit = 100
 
 var workoutsNav = webui.BuildNav(webui.NavWorkouts)
 
@@ -125,8 +122,9 @@ func PersonalRecordsWebHandler(c *gin.Context) {
 }
 
 // ExerciseDetailWebHandler renders GET /web/workouts/{id}: a drill-down with
-// personal-record stat tiles plus one dual-axis chart (weight left, reps
-// right, one point per set) built from every set ever logged for the exercise.
+// personal-record stat tiles, one dual-axis chart (weight left, reps right,
+// one point per workout — its first set) and the set history table, built
+// from the exercise's sets in its latest exerciseHistoryWorkoutsLimit workouts.
 func ExerciseDetailWebHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
@@ -158,26 +156,28 @@ func ExerciseDetailWebHandler(c *gin.Context) {
 		return
 	}
 
-	workouts, err := db.GetExerciseHistory(ctx, userID, exerciseID, historyLimit, 0)
-	if err != nil {
-		c.String(http.StatusInternalServerError, "Failed to load exercise history: %v", err)
-		return
-	}
-	workoutIDs := make([]int64, len(workouts))
-	for i, w := range workouts {
-		workoutIDs[i] = w.ID
-	}
-	// ListSetsByExerciseAndWorkouts orders by created_at ASC regardless of
-	// workoutIDs order, so the sets below are already oldest-to-newest —
-	// exactly the order the chart needs.
-	sets, err := db.ListSetsByExerciseAndWorkouts(ctx, userID, exerciseID, workoutIDs)
+	// ListExerciseSets returns the sets oldest-to-newest — exactly the order
+	// the chart needs.
+	sets, err := db.ListExerciseSets(ctx, userID, exerciseID, exerciseHistoryWorkoutsLimit)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to load sets: %v", err)
 		return
 	}
 
+	// setsByWorkout keeps each workout's sets in logging order; workoutOrder
+	// is the workouts oldest-to-newest.
+	setsByWorkout := map[int64][]domain.Set{}
+	var workoutOrder []int64
 	points := make([]webui.DualAxisChartPoint, 0, len(sets))
 	for _, s := range sets {
+		if _, seen := setsByWorkout[s.WorkoutID]; !seen {
+			workoutOrder = append(workoutOrder, s.WorkoutID)
+		}
+		setsByWorkout[s.WorkoutID] = append(setsByWorkout[s.WorkoutID], s)
+		// Only the workout's first set becomes a chart point.
+		if len(setsByWorkout[s.WorkoutID]) > 1 {
+			continue
+		}
 		if s.WeightKg <= 0 && s.Reps <= 0 {
 			continue
 		}
@@ -212,13 +212,29 @@ func ExerciseDetailWebHandler(c *gin.Context) {
 
 	chart := webui.DualAxisChartData{
 		ID:              fmt.Sprintf("chart-weight-reps-%d", exerciseID),
-		Title:           exercise.Name + " — weight and reps per set",
+		Title:           exercise.Name + " — weight and reps of the first set per workout",
 		LeftSeriesName:  "Weight (kg)",
 		RightSeriesName: "Reps",
 		Points:          points,
 	}
 
 	content := webui.RenderDetailView(detail) + webui.RenderDualAxisChart(chart)
+
+	if len(sets) > 0 {
+		rows := make([]webui.TableRow, 0, len(sets))
+		for i := len(workoutOrder) - 1; i >= 0; i-- {
+			for _, s := range setsByWorkout[workoutOrder[i]] {
+				rows = append(rows, webui.TableRow{
+					Cells:   []string{s.CreatedAt.Format("2006-01-02"), formatSet(s)},
+					LinkURL: fmt.Sprintf("/web/workouts/sessions/%d", s.WorkoutID),
+				})
+			}
+		}
+		content += webui.RenderTable(webui.TableData{
+			Columns: []webui.TableColumn{{Label: "Date"}, {Label: "Set"}},
+			Rows:    rows,
+		})
+	}
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
