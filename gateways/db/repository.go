@@ -37,6 +37,7 @@ type postgres interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 type repository struct {
@@ -175,6 +176,16 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 	}
 
 	_, err = r.db.Exec(ctx, `DELETE FROM ideas WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM doc_chunks WHERE user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM docs WHERE user_id = $1`, userID)
 	if err != nil {
 		return err
 	}
@@ -2834,4 +2845,328 @@ func (r *repository) ResolveIdea(ctx context.Context, resolve domain.IdeaResolve
 	}
 
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Personal docs (see docs/functions/personaldocs-spec.md)
+// ---------------------------------------------------------------------------
+
+// inTx runs fn in a transaction, committing when it returns nil.
+func (r *repository) inTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := fn(tx); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+// touchPersonalDoc sets the document's updated_at. It runs first in every
+// chunk write, so its row lock also serializes writes to one document.
+func touchPersonalDoc(ctx context.Context, tx pgx.Tx, docID int64, userID int64, at time.Time) error {
+	result, err := tx.Exec(ctx, `UPDATE docs SET updated_at = $1 WHERE id = $2 AND user_id = $3`, at, docID, userID)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("personal doc not found")
+	}
+
+	return nil
+}
+
+func (r *repository) CreatePersonalDoc(ctx context.Context, doc *domain.PersonalDoc) (int64, error) {
+	query := `
+		INSERT INTO docs (user_id, title, description, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $4)
+		RETURNING id`
+
+	if doc.CreatedAt.IsZero() {
+		doc.CreatedAt = time.Now().UTC()
+	}
+	doc.UpdatedAt = doc.CreatedAt
+
+	var id int64
+	err := r.db.QueryRow(ctx, query, doc.UserID, doc.Title, doc.Description, doc.CreatedAt).Scan(&id)
+
+	return id, err
+}
+
+func (r *repository) GetPersonalDoc(ctx context.Context, docID int64, userID int64) (*domain.PersonalDoc, error) {
+	query := `
+		SELECT id, user_id, title, description, created_at, updated_at
+		FROM docs
+		WHERE user_id = $1 AND id = $2`
+
+	var doc domain.PersonalDoc
+	err := r.db.QueryRow(ctx, query, userID, docID).Scan(
+		&doc.ID,
+		&doc.UserID,
+		&doc.Title,
+		&doc.Description,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &doc, nil
+}
+
+func (r *repository) ListPersonalDocs(ctx context.Context, userID int64) ([]domain.PersonalDoc, error) {
+	query := `
+		SELECT id, user_id, title, description, created_at, updated_at
+		FROM docs
+		WHERE user_id = $1
+		ORDER BY id`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query personal docs: %w", err)
+	}
+	defer rows.Close()
+
+	var docs []domain.PersonalDoc
+	for rows.Next() {
+		var doc domain.PersonalDoc
+		err := rows.Scan(
+			&doc.ID,
+			&doc.UserID,
+			&doc.Title,
+			&doc.Description,
+			&doc.CreatedAt,
+			&doc.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan personal doc: %w", err)
+		}
+		docs = append(docs, doc)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return docs, nil
+}
+
+func (r *repository) UpdatePersonalDoc(ctx context.Context, doc *domain.PersonalDoc) error {
+	query := `
+		UPDATE docs
+		SET title = $1, description = $2, updated_at = $3
+		WHERE id = $4 AND user_id = $5`
+
+	doc.UpdatedAt = time.Now().UTC()
+
+	result, err := r.db.Exec(ctx, query, doc.Title, doc.Description, doc.UpdatedAt, doc.ID, doc.UserID)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("personal doc not found")
+	}
+
+	return nil
+}
+
+func (r *repository) CreatePersonalDocChunk(ctx context.Context, chunk *domain.PersonalDocChunk) (int64, error) {
+	if chunk.CreatedAt.IsZero() {
+		chunk.CreatedAt = time.Now().UTC()
+	}
+	chunk.UpdatedAt = chunk.CreatedAt
+
+	var id int64
+	err := r.inTx(ctx, func(tx pgx.Tx) error {
+		if err := touchPersonalDoc(ctx, tx, chunk.DocID, chunk.UserID, chunk.CreatedAt); err != nil {
+			return err
+		}
+
+		if chunk.Position == 0 {
+			err := tx.QueryRow(ctx,
+				`SELECT COALESCE(MAX(position), 0) + 1 FROM doc_chunks WHERE doc_id = $1`,
+				chunk.DocID,
+			).Scan(&chunk.Position)
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err := tx.Exec(ctx,
+				`UPDATE doc_chunks SET position = position + 1 WHERE doc_id = $1 AND position >= $2`,
+				chunk.DocID, chunk.Position,
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+		return tx.QueryRow(ctx, `
+			INSERT INTO doc_chunks (user_id, doc_id, position, body, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $5)
+			RETURNING id`,
+			chunk.UserID, chunk.DocID, chunk.Position, chunk.Body, chunk.CreatedAt,
+		).Scan(&id)
+	})
+
+	return id, err
+}
+
+func (r *repository) GetPersonalDocChunk(ctx context.Context, chunkID int64, userID int64) (*domain.PersonalDocChunk, error) {
+	query := `
+		SELECT id, user_id, doc_id, position, body, previous_body, created_at, updated_at
+		FROM doc_chunks
+		WHERE user_id = $1 AND id = $2`
+
+	var chunk domain.PersonalDocChunk
+	err := r.db.QueryRow(ctx, query, userID, chunkID).Scan(
+		&chunk.ID,
+		&chunk.UserID,
+		&chunk.DocID,
+		&chunk.Position,
+		&chunk.Body,
+		&chunk.PreviousBody,
+		&chunk.CreatedAt,
+		&chunk.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &chunk, nil
+}
+
+func (r *repository) ListPersonalDocChunks(ctx context.Context, docID int64, userID int64) ([]domain.PersonalDocChunk, error) {
+	query := `
+		SELECT id, user_id, doc_id, position, body, previous_body, created_at, updated_at
+		FROM doc_chunks
+		WHERE user_id = $1 AND doc_id = $2
+		ORDER BY position`
+
+	rows, err := r.db.Query(ctx, query, userID, docID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query personal doc chunks: %w", err)
+	}
+	defer rows.Close()
+
+	var chunks []domain.PersonalDocChunk
+	for rows.Next() {
+		var chunk domain.PersonalDocChunk
+		err := rows.Scan(
+			&chunk.ID,
+			&chunk.UserID,
+			&chunk.DocID,
+			&chunk.Position,
+			&chunk.Body,
+			&chunk.PreviousBody,
+			&chunk.CreatedAt,
+			&chunk.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan personal doc chunk: %w", err)
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return chunks, nil
+}
+
+func (r *repository) UpdatePersonalDocChunk(ctx context.Context, chunk *domain.PersonalDocChunk) error {
+	return r.inTx(ctx, func(tx pgx.Tx) error {
+		if err := touchPersonalDoc(ctx, tx, chunk.DocID, chunk.UserID, time.Now().UTC()); err != nil {
+			return err
+		}
+
+		var oldPosition int
+		err := tx.QueryRow(ctx,
+			`SELECT position FROM doc_chunks WHERE id = $1 AND user_id = $2 AND doc_id = $3`,
+			chunk.ID, chunk.UserID, chunk.DocID,
+		).Scan(&oldPosition)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("personal doc chunk not found")
+		}
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case chunk.Position < oldPosition:
+			_, err = tx.Exec(ctx,
+				`UPDATE doc_chunks SET position = position + 1 WHERE doc_id = $1 AND position >= $2 AND position < $3`,
+				chunk.DocID, chunk.Position, oldPosition,
+			)
+		case chunk.Position > oldPosition:
+			_, err = tx.Exec(ctx,
+				`UPDATE doc_chunks SET position = position - 1 WHERE doc_id = $1 AND position > $2 AND position <= $3`,
+				chunk.DocID, oldPosition, chunk.Position,
+			)
+		}
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(ctx, `
+			UPDATE doc_chunks
+			SET body = $1, previous_body = $2, updated_at = $3, position = $4
+			WHERE id = $5`,
+			chunk.Body, chunk.PreviousBody, chunk.UpdatedAt, chunk.Position, chunk.ID,
+		)
+
+		return err
+	})
+}
+
+func (r *repository) DeletePersonalDocChunk(ctx context.Context, chunkID int64, userID int64) error {
+	return r.inTx(ctx, func(tx pgx.Tx) error {
+		var docID int64
+		err := tx.QueryRow(ctx,
+			`SELECT doc_id FROM doc_chunks WHERE id = $1 AND user_id = $2`,
+			chunkID, userID,
+		).Scan(&docID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("personal doc chunk not found")
+		}
+		if err != nil {
+			return err
+		}
+
+		if err := touchPersonalDoc(ctx, tx, docID, userID, time.Now().UTC()); err != nil {
+			return err
+		}
+
+		var position int
+		err = tx.QueryRow(ctx,
+			`DELETE FROM doc_chunks WHERE id = $1 AND user_id = $2 RETURNING position`,
+			chunkID, userID,
+		).Scan(&position)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("personal doc chunk not found")
+		}
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(ctx,
+			`UPDATE doc_chunks SET position = position - 1 WHERE doc_id = $1 AND position > $2`,
+			docID, position,
+		)
+
+		return err
+	})
 }

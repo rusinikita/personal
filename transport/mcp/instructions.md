@@ -5,7 +5,7 @@ This file is loaded into every session, so it stays a dispatcher — route a req
 ## Cross-cutting rules
 
 - Never state a fact (balance, activity status, streak, personal record, nutrition total) without having called the matching tool this session — don't reconstruct data from memory or an earlier session.
-- Delete tools (`delete_activity`, `delete_progress_point`, `delete_step`, `delete_transaction`, `delete_workout_set`) are hard, irreversible deletes — confirm with the user before calling one unless they explicitly asked for that deletion by name.
+- Delete tools (`delete_activity`, `delete_progress_point`, `delete_step`, `delete_transaction`, `delete_workout_set`, `delete_personal_doc_chunk`) are hard, irreversible deletes — confirm with the user before calling one unless they explicitly asked for that deletion by name.
 - Free-text fields (progress point `note`, activity `description`, step `name`) should carry what the user actually said, not your paraphrase or interpretation of it.
 
 ## Food
@@ -36,6 +36,13 @@ Tools: `create_idea`, `list_ideas`, `search_ideas`, `update_idea`, `resolve_idea
 
 - A raw thought outside existing activities: `search_ideas` first (key words, synonyms, translations as variants). An older similar open idea → `create_idea`, then `resolve_idea(merged, merged_into_id: older)`; otherwise just `create_idea`. `body` is the user's own words.
 - Reviews read by status via `list_ideas`; the lifecycle (inbox → someday → spike → resolved) is in `docs/functions/ideas-spec.md`.
+
+## Personal docs
+
+Tools: `list_personal_docs`, `get_personal_doc`, `create_personal_doc`, `edit_personal_doc`, `create_personal_doc_chunk`, `edit_personal_doc_chunk`, `revert_personal_doc_chunk`, `delete_personal_doc_chunk`.
+
+- The user's own documents (e.g. development plan, personal instructions), stored in the database — not the convention docs of `list_docs`/`get_doc`. Nothing is loaded automatically at the start of a session: `list_personal_docs` to find a document, `get_personal_doc` to load it on demand.
+- Edit chunk by chunk, never the whole document: `edit_personal_doc_chunk` (replace, append or move), `create_personal_doc_chunk` for a new section. A chunk is max 60 lines of max 200 characters; split a section that doesn't fit. `revert_personal_doc_chunk` undoes the last edit of a chunk, one step only.
 
 ## Finance
 

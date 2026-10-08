@@ -2,7 +2,7 @@
 
 ## Overview
 
-Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Achievements) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart, a bar chart, a combo chart, a dual-axis line chart, a month-grid calendar, a drill-down/detail layout, and an achievement-progress tile grid, all themed consistently (light + dark) from a single place.
+Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Achievements) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart, a bar chart, a combo chart, a dual-axis line chart, a month-grid calendar, a drill-down/detail layout, an achievement-progress tile grid, and a compact action bar, all themed consistently (light + dark) from a single place.
 
 Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain.
 
@@ -279,6 +279,28 @@ type AchievementTilesData struct {
     Tiles        []AchievementTileData
     EmptyMessage string // shown instead of the grid when Tiles is empty; empty string means render nothing (see achievements-spec.md's embedded-vs-dedicated empty-state convention)
 }
+
+// ActionField is one hidden input of a POST action button.
+type ActionField struct {
+    Name  string
+    Value string
+}
+
+// ActionButton is one compact button of an action bar: a link, or a
+// one-button POST form when Method is "POST". Both look the same.
+type ActionButton struct {
+    Label  string        // glyph or short text on the button, e.g. "↑", "✎"
+    Title  string        // what the button does, e.g. "Move up" — rendered as title and aria-label, required since Label is usually a glyph
+    URL    string        // link target, or the form action when Method is "POST"
+    Method string        // "" = link (<a role="button">); "POST" = form with a submit button
+    Fields []ActionField // hidden inputs of the POST form; ignored for a link
+}
+
+// ActionBarData is a row of compact buttons acting on one item of a page
+// (e.g. move / edit / delete on a chunk in personaldocs-spec.md).
+type ActionBarData struct {
+    Buttons []ActionButton // empty renders nothing
+}
 ```
 
 ### Repository Interface
@@ -302,6 +324,7 @@ action/webui/templates/
     calendar.html                  {{define "components/calendar"}}
     detail_view.html               {{define "components/detail_view"}}
     achievement_tiles.html                 {{define "components/achievement_tiles"}}  — one <article> card per AchievementTileData, wrapped in a responsive grid
+    action_bar.html                {{define "components/action_bar"}}  — row of compact link / POST-form buttons
   pages/
     design_system.html             {{define "pages/design_system"}}   — demo page's own composition
 ```
@@ -322,6 +345,7 @@ The one real route this package owns. Renders a single page built entirely from 
 - A month-grid calendar with real, correctly-computed leading/trailing days and a few sample linked/unlinked days (previewing the Money transaction calendar use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 - An achievement tile grid with a few sample tiles (mixed progress percentages, one with a deadline, one `OverTarget`) previewing both the dedicated Achievements page and an embedded subset use
+- An action bar under a sample card, mixing link buttons and POST-form buttons (previewing the per-chunk buttons of Personal docs); its POST buttons point at the design-system page itself and change nothing (`POST /web/design-system` only redirects `303` back to the page)
 
 Behind `WebMiddleware` (see `auth-spec.md`'s "Authorization for web dashboards" flow) like every other `/web/*` dashboard — it renders through the same shell, and the shell now shows the logged-in username, so it needs a real session to demo that correctly.
 
@@ -360,6 +384,9 @@ Renders the drill-down/detail layout: back link, title, optional description par
 ### `webui.RenderAchievementTiles(data AchievementTilesData) template.HTML`
 Renders `data.Tiles` as a responsive card grid (`<article class="webui-achievement-tile">` per tile, CSS grid wrapper — same "no fixed viewport sizing" responsiveness as every other component), each card showing the achievement name, a Pico native `<progress value="{{.PercentComplete}}" max="100">` bar, the `ProgressLabel` text below it, and the `Deadline` line when set. When `LinkURL` is set, the achievement name is rendered as `<a href="{{.LinkURL}}">{{.Name}}</a>` instead of plain text — the same "link the primary identifier, not the whole card" convention `RenderTable` uses for a row's first cell — otherwise it's plain text (some achievement types have no drill-down target, see `achievements-spec.md`). A tile with `OverTarget` true gets a warning-tint class (`webui-achievement-tile--over`), styled from the same `:root` design tokens as the rest of the custom CSS layer. When `data.Tiles` is empty, renders `data.EmptyMessage` if set, or nothing at all if it's also empty — the dedicated `/web/achievements` page always sets a message ("No active achievements yet"), while Money/Progress-browse/Workouts leave it unset so an embedded section with no achievements of that domain's types simply doesn't appear (see `achievements-spec.md`).
 
+### `webui.RenderActionBar(data ActionBarData) template.HTML`
+Renders `data.Buttons` as one row (`<div class="webui-actions">`, flex with a small gap, wraps on narrow screens). A link button is `<a role="button" class="outline secondary webui-action">`; a POST button is a `<form method="POST">` with its hidden `Fields` and a `<button type="submit" class="outline secondary webui-action">`. Both carry `title` and `aria-label` from `Title`. `.webui-action` (in `layout.html`) makes the two identical and compact: reduced padding and font size, width by content instead of Pico's full-width form button, no bottom margin. No client-side JS. Empty `Buttons` renders nothing.
+
 ## Local Preview
 
 ### `make preview-webui` (`cmd/webui-preview`)
@@ -371,7 +398,7 @@ No E2E test: it's a developer tool, not an HTTP handler; the pages it serves are
 
 In `tests/webui_design_system_test.go`:
 
-- `TestDesignSystem_*`: renders OK; loads pico CSS from CDN; loads chart JS from CDN; supports light and dark via media query; nav has active item; shows stat tiles plain and emphasized; shows table with drill down link; shows line charts; shows bar chart; shows combo chart; shows dual axis chart; charts have unique canvas ids; shows drill down detail view; escapes fixture text containing markup
+- `TestDesignSystem_*`: renders OK; loads pico CSS from CDN; loads chart JS from CDN; supports light and dark via media query; nav has active item; shows stat tiles plain and emphasized; shows table with drill down link; shows line charts; shows bar chart; shows combo chart; shows dual axis chart; charts have unique canvas ids; shows drill down detail view; shows action bar with link and POST-form buttons carrying `title` and `aria-label`; escapes fixture text containing markup
 
 In `tests/webui_user_menu_test.go`:
 
@@ -380,6 +407,8 @@ In `tests/webui_user_menu_test.go`:
 
 ## Changelog
 
+- **09-10-26** — `POST /web/design-system` redirects back to the page, so the sample POST buttons of the action bar work (HTTP Handlers)
+- **08-10-26** — added the action bar component: `RenderActionBar`, `ActionBarData`, `.webui-actions` / `.webui-action` (Overview, Go Code Structure, HTTP Handlers, E2E Tests)
 - **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; E2E Tests rewritten as a list of the current tests; added Changelog (Architecture Diagrams, E2E Tests, Changelog)
 - **29-09-26** — local preview runs on a Postgres testcontainer restored from a cached fixture snapshot (Overview, Local Preview)
 - **26-09-26** — goal tiles renamed to achievement tiles (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers)

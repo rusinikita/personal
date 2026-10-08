@@ -15,6 +15,7 @@ import (
 	"personal/action/docs"
 	"personal/action/ideas"
 	"personal/action/money"
+	"personal/action/personaldocs"
 	"personal/action/progress"
 	"personal/action/webui"
 	"personal/action/workout"
@@ -45,6 +46,10 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 
 	router.GET("/web/progress", dbMiddleware(db), progress.DashboardWebHandler)
 	router.GET("/web/design-system", webAuth, webui.DesignSystemHandler)
+	// The demo action bar's POST buttons land here and change nothing.
+	router.POST("/web/design-system", webAuth, func(c *gin.Context) {
+		c.Redirect(http.StatusSeeOther, "/web/design-system")
+	})
 
 	// Progress browse view — new, free-scrolling, full-color pages built on
 	// the webui design system. Separate from /web/progress above, which
@@ -101,6 +106,19 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	// read-only, no DB access.
 	router.GET("/web/docs", webAuth, docs.IndexWebHandler)
 	router.GET("/web/docs/:topic", webAuth, docs.DocWebHandler)
+
+	// Personal docs — user-owned markdown documents stored in the database,
+	// read and edited one chunk at a time on a single document page.
+	router.GET("/web/personal-docs", webAuth, dbMiddleware(db), personaldocs.PersonalDocsWebHandler)
+	router.GET("/web/personal-docs/new", webAuth, dbMiddleware(db), personaldocs.NewPersonalDocWebHandler)
+	router.POST("/web/personal-docs", webAuth, dbMiddleware(db), personaldocs.CreatePersonalDocWebHandler)
+	router.GET("/web/personal-docs/:id", webAuth, dbMiddleware(db), personaldocs.PersonalDocWebHandler)
+	router.POST("/web/personal-docs/:id", webAuth, dbMiddleware(db), personaldocs.EditPersonalDocWebHandler)
+	router.POST("/web/personal-docs/:id/chunks", webAuth, dbMiddleware(db), personaldocs.CreatePersonalDocChunkWebHandler)
+	router.POST("/web/personal-docs/:id/chunks/:chunk_id", webAuth, dbMiddleware(db), personaldocs.SavePersonalDocChunkWebHandler)
+	router.POST("/web/personal-docs/:id/chunks/:chunk_id/move", webAuth, dbMiddleware(db), personaldocs.MovePersonalDocChunkWebHandler)
+	router.POST("/web/personal-docs/:id/chunks/:chunk_id/revert", webAuth, dbMiddleware(db), personaldocs.RevertPersonalDocChunkWebHandler)
+	router.POST("/web/personal-docs/:id/chunks/:chunk_id/delete", webAuth, dbMiddleware(db), personaldocs.DeletePersonalDocChunkWebHandler)
 
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))

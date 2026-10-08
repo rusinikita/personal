@@ -12,6 +12,7 @@ import (
 	"personal/action/food"
 	"personal/action/ideas"
 	"personal/action/money"
+	"personal/action/personaldocs"
 	"personal/action/progress"
 	"personal/action/telegram"
 	"personal/action/workout"
@@ -121,6 +122,16 @@ func Server(db gateways.DB, tg gateways.Telegram) *mcp.Server {
 	// Convention docs
 	mcp.AddTool(server, &docs.ListDocsMCPDefinition, docs.ListDocs)
 	mcp.AddTool(server, &docs.GetDocMCPDefinition, docs.GetDoc)
+
+	// Personal docs
+	mcp.AddTool(server, &personaldocs.ListPersonalDocsMCPDefinition, personaldocs.ListPersonalDocs)
+	mcp.AddTool(server, &personaldocs.GetPersonalDocMCPDefinition, personaldocs.GetPersonalDoc)
+	mcp.AddTool(server, &personaldocs.CreatePersonalDocMCPDefinition, personaldocs.CreatePersonalDoc)
+	mcp.AddTool(server, &personaldocs.EditPersonalDocMCPDefinition, personaldocs.EditPersonalDoc)
+	mcp.AddTool(server, &personaldocs.CreatePersonalDocChunkMCPDefinition, personaldocs.CreatePersonalDocChunk)
+	mcp.AddTool(server, &personaldocs.EditPersonalDocChunkMCPDefinition, personaldocs.EditPersonalDocChunk)
+	mcp.AddTool(server, &personaldocs.RevertPersonalDocChunkMCPDefinition, personaldocs.RevertPersonalDocChunk)
+	mcp.AddTool(server, &personaldocs.DeletePersonalDocChunkMCPDefinition, personaldocs.DeletePersonalDocChunk)
 
 	// Telegram notifications
 	mcp.AddTool(server, &telegram.SendTelegramMessageMCPDefinition, telegram.SendTelegramMessage)

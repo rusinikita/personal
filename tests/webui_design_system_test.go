@@ -215,3 +215,20 @@ func (s *IntegrationTestSuite) TestDesignSystem_EscapesFixtureTextContainingMark
 	assert.NotContains(s.T(), body, "<3 days>",
 		"the unescaped raw markup must never appear in the output")
 }
+
+func (s *IntegrationTestSuite) TestDesignSystem_ShowsActionBar() {
+	r := s.designSystemRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/web/design-system", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, `<div class="webui-actions">`)
+	assert.Contains(s.T(), body,
+		`<a role="button" class="outline secondary webui-action" href="/web/design-system" title="Edit" aria-label="Edit">✎</a>`,
+		"a link button must carry title and aria-label")
+	assert.Contains(s.T(), body,
+		`<form method="POST" action="/web/design-system"><input type="hidden" name="direction" value="up"><button type="submit" class="outline secondary webui-action" title="Move up" aria-label="Move up">↑</button></form>`,
+		"a POST button must be a form with its hidden fields, title and aria-label")
+}

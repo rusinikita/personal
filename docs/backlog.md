@@ -32,24 +32,6 @@ Write `action/docs/content/{subject}-mechanics.md` and/or `-rituals.md` for food
 
 **Why:** `transport/mcp/instructions.md` was trimmed to a dispatcher (subdomain → first tool call) for every subdomain, including food/workout/finance — but unlike activities, they have no `get_doc` fallback yet, so anything beyond "which tool to call first" that used to live in the old instructions text (metaphor scripts, exact wording, detailed procedure) is currently just gone until this is written.
 
-## 27-09-26 — Personal documents: editable, versioned, stored outside the repo
-
-User-owned markdown documents kept in the database instead of the codebase, editable via MCP and the web, with every edit saved as a new version. First two documents: a personal development plan and personal instructions (how the agent should work with the user, preferences, rules).
-
-- A document: slug, title, current body, created_at, updated_at.
-- A version per edit: document id, body snapshot, created_at, optional short change note. Old versions are read-only; no hard delete of history.
-- MCP: list documents, read one (current or a given version), create, edit (full replace or append), list a document's versions.
-- Web: list and read documents, edit form, version history with a diff against the previous version.
-
-**Why:** `action/docs` (see `docs-spec.md`) serves only hand-written convention docs embedded via `go:embed` — changing them is a commit + deploy, and they are shared project content, not personal data. A development plan and personal instructions change often, are edited mid-conversation by the agent or by the user from the phone, and don't belong in the git history of the code. Versioning keeps the "commit history" benefit (what changed in the plan and when) without living in the repo.
-
-**Use cases:**
-- The agent pulls the personal instructions at the start of a session, the same way it pulls `get_doc` today.
-- Update the development plan after a monthly/quarterly review and later see how it changed over time.
-- Edit a document from the web without going through chat.
-
-**Open question:** decide in the feature doc whether this extends `action/docs` (one `list_docs`/`get_doc` over both embedded and DB-stored documents) or is a separate subdomain with its own tools.
-
 ## 02-10-26 — Contacts CRM: collecting information about people
 
 New subdomain for a personal contacts CRM — a place to keep what is known about people the user interacts with, instead of keeping it in memory or scattered across chats.
@@ -81,4 +63,4 @@ Store users in the database and give each user a profile with their own settings
 
 **Depends on:** 23-09-26 — Enforce activity/achievement limits in create_activity / create_achievement (the enforced limits should read their values from the user's settings once this exists).
 
-**Open question:** define what the manifest is and how the agent uses it; decide in the feature doc whether it overlaps with 27-09-26 — Personal documents (e.g. stored as one of those documents instead of a profile field).
+**Open question:** define what the manifest is and how the agent uses it; decide in the feature doc whether it overlaps with personal documents (`docs/functions/personaldocs-spec.md`), e.g. stored as one of those documents instead of a profile field.

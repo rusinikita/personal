@@ -241,6 +241,13 @@ func RenderAchievementTiles(data AchievementTilesData) template.HTML {
 	return execToHTML("components/achievement_tiles", data)
 }
 
+// RenderActionBar renders data.Buttons as one row of compact buttons: links
+// and one-button POST forms that look the same. Empty Buttons renders
+// nothing.
+func RenderActionBar(data ActionBarData) template.HTML {
+	return execToHTML("components/action_bar", data)
+}
+
 // execToHTML executes the named template (defined in one of the embedded
 // templates/ files) against data and returns the result as template.HTML,
 // so it can be embedded into a parent template without double-escaping.

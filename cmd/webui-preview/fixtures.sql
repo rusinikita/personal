@@ -110,6 +110,44 @@ INSERT INTO ideas (id, user_id, body, status, resolution, merged_into_id, resolv
     (6, 1, 'Sailing weekend in Limassol', 'resolved', 'merged', 1, now() - interval '3 days', now() - interval '3 days', now() - interval '3 days'),
     (7, 1, 'Blog: how the tracker is built', 'resolved', 'merged', 3, now() - interval '10 days', now() - interval '10 days', now() - interval '10 days');
 
+-- =====================================================
+-- Personal docs
+-- =====================================================
+INSERT INTO docs (id, user_id, title, description, created_at, updated_at) VALUES
+    (1, 1, 'Development plan', 'Where I am going this year and what I do about it each quarter', now() - interval '40 days', now() - interval '2 days'),
+    (2, 1, 'Personal instructions', 'How the agent should work with me: tone, defaults, things to avoid', now() - interval '25 days', now() - interval '6 hours');
+
+INSERT INTO doc_chunks (user_id, doc_id, position, body, previous_body, created_at, updated_at) VALUES
+    (1, 1, 1, '# Direction
+
+Become a **staff engineer** who owns a product area end to end, without giving up health and family time.', NULL, now() - interval '40 days', now() - interval '40 days'),
+    (1, 1, 2, '## This quarter
+
+- Ship the personal tracker web UI
+- Read *Designing Data-Intensive Applications* to the end
+- Give one internal talk on what I learned', '## This quarter
+
+- Ship the personal tracker web UI
+- Read *Designing Data-Intensive Applications*', now() - interval '40 days', now() - interval '2 days'),
+    (1, 1, 3, '## Review rhythm
+
+1. Weekly: look at the steps of every active activity
+2. Monthly: update this plan
+3. Quarterly: rewrite the "This quarter" section
+
+> A plan that is not reviewed is a wish.', NULL, now() - interval '38 days', now() - interval '38 days'),
+    (1, 2, 1, '# Tone
+
+Short and direct. No praise, no filler. Answer in the language I write in.', NULL, now() - interval '25 days', now() - interval '25 days'),
+    (1, 2, 2, '## Defaults
+
+- Times are in `Asia/Nicosia`
+- Money is in EUR
+- When logging food, ask for the weight if I did not give one', '## Defaults
+
+- Times are in `Asia/Nicosia`
+- Money is in EUR', now() - interval '25 days', now() - interval '6 hours');
+
 -- Explicit ids above don't advance the serial sequences; bump them so rows
 -- created from the preview's forms don't collide.
 SELECT setval(pg_get_serial_sequence('life_parts', 'id'), (SELECT max(id) FROM life_parts));
@@ -118,3 +156,4 @@ SELECT setval(pg_get_serial_sequence('steps', 'id'), (SELECT max(id) FROM steps)
 SELECT setval(pg_get_serial_sequence('exercises', 'id'), (SELECT max(id) FROM exercises));
 SELECT setval(pg_get_serial_sequence('workouts', 'id'), (SELECT max(id) FROM workouts));
 SELECT setval(pg_get_serial_sequence('ideas', 'id'), (SELECT max(id) FROM ideas));
+SELECT setval(pg_get_serial_sequence('docs', 'id'), (SELECT max(id) FROM docs));

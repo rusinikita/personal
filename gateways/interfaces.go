@@ -111,6 +111,19 @@ type DB interface {
 	UpdateIdea(ctx context.Context, idea *domain.Idea) error                                // body, status, updated_at; caller has already merged the change onto a fetched idea
 	ResolveIdea(ctx context.Context, resolve domain.IdeaResolve) error                      // sets status=resolved + resolution fields (overwrites them when re-resolving a blocked idea); for merged also re-points ideas merged into IdeaID to MergedIntoID in the same statement
 
+	// Personal docs (see docs/functions/personaldocs-spec.md)
+	CreatePersonalDoc(ctx context.Context, doc *domain.PersonalDoc) (int64, error)
+	GetPersonalDoc(ctx context.Context, docID int64, userID int64) (*domain.PersonalDoc, error) // nil when not found
+	ListPersonalDocs(ctx context.Context, userID int64) ([]domain.PersonalDoc, error)           // ordered by id
+	UpdatePersonalDoc(ctx context.Context, doc *domain.PersonalDoc) error                       // title, description, updated_at; caller has already merged the change onto a fetched document
+
+	// Every chunk write below also sets docs.updated_at of the chunk's document, in the same transaction
+	CreatePersonalDocChunk(ctx context.Context, chunk *domain.PersonalDocChunk) (int64, error)               // at chunk.Position, or at the end when it is 0; in one transaction first moves the chunks at that position and after it down by one, then inserts the new chunk, so two chunks never share a position
+	GetPersonalDocChunk(ctx context.Context, chunkID int64, userID int64) (*domain.PersonalDocChunk, error)  // nil when not found
+	ListPersonalDocChunks(ctx context.Context, docID int64, userID int64) ([]domain.PersonalDocChunk, error) // ordered by position
+	UpdatePersonalDocChunk(ctx context.Context, chunk *domain.PersonalDocChunk) error                        // body, previous_body, updated_at, position; caller has already merged the change onto a fetched chunk; a new position first shifts the chunks between the old and the new position, then places the chunk, in one transaction
+	DeletePersonalDocChunk(ctx context.Context, chunkID int64, userID int64) error                           // hard delete; moves the following chunks of the document up, in one transaction
+
 	// Achievements tracking methods (see docs/functions/achievements-spec.md)
 
 	// CreateAchievement and UpdateAchievement are the only two write methods on the whole

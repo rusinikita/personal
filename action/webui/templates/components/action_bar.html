@@ -1,0 +1,7 @@
+{{define "components/action_bar"}}
+{{if .Buttons}}<div class="webui-actions">
+{{range .Buttons}}{{if eq .Method "POST"}}<form method="POST" action="{{.URL}}">{{range .Fields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}<button type="submit" class="outline secondary webui-action" title="{{.Title}}" aria-label="{{.Title}}">{{.Label}}</button></form>
+{{else}}<a role="button" class="outline secondary webui-action" href="{{.URL}}" title="{{.Title}}" aria-label="{{.Title}}">{{.Label}}</a>
+{{end}}{{end}}</div>
+{{end}}
+{{end}}

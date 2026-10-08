@@ -23,6 +23,7 @@ type designSystemPageData struct {
 	CalendarHTML         template.HTML
 	DetailHTML           template.HTML
 	AchievementTilesHTML template.HTML
+	ActionBarHTML        template.HTML
 }
 
 // fixtureCalendarWeeks builds a real, correctly-computed August 2026 month
@@ -64,7 +65,7 @@ func fixtureCalendarWeeks() [][]CalendarDay {
 
 // DesignSystemHandler renders the /web/design-system demo/style-guide page:
 // every shared component (nav, stat tiles, table, line charts, bar chart,
-// combo chart, dual-axis chart, calendar, drill-down/detail view) against fixture data, so the visual
+// combo chart, dual-axis chart, calendar, drill-down/detail view, action bar) against fixture data, so the visual
 // language can be reviewed before any real dashboard is wired up. It
 // touches no database — every value below is a fixture.
 func DesignSystemHandler(c *gin.Context) {
@@ -189,6 +190,15 @@ func DesignSystemHandler(c *gin.Context) {
 		},
 	}
 
+	actionBar := ActionBarData{
+		Buttons: []ActionButton{
+			{Label: "↑", Title: "Move up", URL: "/web/design-system", Method: "POST", Fields: []ActionField{{Name: "direction", Value: "up"}}},
+			{Label: "↓", Title: "Move down", URL: "/web/design-system", Method: "POST", Fields: []ActionField{{Name: "direction", Value: "down"}}},
+			{Label: "✎", Title: "Edit", URL: "/web/design-system"},
+			{Label: "✕", Title: "Delete", URL: "/web/design-system"},
+		},
+	}
+
 	content := execToHTML("pages/design_system", designSystemPageData{
 		StatsHTML:            RenderStatTiles(stats),
 		TableHTML:            RenderTable(table),
@@ -200,6 +210,7 @@ func DesignSystemHandler(c *gin.Context) {
 		CalendarHTML:         RenderCalendar(calendar),
 		DetailHTML:           RenderDetailView(detail),
 		AchievementTilesHTML: RenderAchievementTiles(achievementTiles),
+		ActionBarHTML:        RenderActionBar(actionBar),
 	})
 
 	c.Header("Content-Type", "text/html; charset=utf-8")

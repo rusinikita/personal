@@ -177,6 +177,28 @@ type AchievementTileData struct {
 	// (same convention as TableRow.LinkURL/CalendarDay.LinkURL)
 }
 
+// ActionField is one hidden input of a POST action button.
+type ActionField struct {
+	Name  string
+	Value string
+}
+
+// ActionButton is one compact button of an action bar: a link, or a
+// one-button POST form when Method is "POST". Both look the same.
+type ActionButton struct {
+	Label  string        // glyph or short text on the button, e.g. "↑", "✎"
+	Title  string        // what the button does, e.g. "Move up" — rendered as title and aria-label, required since Label is usually a glyph
+	URL    string        // link target, or the form action when Method is "POST"
+	Method string        // "" = link (<a role="button">); "POST" = form with a submit button
+	Fields []ActionField // hidden inputs of the POST form; ignored for a link
+}
+
+// ActionBarData is a row of compact buttons acting on one item of a page
+// (e.g. move / edit / delete on a chunk in personaldocs-spec.md).
+type ActionBarData struct {
+	Buttons []ActionButton // empty renders nothing
+}
+
 // AchievementTilesData is a grid of achievement tiles — either every active achievement (the
 // dedicated /web/achievements page) or a subset pre-filtered to one domain's achievement
 // types (embedded in the Money/Progress-browse/Workouts pages).
