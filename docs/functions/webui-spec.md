@@ -4,7 +4,7 @@
 
 Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Achievements) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart, a bar chart, a combo chart, a dual-axis line chart, a month-grid calendar, a drill-down/detail layout, an achievement-progress tile grid, a compact action bar, and a markdown renderer with Mermaid diagrams, all themed consistently (light + dark) from a single place.
 
-Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain. Diagrams in markdown are drawn by **Mermaid** (also CDN), loaded only on pages that contain one.
+Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain. Diagrams in markdown are drawn by **Mermaid** (also CDN), loaded only on pages that contain one; each diagram can be zoomed and dragged with **svg-pan-zoom** (also CDN, same condition).
 
 This is a **presentation-only, infrastructure layer**: it owns no database tables and no MCP tools. It exposes exactly one HTTP route of its own — a **demo/style-guide page** (`GET /web/design-system`) showing every component with sample data, so the design language can be reviewed and iterated on before any of the real dashboards (Money, Progress browse, Workouts, Achievements) exist. All other pages are built by other actions' HTTP handlers (`action/money`, `action/progress`, `action/workout`, `action/achievements`), which import this package and call it to render their pages.
 
@@ -30,6 +30,7 @@ graph TB
         Pico[Pico CSS]
         ChartJS[Chart.js]
         Mermaid[Mermaid<br/>only on pages with a diagram]
+        PanZoom[svg-pan-zoom<br/>only on pages with a diagram]
     end
 
     subgraph "action/webui (design system)"
@@ -65,6 +66,7 @@ graph TB
     Browser -->|loads via link/script tag in shell head| Pico
     Browser --> ChartJS
     Browser -->|only when the page has a diagram| Mermaid
+    Browser -->|only when the page has a diagram| PanZoom
     Browser -->|GET /web/docs/:topic| DocsH
     Browser -->|GET /web/personal-docs/:id| PersonalDocsH
 
@@ -330,7 +332,7 @@ Every template is a real `.html` file, embedded at compile time and parsed once 
 
 ```
 action/webui/templates/
-  layout.html                    {{define "layout"}}      — shell: head/nav/footer, design tokens; Mermaid script + init only when the content has a diagram block
+  layout.html                    {{define "layout"}}      — shell: head/nav/footer, design tokens; Mermaid and svg-pan-zoom scripts + init only when the content has a diagram block
   components/
     table.html                   {{define "components/table"}}       — renders Pagination controls below the rows when set
     pagination.html               {{define "components/pagination"}} — prev/next + "page X of Y", included by table.html
@@ -362,7 +364,7 @@ The one real route this package owns. Renders a single page built entirely from 
 - A month-grid calendar with real, correctly-computed leading/trailing days and a few sample linked/unlinked days (previewing the Money transaction calendar use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 - An achievement tile grid with a few sample tiles (mixed progress percentages, one with a deadline, one `OverTarget`) previewing both the dedicated Achievements page and an embedded subset use
-- A markdown sample with a heading, a regular code block and a `mermaid` code block (previewing diagrams in Docs and Personal docs)
+- A markdown sample with a heading, a regular code block and a `mermaid` code block (previewing diagrams and their zoom controls in Docs and Personal docs)
 - An action bar under a sample card, mixing link buttons and POST-form buttons (previewing the per-chunk buttons of Personal docs); its POST buttons point at the design-system page itself and change nothing (`POST /web/design-system` only redirects `303` back to the page)
 
 Behind `WebMiddleware` (see `auth-spec.md`'s "Authorization for web dashboards" flow) like every other `/web/*` dashboard — it renders through the same shell, and the shell now shows the logged-in username, so it needs a real session to demo that correctly.
@@ -376,6 +378,8 @@ Everything else is a Go function, not a route — called from other subdomains' 
 Executes the shared shell template (head/nav/footer + design tokens, light/dark via `prefers-color-scheme`) with `data.Content` dropped into the content slot. When `data.UserName` is set, the header also renders it as a `<details class="dropdown">` menu (Pico CSS's built-in disclosure pattern, no custom JS) containing one item: a "Logout" link to `GET /web/logout` (see `auth-spec.md`). Used by every `/web/*` handler, including the demo page above.
 
 When `data.Content` contains a diagram block (`<pre class="mermaid">`, see `RenderMarkdown`), the shell also loads Mermaid from the CDN (`mermaid@11`) and starts it with an inline script: `securityLevel: "strict"`, theme `dark` or `default` by `prefers-color-scheme`, diagrams drawn once the page has loaded. Mermaid replaces each block with an SVG in the browser, which changes the height of the page after the browser has already scrolled to the URL's anchor; so when the URL has an anchor, the script scrolls to its element again after the diagrams are drawn. A diagram with a syntax error shows Mermaid's own error block in its place. A page with no diagram block loads neither the script nor the init.
+
+With Mermaid the shell loads svg-pan-zoom from the CDN (`svg-pan-zoom@3.6.2`). After the diagrams are drawn, the same inline script turns it on for every drawn diagram (not for Mermaid's error block): the library's own control icons (zoom in, reset, zoom out) are shown in the corner of the diagram, the diagram can be grabbed and dragged, and a double click zooms in. Mouse wheel zoom is off, so the wheel keeps scrolling the page. Scale limits are 50%–1000%. The diagram's frame takes the full width of the content and the height the diagram was drawn with (at least 96px, the height of the control icons), so the icons stay beside the diagram rather than over it; zooming and dragging happen inside the frame. Nothing is kept across page loads.
 
 ### `webui.RenderMarkdown(source string, safe bool) template.HTML`
 Renders markdown to HTML via `blackfriday` with `CommonExtensions` — the one markdown renderer for web pages. A fenced code block with the language `mermaid` becomes `<pre class="mermaid">` holding the HTML-escaped diagram source, instead of `<pre><code>`; every other code block is rendered as before. With `safe` set, raw HTML in the source is dropped and links are limited to safe protocols (for user-written text); without it raw HTML is passed through (for the app's own embedded files). Used by Docs (`docs-spec.md`, not safe); Personal docs use it through `RenderMarkdownWithHeadings` (safe).
@@ -424,7 +428,7 @@ No E2E test: it's a developer tool, not an HTTP handler; the pages it serves are
 
 In `tests/webui_design_system_test.go`:
 
-- `TestDesignSystem_*`: renders OK; loads pico CSS from CDN; loads chart JS from CDN; supports light and dark via media query; nav has active item; shows stat tiles plain and emphasized; shows table with drill down link; shows line charts; shows bar chart; shows combo chart; shows dual axis chart; charts have unique canvas ids; shows drill down detail view; shows action bar with link and POST-form buttons carrying `title` and `aria-label`; shows the markdown sample with the `mermaid` block as `<pre class="mermaid">` and the regular code block as `<pre><code>`; loads mermaid JS from CDN with the init script; escapes fixture text containing markup
+- `TestDesignSystem_*`: renders OK; loads pico CSS from CDN; loads chart JS from CDN; supports light and dark via media query; nav has active item; shows stat tiles plain and emphasized; shows table with drill down link; shows line charts; shows bar chart; shows combo chart; shows dual axis chart; charts have unique canvas ids; shows drill down detail view; shows action bar with link and POST-form buttons carrying `title` and `aria-label`; shows the markdown sample with the `mermaid` block as `<pre class="mermaid">` and the regular code block as `<pre><code>`; loads mermaid and svg-pan-zoom JS from CDN with the init script; escapes fixture text containing markup
 
 In `tests/webui_user_menu_test.go`:
 
@@ -433,12 +437,14 @@ In `tests/webui_user_menu_test.go`:
 
 In `tests/webui_markdown_test.go`:
 
-- `TestRenderPage_Mermaid*`: content with a diagram block loads mermaid JS and the init script, which scrolls to the URL's anchor after the diagrams are drawn; content without one loads neither
+- `TestRenderPage_Mermaid*`: content with a diagram block loads mermaid JS and the init script, which scrolls to the URL's anchor after the diagrams are drawn, and svg-pan-zoom JS with its init (control icons on, mouse wheel zoom off); content without one loads none of them
 - `TestRenderMarkdown_*`: renders headings, lists and links; `mermaid` block becomes `<pre class="mermaid">` with the source HTML-escaped; block of another language and block with no language stay `<pre><code>`; safe mode drops raw HTML and unsafe links, also next to a diagram; not safe mode keeps raw HTML; headings have no ids
 - `TestRenderMarkdownWithHeadings_*`: every heading is rendered with the id `{idPrefix}h{n}` and returned with its level, plain text and id in source order; inline markup in a heading is left out of the text; an id written in the source is replaced; a `#` line inside a code block is not a heading; a source with no headings returns none; the HTML besides the ids equals `RenderMarkdown`'s, in safe and not safe mode
 
 ## Changelog
 
+- **09-10-26** — diagram zoom is done by svg-pan-zoom (its own control icons, drag to move) instead of hand-written buttons; `RenderMarkdown` output is back to a plain `<pre class="mermaid">` (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
+- **09-10-26** — Mermaid diagrams get zoom controls (zoom out, reset, zoom in): `RenderMarkdown` renders them with each diagram block, the shell's script runs them (Overview, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — added `RenderMarkdownWithHeadings` and `MarkdownHeading` (heading anchors and the list of headings for a table of contents); the Mermaid init script scrolls to the URL's anchor again after the diagrams are drawn (Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — added the markdown renderer `RenderMarkdown` with Mermaid diagrams for `mermaid` code blocks; the shell loads Mermaid from the CDN only on pages with a diagram (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — `POST /web/design-system` redirects back to the page, so the sample POST buttons of the action bar work (HTTP Handlers)

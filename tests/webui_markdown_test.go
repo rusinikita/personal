@@ -18,6 +18,8 @@ import (
 const (
 	mermaidScriptSrc = `src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"`
 	mermaidInit      = "mermaid.initialize("
+	panZoomScriptSrc = `src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.2/dist/svg-pan-zoom.min.js"`
+	panZoomInit      = "svgPanZoom(svg, { controlIconsEnabled: true, mouseWheelZoomEnabled: false, minZoom: 0.5, maxZoom: 10 })"
 )
 
 func TestRenderPage_MermaidLoadedForDiagramBlock(t *testing.T) {
@@ -34,7 +36,11 @@ func TestRenderPage_MermaidLoadedForDiagramBlock(t *testing.T) {
 	assert.Contains(t, body, `securityLevel: "strict"`)
 	assert.Contains(t, body, "prefers-color-scheme: dark")
 	// the anchor is scrolled to again after the diagrams are drawn
-	assert.Contains(t, body, "mermaid.run().then(scrollToAnchor, scrollToAnchor)")
+	assert.Contains(t, body, "mermaid.run().then(afterDraw, afterDraw)")
+	assert.Contains(t, body, "scrollToAnchor();")
+	// drawn diagrams can be zoomed and dragged
+	assert.Contains(t, body, panZoomScriptSrc)
+	assert.Contains(t, body, panZoomInit)
 	assert.Contains(t, body, "location.hash")
 	assert.Contains(t, body, "scrollIntoView()")
 }
@@ -50,6 +56,8 @@ func TestRenderPage_MermaidNotLoadedWithoutDiagramBlock(t *testing.T) {
 	body := buf.String()
 	assert.NotContains(t, body, mermaidScriptSrc)
 	assert.NotContains(t, body, mermaidInit)
+	assert.NotContains(t, body, panZoomScriptSrc)
+	assert.NotContains(t, body, panZoomInit)
 }
 
 func TestRenderMarkdown_RendersCommonMarkdown(t *testing.T) {

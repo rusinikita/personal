@@ -257,4 +257,6 @@ func (s *IntegrationTestSuite) TestDesignSystem_LoadsMermaidJSFromCDN() {
 	body := w.Body.String()
 	assert.Contains(s.T(), body, mermaidScriptSrc)
 	assert.Contains(s.T(), body, mermaidInit)
+	assert.Contains(s.T(), body, panZoomScriptSrc)
+	assert.Contains(s.T(), body, panZoomInit)
 }

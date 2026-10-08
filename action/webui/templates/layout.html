@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 {{if .Mermaid}}<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.2/dist/svg-pan-zoom.min.js"></script>
 <script>
 mermaid.initialize({
   startOnLoad: false,
@@ -20,7 +21,24 @@ window.addEventListener("load", function () {
     var target = location.hash.length > 1 && document.querySelector("#" + CSS.escape(decodeURIComponent(location.hash.slice(1))));
     if (target) target.scrollIntoView();
   };
-  mermaid.run().then(scrollToAnchor, scrollToAnchor);
+  // Every drawn diagram gets zoom controls and can be dragged. svg-pan-zoom
+  // drops the viewBox, so the drawn height is fixed first. The frame takes the
+  // full width and at least the height of the controls, to keep them off the
+  // diagram.
+  var enablePanZoom = function () {
+    document.querySelectorAll("pre.mermaid svg").forEach(function (svg) {
+      var height = svg.getBoundingClientRect().height;
+      if (svg.getAttribute("aria-roledescription") === "error" || !height) return;
+      svg.style.height = Math.max(height, 96) + "px";
+      svg.style.maxWidth = "none";
+      svgPanZoom(svg, { controlIconsEnabled: true, mouseWheelZoomEnabled: false, minZoom: 0.5, maxZoom: 10 });
+    });
+  };
+  var afterDraw = function () {
+    enablePanZoom();
+    scrollToAnchor();
+  };
+  mermaid.run().then(afterDraw, afterDraw);
 });
 </script>
 {{end}}<style>
