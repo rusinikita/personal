@@ -41,7 +41,7 @@ Tools: `create_idea`, `list_ideas`, `search_ideas`, `update_idea`, `resolve_idea
 
 Tools: `list_personal_docs`, `get_personal_doc`, `create_personal_doc`, `edit_personal_doc`, `create_personal_doc_chunk`, `edit_personal_doc_chunk`, `revert_personal_doc_chunk`, `delete_personal_doc_chunk`.
 
-- The user's own documents (e.g. development plan, personal instructions), stored in the database — not the convention docs of `list_docs`/`get_doc`. Nothing is loaded automatically at the start of a session: `list_personal_docs` to find a document, `get_personal_doc` to load it on demand.
+- The user's own documents (e.g. development plan, personal instructions), stored in the database — not the convention docs of `list_docs`/`get_doc`. Nothing is loaded automatically at the start of a session: `list_personal_docs` to find a document, `get_personal_doc` to load it on demand. It returns the chunks in pages (`offset`, `limit`, default the first 5) with `total_chunks` and a `table_of_contents` of the whole document: read on with a bigger `offset`, or jump to a section with `offset` = its heading's `position` - 1.
 - Edit chunk by chunk, never the whole document: `edit_personal_doc_chunk` (replace, append or move), `create_personal_doc_chunk` for a new section. A chunk is max 60 lines of max 200 characters; split a section that doesn't fit. `revert_personal_doc_chunk` undoes the last edit of a chunk, one step only.
 
 ## Finance

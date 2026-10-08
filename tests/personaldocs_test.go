@@ -370,25 +370,40 @@ func (s *IntegrationTestSuite) TestGetPersonalDoc() {
 
 	docID := s.createPersonalDoc(ctx, "Plan")
 	chunkIDs := s.createPersonalDocChunks(ctx, docID, "# Intro", "second", "third")
+	longID := s.createPersonalDoc(ctx, "Long")
+	s.createPersonalDocChunks(ctx, longID, "c1", "c2", "c3", "c4", "c5", "c6", "c7")
 	emptyID := s.createPersonalDoc(ctx, "Empty")
 	foreign := s.createPersonalDoc(s.otherUserContext(ctx), "Foreign")
 
 	tests := []struct {
-		name       string
-		docID      int64
-		wantTitle  string
-		wantBodies []string
-		wantErr    string
+		name          string
+		docID         int64
+		offset        *int
+		limit         *int
+		wantTitle     string
+		wantBodies    []string
+		wantPositions []int
+		wantTotal     int
+		wantErr       string
 	}{
-		{name: "document with chunks", docID: docID, wantTitle: "Plan", wantBodies: []string{"# Intro", "second", "third"}},
-		{name: "empty document", docID: emptyID, wantTitle: "Empty", wantBodies: []string{}},
+		{name: "document with chunks", docID: docID, wantTitle: "Plan", wantBodies: []string{"# Intro", "second", "third"}, wantPositions: []int{1, 2, 3}, wantTotal: 3},
+		{name: "default page is the first 5 chunks", docID: longID, wantTitle: "Long", wantBodies: []string{"c1", "c2", "c3", "c4", "c5"}, wantPositions: []int{1, 2, 3, 4, 5}, wantTotal: 7},
+		{name: "offset returns the rest", docID: longID, offset: util.Ptr(5), wantTitle: "Long", wantBodies: []string{"c6", "c7"}, wantPositions: []int{6, 7}, wantTotal: 7},
+		{name: "offset and limit cut a page from the middle", docID: longID, offset: util.Ptr(2), limit: util.Ptr(3), wantTitle: "Long", wantBodies: []string{"c3", "c4", "c5"}, wantPositions: []int{3, 4, 5}, wantTotal: 7},
+		{name: "limit over the number of chunks returns all", docID: longID, limit: util.Ptr(100), wantTitle: "Long", wantBodies: []string{"c1", "c2", "c3", "c4", "c5", "c6", "c7"}, wantPositions: []int{1, 2, 3, 4, 5, 6, 7}, wantTotal: 7},
+		{name: "offset equal to the number of chunks returns none", docID: longID, offset: util.Ptr(7), wantTitle: "Long", wantBodies: []string{}, wantPositions: []int{}, wantTotal: 7},
+		{name: "offset past the end returns none", docID: longID, offset: util.Ptr(50), wantTitle: "Long", wantBodies: []string{}, wantPositions: []int{}, wantTotal: 7},
+		{name: "negative offset fails", docID: longID, offset: util.Ptr(-1), wantErr: "offset must be 0 or greater"},
+		{name: "limit 0 fails", docID: longID, limit: util.Ptr(0), wantErr: "limit must be 1 or greater"},
+		{name: "negative limit fails", docID: longID, limit: util.Ptr(-3), wantErr: "limit must be 1 or greater"},
+		{name: "empty document", docID: emptyID, wantTitle: "Empty", wantBodies: []string{}, wantPositions: []int{}, wantTotal: 0},
 		{name: "unknown document fails", docID: -1, wantErr: "document not found"},
 		{name: "other user's document fails", docID: foreign, wantErr: "document not found"},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			_, out, err := personaldocs.GetPersonalDoc(ctx, nil, personaldocs.GetPersonalDocInput{DocID: tt.docID})
+			_, out, err := personaldocs.GetPersonalDoc(ctx, nil, personaldocs.GetPersonalDocInput{DocID: tt.docID, Offset: tt.offset, Limit: tt.limit})
 			if tt.wantErr != "" {
 				require.Error(s.T(), err)
 				assert.Contains(s.T(), err.Error(), tt.wantErr)
@@ -399,16 +414,96 @@ func (s *IntegrationTestSuite) TestGetPersonalDoc() {
 			assert.Equal(s.T(), tt.docID, out.Doc.ID)
 			assert.Equal(s.T(), tt.wantTitle, out.Doc.Title)
 			assert.Equal(s.T(), tt.wantTitle+" description", out.Doc.Description)
+			assert.Equal(s.T(), tt.wantTotal, out.TotalChunks)
 			bodies := make([]string, len(out.Chunks))
+			positions := make([]int, len(out.Chunks))
 			for i, chunk := range out.Chunks {
 				bodies[i] = chunk.Body
-				assert.Equal(s.T(), i+1, chunk.Position)
+				positions[i] = chunk.Position
 				assert.NotEmpty(s.T(), chunk.UpdatedAt)
 			}
 			assert.Equal(s.T(), tt.wantBodies, bodies)
+			assert.Equal(s.T(), tt.wantPositions, positions)
 			if tt.docID == docID {
 				assert.Equal(s.T(), chunkIDs[0], out.Chunks[0].ID)
 				assert.Equal(s.T(), chunkIDs[2], out.Chunks[2].ID)
+			}
+		})
+	}
+}
+
+func (s *IntegrationTestSuite) TestGetPersonalDoc_TableOfContents() {
+	ctx := s.Context()
+
+	item := func(heading string, level, position int) personaldocs.ContentsItemResult {
+		return personaldocs.ContentsItemResult{Heading: heading, Level: level, Position: position}
+	}
+
+	tests := []struct {
+		name   string
+		bodies []string
+		limit  *int
+		want   []personaldocs.ContentsItemResult
+	}{
+		{
+			name:   "headings of all chunks in reading order",
+			bodies: []string{"# Plan\n\ntext", "## Goals\n\ntext", "### Details"},
+			want:   []personaldocs.ContentsItemResult{item("Plan", 1, 1), item("Goals", 2, 2), item("Details", 3, 3)},
+		},
+		{
+			name:   "headings of chunks outside the returned page are listed",
+			bodies: []string{"# One", "# Two", "# Three"},
+			limit:  util.Ptr(1),
+			want:   []personaldocs.ContentsItemResult{item("One", 1, 1), item("Two", 1, 2), item("Three", 1, 3)},
+		},
+		{
+			name:   "two headings in one chunk share its position",
+			bodies: []string{"# First\n\ntext\n\n## Second\n\nmore"},
+			want:   []personaldocs.ContentsItemResult{item("First", 1, 1), item("Second", 2, 1)},
+		},
+		{
+			name:   "chunk with no headings adds no items",
+			bodies: []string{"# Top", "just text", "## Bottom"},
+			want:   []personaldocs.ContentsItemResult{item("Top", 1, 1), item("Bottom", 2, 3)},
+		},
+		{
+			name:   "same heading text in two chunks gives two items",
+			bodies: []string{"## Notes", "## Notes"},
+			want:   []personaldocs.ContentsItemResult{item("Notes", 2, 1), item("Notes", 2, 2)},
+		},
+		{
+			name:   "markup inside a heading is returned as plain text",
+			bodies: []string{"# A **bold** and `code` title"},
+			want:   []personaldocs.ContentsItemResult{item("A bold and code title", 1, 1)},
+		},
+		{
+			name:   "line with # inside a code block is not a heading",
+			bodies: []string{"# Real\n\n```\n# not a heading\n```"},
+			want:   []personaldocs.ContentsItemResult{item("Real", 1, 1)},
+		},
+		{
+			name:   "document with no headings",
+			bodies: []string{"text", "more text"},
+			want:   []personaldocs.ContentsItemResult{},
+		},
+		{
+			name:   "empty document",
+			bodies: nil,
+			want:   []personaldocs.ContentsItemResult{},
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			docID := s.createPersonalDoc(ctx, "Contents")
+			s.createPersonalDocChunks(ctx, docID, tt.bodies...)
+
+			_, out, err := personaldocs.GetPersonalDoc(ctx, nil, personaldocs.GetPersonalDocInput{DocID: docID, Limit: tt.limit})
+			require.NoError(s.T(), err)
+
+			assert.Equal(s.T(), tt.want, out.TableOfContents)
+			if tt.limit != nil {
+				assert.Len(s.T(), out.Chunks, *tt.limit)
 			}
 		})
 	}

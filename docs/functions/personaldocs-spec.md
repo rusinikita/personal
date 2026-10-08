@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS doc_chunks (
 
 ### Example: Read a Full Document
 
-Two queries, the same two reads the repository does for `get_personal_doc` and `GET /web/personal-docs/{id}`. No rows from the first one means the document is not found; no rows from the second one means it is empty.
+Two queries, the same two reads the repository does for `get_personal_doc` and `GET /web/personal-docs/{id}`. No rows from the first one means the document is not found; no rows from the second one means it is empty. `get_personal_doc` cuts its page (`offset`, `limit`) out of the second result in the action layer, so the repository has no paged read.
 
 ```sql
 -- GetPersonalDoc: title and description, one row
@@ -177,7 +177,9 @@ DeletePersonalDocChunk(ctx context.Context, chunkID int64, userID int64) error /
 No input. Lists the user's documents: id, title, one-line description, `updated_at`. No chunks.
 
 ### get_personal_doc
-Takes `doc_id` (from `list_personal_docs`). Returns the document's title, description and its chunks in order, each with id, position, body and `updated_at`. Unknown document is an error.
+Takes `doc_id` (from `list_personal_docs`). Returns the document's title, description, `total_chunks` (number of chunks in the document) and one page of its chunks in order, each with id, position, body and `updated_at`. The page is set by optional `offset` (chunks to skip from the start, default 0) and `limit` (chunks to return, default 5, no upper bound). An `offset` at or past the end returns no chunks, not an error. Fails on a negative `offset` or a `limit` below 1. Unknown document is an error.
+
+Also returns `table_of_contents`: the headings of all chunks of the document (not only of the returned page) in reading order, each with `heading` (plain text, no inline markup), `level` (1-6) and `position` (position of the chunk holding it), so the agent can jump to a section with `offset = position - 1`. It is a list, not a map: the same heading text may appear in several chunks. Headings are found the same way as for the web table of contents, through `webui.RenderMarkdownWithHeadings`. A chunk with no headings adds no items; a document with no headings returns an empty list.
 
 ### create_personal_doc
 Creates an empty document from `title` and `description` and returns its id. Fails on an empty title or description, or a description that is multi-line or over the max line length.
@@ -245,6 +247,7 @@ Sent from the delete confirmation. Deletes the chunk, then `303` redirect to `GE
 - **Max line length**: 200 characters (runes) for every body line and the document description
 - **Line endings**: `\r\n` from web forms is saved as `\n`, before the limits are checked
 - **Append separator**: `"\n\n"` between the current body and the appended text
+- **Default page of `get_personal_doc`**: `offset` 0, `limit` 5 chunks; no max limit
 - **Display timezone**: `Asia/Nicosia` for dates on web pages; MCP tools return UTC
 
 ## E2E Tests
@@ -265,7 +268,21 @@ Sent from the delete confirmation. Deletes the chunk, then `303` redirect to `GE
   - one line too many fails; one character too long fails
   - line length is counted in characters, not bytes (Cyrillic line of the max length succeeds)
   - empty body; unknown document; other user's document fails
-- `TestGetPersonalDoc`: returns the title, description and chunks ordered by position with their bodies; empty document returns no chunks; unknown document; other user's document fails
+- `TestGetPersonalDoc`:
+  - returns the title, description and chunks ordered by position with their bodies
+  - no `offset` and `limit` on a document of 7 chunks returns the first 5 and `total_chunks: 7`
+  - `offset: 5` returns the last 2; `offset: 2, limit: 3` returns the chunks at positions 3..5
+  - `limit` greater than the number of chunks returns all of them
+  - `offset` equal to or greater than the number of chunks returns no chunks and the real `total_chunks`
+  - negative `offset` fails; `limit` 0 or negative fails
+  - empty document returns no chunks and `total_chunks: 0`
+  - unknown document; other user's document fails
+- `TestGetPersonalDoc_TableOfContents`:
+  - `table_of_contents` lists the headings of all chunks in reading order with their level and chunk position, also the headings of chunks outside the returned page
+  - two headings in one chunk give two items with the same position; a chunk with no headings adds no items
+  - the same heading text in two chunks gives two items with different positions
+  - markup inside a heading is returned as plain text; a `#` line inside a code block is not listed
+  - a document with no headings and an empty document return an empty `table_of_contents`
 - `TestEditPersonalDocChunk`:
   - `body` overwrites the body, keeps the old one as the previous body and moves `updated_at` forward
   - a second edit keeps only the body it replaced as the previous body
@@ -295,6 +312,8 @@ Sent from the delete confirmation. Deletes the chunk, then `303` redirect to `GE
 
 ## Changelog
 
+- **09-10-26** — `get_personal_doc` also returns `table_of_contents`: the headings of all chunks with their level and chunk position, found through `webui.RenderMarkdownWithHeadings` (MCP Tools, E2E Tests)
+- **09-10-26** — `get_personal_doc` returns one page of chunks: optional `offset` (default 0) and `limit` (default 5), plus `total_chunks` in the output; the page is cut in the action layer, the repository is unchanged (Database Schema example, MCP Tools, Configuration, E2E Tests)
 - **09-10-26** — view mode gets a table of contents built from the headings of all chunks, linking to heading anchors `#chunk-{chunk_id}-h{n}`; the edit and new chunk forms have an `autofocus` textarea and anchors survive diagrams drawn after load, so the page opens at the edited chunk (Overview, HTTP Handlers, E2E Tests)
 - **09-10-26** — chunks render through `webui.RenderMarkdown`, so `mermaid` code blocks are drawn as diagrams (Overview, HTTP Handlers, E2E Tests)
 - **09-10-26** — tables renamed to `docs` and `doc_chunks`, with their index and constraints (Architecture Diagrams, Database Schema, Go Code Structure)
