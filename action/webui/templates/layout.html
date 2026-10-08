@@ -10,9 +10,17 @@
 {{if .Mermaid}}<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
 mermaid.initialize({
-  startOnLoad: true,
+  startOnLoad: false,
   securityLevel: "strict",
   theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default"
+});
+// A drawn diagram changes the page height, so the anchor is scrolled to again.
+window.addEventListener("load", function () {
+  var scrollToAnchor = function () {
+    var target = location.hash.length > 1 && document.querySelector("#" + CSS.escape(decodeURIComponent(location.hash.slice(1))));
+    if (target) target.scrollIntoView();
+  };
+  mermaid.run().then(scrollToAnchor, scrollToAnchor);
 });
 </script>
 {{end}}<style>

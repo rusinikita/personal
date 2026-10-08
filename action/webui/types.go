@@ -199,6 +199,14 @@ type ActionBarData struct {
 	Buttons []ActionButton // empty renders nothing
 }
 
+// MarkdownHeading is one heading of a markdown source rendered by
+// RenderMarkdownWithHeadings, for a page that builds a table of contents.
+type MarkdownHeading struct {
+	Level int    // 1-6
+	Text  string // plain text of the heading, without inline markup
+	ID    string // id attribute of the rendered heading, the anchor to link to
+}
+
 // AchievementTilesData is a grid of achievement tiles — either every active achievement (the
 // dedicated /web/achievements page) or a subset pre-filtered to one domain's achievement
 // types (embedded in the Money/Progress-browse/Workouts pages).

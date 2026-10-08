@@ -170,11 +170,12 @@ func (s *IntegrationTestSuite) TestPersonalDocViewWeb() {
 		html := w.Body.String()
 		assert.Contains(s.T(), html, "<h2>Plan</h2>")
 		assert.Contains(s.T(), html, "Plan description")
-		assert.Contains(s.T(), html, "<h1>First heading</h1>")
+		assert.Contains(s.T(), html, fmt.Sprintf(`<h1 id="chunk-%d-h1">First heading</h1>`, ids[0]))
 		assert.Contains(s.T(), html, "<strong>bold</strong>")
 		assert.NotContains(s.T(), html, "<script>alert(1)</script>")
 		assert.Contains(s.T(), html, "third edited")
 		assert.NotContains(s.T(), html, "<textarea")
+		assert.NotContains(s.T(), html, "autofocus")
 
 		var anchors []int
 		for _, id := range ids {
@@ -270,6 +271,85 @@ func (s *IntegrationTestSuite) TestPersonalDocViewWeb() {
 	}
 }
 
+func (s *IntegrationTestSuite) TestPersonalDocContentsWeb() {
+	ctx := s.Context()
+	r := s.personalDocsRouter(ctx)
+
+	const contentsSummary = "<summary>Contents</summary>"
+
+	docID := s.createPersonalDoc(ctx, "Plan")
+	ids := s.createPersonalDocChunks(ctx, docID,
+		"# Goals\n\ntext\n\n## This *year* `now` <b>!</b>\n\n```\n# not a heading\n```\n\n### Deep\n\n## Next year",
+		"no headings here",
+		"# Goals\n\nagain",
+	)
+	s.editPersonalDocChunkBody(ctx, ids[1], "still no headings")
+
+	s.Run("lists the headings of all chunks nested by level", func() {
+		w := personalDocsGet(r, fmt.Sprintf("/web/personal-docs/%d", docID))
+
+		require.Equal(s.T(), http.StatusOK, w.Code)
+		html := w.Body.String()
+		start := strings.Index(html, "<details open>\n"+contentsSummary)
+		require.Greater(s.T(), start, -1)
+		end := start + strings.Index(html[start:], "</details>")
+		contents := html[start:end]
+		assert.Less(s.T(), end, strings.Index(html, fmt.Sprintf(`<article id="chunk-%d">`, ids[0])))
+
+		// the second level is nested under "Goals", "Deep" under "This year now !"
+		assert.Equal(s.T(), strings.Join([]string{
+			"<details open>",
+			contentsSummary,
+			"<ul>",
+			fmt.Sprintf(`<li><a href="#chunk-%d-h1">Goals</a><ul>`, ids[0]),
+			fmt.Sprintf(`<li><a href="#chunk-%d-h2">This year now !</a><ul>`, ids[0]),
+			fmt.Sprintf(`<li><a href="#chunk-%d-h3">Deep</a></li>`, ids[0]),
+			"</ul></li>",
+			fmt.Sprintf(`<li><a href="#chunk-%d-h4">Next year</a></li>`, ids[0]),
+			"</ul></li>",
+			fmt.Sprintf(`<li><a href="#chunk-%d-h1">Goals</a></li>`, ids[2]),
+			"</ul>\n",
+		}, "\n"), contents)
+
+		// every link has its heading
+		assert.Contains(s.T(), html, fmt.Sprintf(`<h1 id="chunk-%d-h1">Goals</h1>`, ids[0]))
+		assert.Contains(s.T(), html, fmt.Sprintf(`<h2 id="chunk-%d-h2">This <em>year</em> <code>now</code> !</h2>`, ids[0]))
+		assert.Contains(s.T(), html, fmt.Sprintf(`<h3 id="chunk-%d-h3">Deep</h3>`, ids[0]))
+		assert.Contains(s.T(), html, fmt.Sprintf(`<h2 id="chunk-%d-h4">Next year</h2>`, ids[0]))
+		assert.Contains(s.T(), html, fmt.Sprintf(`<h1 id="chunk-%d-h1">Goals</h1>`, ids[2]))
+		assert.NotContains(s.T(), contents, "not a heading")
+	})
+
+	modes := []string{
+		fmt.Sprintf("?edit=%d", ids[1]),
+		"?new=1",
+		fmt.Sprintf("?revert=%d", ids[1]),
+		fmt.Sprintf("?delete=%d", ids[1]),
+		"?edit_doc=1",
+	}
+	for _, mode := range modes {
+		s.Run(mode+" shows no contents", func() {
+			w := personalDocsGet(r, fmt.Sprintf("/web/personal-docs/%d%s", docID, mode))
+
+			require.Equal(s.T(), http.StatusOK, w.Code)
+			assert.NotContains(s.T(), w.Body.String(), contentsSummary)
+		})
+	}
+
+	s.Run("document with no headings shows no contents", func() {
+		plainDoc := s.createPersonalDoc(ctx, "Plain")
+		s.createPersonalDocChunks(ctx, plainDoc, "just text", "```\n# in code\n```")
+
+		assert.NotContains(s.T(), personalDocsGet(r, fmt.Sprintf("/web/personal-docs/%d", plainDoc)).Body.String(), contentsSummary)
+	})
+
+	s.Run("empty document shows no contents", func() {
+		emptyDoc := s.createPersonalDoc(ctx, "Empty")
+
+		assert.NotContains(s.T(), personalDocsGet(r, fmt.Sprintf("/web/personal-docs/%d", emptyDoc)).Body.String(), contentsSummary)
+	})
+}
+
 func (s *IntegrationTestSuite) TestPersonalDocEditDocWeb() {
 	ctx := s.Context()
 	otherCtx := s.otherUserContext(ctx)
@@ -360,6 +440,7 @@ func (s *IntegrationTestSuite) TestPersonalDocEditModeWeb() {
 		require.Equal(s.T(), http.StatusOK, w.Code)
 		html := w.Body.String()
 		assert.Equal(s.T(), 1, strings.Count(html, "<textarea"))
+		assert.Equal(s.T(), 1, strings.Count(html, "required autofocus>"))
 		assert.Contains(s.T(), html, fmt.Sprintf(`<form method="POST" action="/web/personal-docs/%d/chunks/%d">`, docID, ids[1]))
 		assert.Contains(s.T(), html, "# Raw &lt;b&gt;heading&lt;/b&gt;\n\nsecond</textarea>")
 		assert.NotContains(s.T(), html, "<h1>Raw")
@@ -472,7 +553,7 @@ func (s *IntegrationTestSuite) TestPersonalDocNewChunkModeWeb() {
 	require.Greater(s.T(), formIdx, -1)
 	assert.Greater(s.T(), formIdx, strings.Index(html, fmt.Sprintf(`<article id="chunk-%d">`, ids[1])))
 	assert.Contains(s.T(), html, fmt.Sprintf(`<form method="POST" action="/web/personal-docs/%d/chunks">`, docID))
-	assert.Contains(s.T(), html, "required>\n</textarea>")
+	assert.Contains(s.T(), html, "required autofocus>\n</textarea>")
 	assert.Contains(s.T(), html, "<p>first text</p>")
 	assert.Contains(s.T(), html, "<p>second text</p>")
 	s.assertPersonalDocChunks(ctx, docID, "first text", "second text")
@@ -516,6 +597,7 @@ func (s *IntegrationTestSuite) TestPersonalDocChunkCreateWeb() {
 			assert.Contains(s.T(), html, tt.wantErr)
 			assert.Contains(s.T(), html, `<article id="chunk-new">`)
 			assert.Contains(s.T(), html, tt.wantText)
+			assert.Contains(s.T(), html, "required autofocus>")
 			s.assertPersonalDocChunks(ctx, docID, "first")
 		})
 	}
@@ -582,6 +664,7 @@ func (s *IntegrationTestSuite) TestPersonalDocChunkSaveWeb() {
 		assert.Contains(s.T(), html, "line 2 of body has 201 characters")
 		assert.Contains(s.T(), html, fmt.Sprintf(`<form method="POST" action="/web/personal-docs/%d/chunks/%d">`, docID, ids[1]))
 		assert.Contains(s.T(), html, "entered text\naaa")
+		assert.Contains(s.T(), html, "required autofocus>")
 		chunk := s.getPersonalDocChunk(ctx, ids[1])
 		assert.Equal(s.T(), "second", chunk.Body)
 		assert.Nil(s.T(), chunk.PreviousBody)

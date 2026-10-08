@@ -73,12 +73,21 @@ type chunkView struct {
 	Delete       *confirmData
 }
 
+// contentsItem is one heading in the table of contents, with the deeper
+// headings that follow it nested under it.
+type contentsItem struct {
+	Text     string
+	URL      string
+	Children []*contentsItem
+}
+
 type docPageData struct {
 	DocID       int64
 	Title       string
 	Description string
 	DocActions  template.HTML
 	DocForm     *docFormData
+	Contents    []*contentsItem
 	Chunks      []chunkView
 	NewForm     *bodyFormData
 }
@@ -97,7 +106,7 @@ const pagesSrc = `{{define "docForm"}}<form method="POST" action="{{.Action}}">
 
 {{define "bodyForm"}}<form method="POST" action="{{.Action}}">
 {{if .Error}}<p role="alert"><mark>{{.Error}}</mark></p>
-{{end}}<textarea name="body" rows="{{.Rows}}" aria-label="Chunk text" required>
+{{end}}<textarea name="body" rows="{{.Rows}}" aria-label="Chunk text" required autofocus>
 {{.Body}}</textarea>
 <small>Markdown, up to {{.MaxLines}} lines of up to {{.MaxLineLength}} characters.</small>
 <div role="group"><button type="submit">Save</button><a role="button" class="secondary" href="{{.CancelURL}}">Cancel</a></div>
@@ -109,13 +118,21 @@ const pagesSrc = `{{define "docForm"}}<form method="POST" action="{{.Action}}">
 {{define "newDoc"}}<p><a href="/web/personal-docs">← Personal docs</a></p>
 {{template "docForm" .}}{{end}}
 
+{{define "contents"}}<ul>
+{{range .}}<li><a href="{{.URL}}">{{.Text}}</a>{{if .Children}}{{template "contents" .Children}}{{end}}</li>
+{{end}}</ul>{{end}}
+
 {{define "docPage"}}<p><a href="/web/personal-docs">← Personal docs</a></p>
 <article>
 {{if .DocForm}}{{template "docForm" .DocForm}}
 {{else}}<hgroup><h2>{{.Title}}</h2><p>{{.Description}}</p></hgroup>
 <footer>{{.DocActions}}</footer>
 {{end}}</article>
-{{range .Chunks}}<article id="chunk-{{.ID}}">
+{{if .Contents}}<details open>
+<summary>Contents</summary>
+{{template "contents" .Contents}}
+</details>
+{{end}}{{range .Chunks}}<article id="chunk-{{.ID}}">
 {{if .Form}}{{template "bodyForm" .Form}}
 {{else}}{{.HTML}}
 {{if .Revert}}<hr>
@@ -163,6 +180,11 @@ type docPageMode struct {
 	deleteChunkID int64
 
 	err string
+}
+
+// isView reports view mode: no form and no confirmation on the page.
+func (m docPageMode) isView() bool {
+	return !m.editDoc && m.editChunkID == 0 && !m.newChunk && m.revertChunkID == 0 && m.deleteChunkID == 0
 }
 
 func docURL(docID int64) string {
@@ -532,6 +554,7 @@ func renderDocPage(c *gin.Context, db gateways.DB, doc *domain.PersonalDoc, mode
 		}})
 	}
 
+	var headings []webui.MarkdownHeading
 	for _, chunk := range chunks {
 		view := chunkView{ID: chunk.ID}
 		anchorURL := chunkAnchorURL(doc.ID, chunk.ID)
@@ -542,7 +565,9 @@ func renderDocPage(c *gin.Context, db gateways.DB, doc *domain.PersonalDoc, mode
 			continue
 		}
 
-		view.HTML = webui.RenderMarkdown(chunk.Body, true)
+		var chunkHeadings []webui.MarkdownHeading
+		view.HTML, chunkHeadings = webui.RenderMarkdownWithHeadings(chunk.Body, true, fmt.Sprintf("chunk-%d-", chunk.ID))
+		headings = append(headings, chunkHeadings...)
 		view.Actions = webui.RenderActionBar(chunkActions(doc.ID, chunk, len(chunks)))
 		if chunk.ID == mode.revertChunkID && chunk.PreviousBody != nil {
 			view.Revert = &confirmData{Action: chunkURL(doc.ID, chunk.ID) + "/revert", CancelURL: anchorURL}
@@ -552,6 +577,10 @@ func renderDocPage(c *gin.Context, db gateways.DB, doc *domain.PersonalDoc, mode
 			view.Delete = &confirmData{Action: chunkURL(doc.ID, chunk.ID) + "/delete", CancelURL: anchorURL}
 		}
 		page.Chunks = append(page.Chunks, view)
+	}
+
+	if mode.isView() {
+		page.Contents = buildContents(headings)
 	}
 
 	if mode.newChunk {
@@ -599,6 +628,30 @@ func chunkActions(docID int64, chunk domain.PersonalDocChunk, chunkCount int) we
 	buttons = append(buttons, webui.ActionButton{Label: "✕", Title: "Delete", URL: modeURL("delete")})
 
 	return webui.ActionBarData{Buttons: buttons}
+}
+
+// buildContents nests the headings by level: a heading goes under the
+// nearest heading above it that has a lower level.
+func buildContents(headings []webui.MarkdownHeading) []*contentsItem {
+	var roots []*contentsItem
+	var parents []*contentsItem
+	var levels []int
+	for _, heading := range headings {
+		for len(levels) > 0 && levels[len(levels)-1] >= heading.Level {
+			parents = parents[:len(parents)-1]
+			levels = levels[:len(levels)-1]
+		}
+		item := &contentsItem{Text: heading.Text, URL: "#" + heading.ID}
+		if len(parents) == 0 {
+			roots = append(roots, item)
+		} else {
+			parent := parents[len(parents)-1]
+			parent.Children = append(parent.Children, item)
+		}
+		parents = append(parents, item)
+		levels = append(levels, heading.Level)
+	}
+	return roots
 }
 
 func newBodyForm(action, cancelURL, body, errText string) *bodyFormData {

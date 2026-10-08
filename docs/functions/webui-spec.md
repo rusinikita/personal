@@ -75,7 +75,7 @@ graph TB
     ImportH --> Shell
     AchievementsH -->|builds AchievementTilesData, calls webui.RenderAchievementTiles| Shell
     DocsH -->|calls webui.RenderMarkdown for the doc| Markdown
-    PersonalDocsH -->|calls webui.RenderMarkdown per chunk, safe mode| Markdown
+    PersonalDocsH -->|calls webui.RenderMarkdownWithHeadings per chunk, safe mode| Markdown
     MoneyH -.->|"achievements.BuildAchievementTiles types=money_saving/money_spend"| AchievementsH
     ProgressH -.->|"achievements.BuildAchievementTiles types=activity_*"| AchievementsH
     WorkoutH -.->|"achievements.BuildAchievementTiles types=exercise_*"| AchievementsH
@@ -310,6 +310,14 @@ type ActionButton struct {
 type ActionBarData struct {
     Buttons []ActionButton // empty renders nothing
 }
+
+// MarkdownHeading is one heading of a markdown source rendered by
+// RenderMarkdownWithHeadings, for a page that builds a table of contents.
+type MarkdownHeading struct {
+    Level int    // 1-6
+    Text  string // plain text of the heading, without inline markup
+    ID    string // id attribute of the rendered heading, the anchor to link to
+}
 ```
 
 ### Repository Interface
@@ -367,10 +375,13 @@ Everything else is a Go function, not a route — called from other subdomains' 
 ### `webui.RenderPage(w io.Writer, data PageData) error`
 Executes the shared shell template (head/nav/footer + design tokens, light/dark via `prefers-color-scheme`) with `data.Content` dropped into the content slot. When `data.UserName` is set, the header also renders it as a `<details class="dropdown">` menu (Pico CSS's built-in disclosure pattern, no custom JS) containing one item: a "Logout" link to `GET /web/logout` (see `auth-spec.md`). Used by every `/web/*` handler, including the demo page above.
 
-When `data.Content` contains a diagram block (`<pre class="mermaid">`, see `RenderMarkdown`), the shell also loads Mermaid from the CDN (`mermaid@11`) and starts it with an inline script: `startOnLoad`, `securityLevel: "strict"`, theme `dark` or `default` by `prefers-color-scheme`. Mermaid replaces each block with an SVG in the browser; a diagram with a syntax error shows Mermaid's own error block in its place. A page with no diagram block loads neither the script nor the init.
+When `data.Content` contains a diagram block (`<pre class="mermaid">`, see `RenderMarkdown`), the shell also loads Mermaid from the CDN (`mermaid@11`) and starts it with an inline script: `securityLevel: "strict"`, theme `dark` or `default` by `prefers-color-scheme`, diagrams drawn once the page has loaded. Mermaid replaces each block with an SVG in the browser, which changes the height of the page after the browser has already scrolled to the URL's anchor; so when the URL has an anchor, the script scrolls to its element again after the diagrams are drawn. A diagram with a syntax error shows Mermaid's own error block in its place. A page with no diagram block loads neither the script nor the init.
 
 ### `webui.RenderMarkdown(source string, safe bool) template.HTML`
-Renders markdown to HTML via `blackfriday` with `CommonExtensions` — the one markdown renderer for web pages. A fenced code block with the language `mermaid` becomes `<pre class="mermaid">` holding the HTML-escaped diagram source, instead of `<pre><code>`; every other code block is rendered as before. With `safe` set, raw HTML in the source is dropped and links are limited to safe protocols (for user-written text); without it raw HTML is passed through (for the app's own embedded files). Used by Docs (`docs-spec.md`, not safe) and Personal docs (`personaldocs-spec.md`, safe).
+Renders markdown to HTML via `blackfriday` with `CommonExtensions` — the one markdown renderer for web pages. A fenced code block with the language `mermaid` becomes `<pre class="mermaid">` holding the HTML-escaped diagram source, instead of `<pre><code>`; every other code block is rendered as before. With `safe` set, raw HTML in the source is dropped and links are limited to safe protocols (for user-written text); without it raw HTML is passed through (for the app's own embedded files). Used by Docs (`docs-spec.md`, not safe); Personal docs use it through `RenderMarkdownWithHeadings` (safe).
+
+### `webui.RenderMarkdownWithHeadings(source string, safe bool, idPrefix string) (template.HTML, []MarkdownHeading)`
+The same rendering as `RenderMarkdown` (which stays as it is, headings without ids), plus anchors: every heading is rendered with the id `{idPrefix}h{n}`, where `n` is the 1-based number of the heading in the source, and is returned as a `MarkdownHeading` in source order. The caller passes a prefix unique on its page, so ids of several sources rendered on one page never collide. An id written in the source (`{#id}`) is replaced by the generated one. Used by Personal docs to build the table of contents of a document (`personaldocs-spec.md`).
 
 ### `webui.RenderTable(data TableData) template.HTML`
 Renders a `TableData` as a Pico CSS card (`<article>` — no extra class needed, Pico styles a bare `<article>` as a card) containing the `<table>`, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template). When `data.Pagination` is non-nil, also renders the pagination controls (prev/next links, "page X of Y") inside a card `<footer>` below the rows — callers needing a paginated list (e.g. Progress browse/finished/future lists, or a drill-down's history table) just set `TableData.Pagination` instead of calling a separate render function. When `data.TagsColumnLabel` is non-empty, the table also gets a column with that header text inserted right after the first `Columns` entry (e.g. Name), and each row's `Tags` render inside its own cell in that column as small `<span role="button" class="outline contrast webui-tag">` elements — Pico's own `.contrast` button styling (dark background/border, no custom color CSS of ours), sized down to fit via `.webui-tag` (padding/font-size only, no color) — with `data-tooltip="{{.Tooltip}}"` set when `Tooltip` is non-empty for Pico's own CSS-only tooltip on hover, no extra script. `TagsColumnLabel` empty (every caller but Progress's activity lists) omits the column entirely. A row with `Heading` set renders as `<tr><td colspan="N">{{.Heading}}</td></tr>` (`N` = total column count, tags column included when present) instead of its (ignored) `Cells`/`Tags` — used by Progress's active-list grouping (see `progress-spec.md`).
@@ -422,11 +433,13 @@ In `tests/webui_user_menu_test.go`:
 
 In `tests/webui_markdown_test.go`:
 
-- `TestRenderPage_Mermaid*`: content with a diagram block loads mermaid JS and the init script; content without one loads neither
-- `TestRenderMarkdown_*`: renders headings, lists and links; `mermaid` block becomes `<pre class="mermaid">` with the source HTML-escaped; block of another language and block with no language stay `<pre><code>`; safe mode drops raw HTML and unsafe links, also next to a diagram; not safe mode keeps raw HTML
+- `TestRenderPage_Mermaid*`: content with a diagram block loads mermaid JS and the init script, which scrolls to the URL's anchor after the diagrams are drawn; content without one loads neither
+- `TestRenderMarkdown_*`: renders headings, lists and links; `mermaid` block becomes `<pre class="mermaid">` with the source HTML-escaped; block of another language and block with no language stay `<pre><code>`; safe mode drops raw HTML and unsafe links, also next to a diagram; not safe mode keeps raw HTML; headings have no ids
+- `TestRenderMarkdownWithHeadings_*`: every heading is rendered with the id `{idPrefix}h{n}` and returned with its level, plain text and id in source order; inline markup in a heading is left out of the text; an id written in the source is replaced; a `#` line inside a code block is not a heading; a source with no headings returns none; the HTML besides the ids equals `RenderMarkdown`'s, in safe and not safe mode
 
 ## Changelog
 
+- **09-10-26** — added `RenderMarkdownWithHeadings` and `MarkdownHeading` (heading anchors and the list of headings for a table of contents); the Mermaid init script scrolls to the URL's anchor again after the diagrams are drawn (Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — added the markdown renderer `RenderMarkdown` with Mermaid diagrams for `mermaid` code blocks; the shell loads Mermaid from the CDN only on pages with a diagram (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — `POST /web/design-system` redirects back to the page, so the sample POST buttons of the action bar work (HTTP Handlers)
 - **08-10-26** — added the action bar component: `RenderActionBar`, `ActionBarData`, `.webui-actions` / `.webui-action` (Overview, Go Code Structure, HTTP Handlers, E2E Tests)
