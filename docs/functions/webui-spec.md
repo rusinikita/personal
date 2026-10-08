@@ -2,9 +2,9 @@
 
 ## Overview
 
-Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Achievements) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart, a bar chart, a combo chart, a dual-axis line chart, a month-grid calendar, a drill-down/detail layout, an achievement-progress tile grid, and a compact action bar, all themed consistently (light + dark) from a single place.
+Shared visual language and reusable Go `html/template` building blocks for the *new* `/web/*` dashboard pages (Money, Progress browse view, Workouts, Achievements) plus `/money/import`. Provides one page shell (header/nav/footer), a data table component, summary/stat tiles, a line chart, a bar chart, a combo chart, a dual-axis line chart, a month-grid calendar, a drill-down/detail layout, an achievement-progress tile grid, a compact action bar, and a markdown renderer with Mermaid diagrams, all themed consistently (light + dark) from a single place.
 
-Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain.
+Built on **Pico CSS** (classless CSS framework, loaded via CDN) for base typography/layout/forms, plus a small hand-written CSS layer on top for the pieces Pico doesn't cover (nav active state, stat tile emphasis, chart container). Charts are rendered with **Chart.js** (also CDN), fed by server-rendered JSON data — no hand-rolled SVG/canvas math to maintain. Diagrams in markdown are drawn by **Mermaid** (also CDN), loaded only on pages that contain one.
 
 This is a **presentation-only, infrastructure layer**: it owns no database tables and no MCP tools. It exposes exactly one HTTP route of its own — a **demo/style-guide page** (`GET /web/design-system`) showing every component with sample data, so the design language can be reviewed and iterated on before any of the real dashboards (Money, Progress browse, Workouts, Achievements) exist. All other pages are built by other actions' HTTP handlers (`action/money`, `action/progress`, `action/workout`, `action/achievements`), which import this package and call it to render their pages.
 
@@ -29,6 +29,7 @@ graph TB
     subgraph "CDN (static assets, no server dependency)"
         Pico[Pico CSS]
         ChartJS[Chart.js]
+        Mermaid[Mermaid<br/>only on pages with a diagram]
     end
 
     subgraph "action/webui (design system)"
@@ -42,6 +43,7 @@ graph TB
         Dual[Dual-axis line chart component<br/>two series, left + right Y axis, Chart.js init script]
         Detail[Drill-down/detail layout]
         Tile[Achievement tile grid component<br/>Pico native progress bar, no Chart.js]
+        Markdown[Markdown renderer<br/>blackfriday, mermaid code blocks as diagram blocks]
     end
 
     subgraph "Consuming HTTP handlers"
@@ -50,6 +52,8 @@ graph TB
         WorkoutH[action/workout handlers]
         ImportH[action/money import_web.go]
         AchievementsH[action/achievements handlers<br/>+ BuildAchievementTiles helper, called by<br/>MoneyH/ProgressH/WorkoutH for their own embedded tiles]
+        DocsH[action/docs handlers]
+        PersonalDocsH[action/personaldocs handlers]
     end
 
     Browser -->|GET /web/design-system| Demo
@@ -60,6 +64,9 @@ graph TB
     Browser -->|GET /web/achievements| AchievementsH
     Browser -->|loads via link/script tag in shell head| Pico
     Browser --> ChartJS
+    Browser -->|only when the page has a diagram| Mermaid
+    Browser -->|GET /web/docs/:topic| DocsH
+    Browser -->|GET /web/personal-docs/:id| PersonalDocsH
 
     Demo -->|renders fixture data through every component| Shell
     MoneyH -->|builds Table/StatTile/BarChart/DetailView data,<br/>calls webui.Render*| Shell
@@ -67,6 +74,8 @@ graph TB
     WorkoutH -->|builds DualAxisChartData| Shell
     ImportH --> Shell
     AchievementsH -->|builds AchievementTilesData, calls webui.RenderAchievementTiles| Shell
+    DocsH -->|calls webui.RenderMarkdown for the doc| Markdown
+    PersonalDocsH -->|calls webui.RenderMarkdown per chunk, safe mode| Markdown
     MoneyH -.->|"achievements.BuildAchievementTiles types=money_saving/money_spend"| AchievementsH
     ProgressH -.->|"achievements.BuildAchievementTiles types=activity_*"| AchievementsH
     WorkoutH -.->|"achievements.BuildAchievementTiles types=exercise_*"| AchievementsH
@@ -313,7 +322,7 @@ Every template is a real `.html` file, embedded at compile time and parsed once 
 
 ```
 action/webui/templates/
-  layout.html                    {{define "layout"}}      — shell: head/nav/footer, design tokens
+  layout.html                    {{define "layout"}}      — shell: head/nav/footer, design tokens; Mermaid script + init only when the content has a diagram block
   components/
     table.html                   {{define "components/table"}}       — renders Pagination controls below the rows when set
     pagination.html               {{define "components/pagination"}} — prev/next + "page X of Y", included by table.html
@@ -345,6 +354,7 @@ The one real route this package owns. Renders a single page built entirely from 
 - A month-grid calendar with real, correctly-computed leading/trailing days and a few sample linked/unlinked days (previewing the Money transaction calendar use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 - An achievement tile grid with a few sample tiles (mixed progress percentages, one with a deadline, one `OverTarget`) previewing both the dedicated Achievements page and an embedded subset use
+- A markdown sample with a heading, a regular code block and a `mermaid` code block (previewing diagrams in Docs and Personal docs)
 - An action bar under a sample card, mixing link buttons and POST-form buttons (previewing the per-chunk buttons of Personal docs); its POST buttons point at the design-system page itself and change nothing (`POST /web/design-system` only redirects `303` back to the page)
 
 Behind `WebMiddleware` (see `auth-spec.md`'s "Authorization for web dashboards" flow) like every other `/web/*` dashboard — it renders through the same shell, and the shell now shows the logged-in username, so it needs a real session to demo that correctly.
@@ -356,6 +366,11 @@ Everything else is a Go function, not a route — called from other subdomains' 
 
 ### `webui.RenderPage(w io.Writer, data PageData) error`
 Executes the shared shell template (head/nav/footer + design tokens, light/dark via `prefers-color-scheme`) with `data.Content` dropped into the content slot. When `data.UserName` is set, the header also renders it as a `<details class="dropdown">` menu (Pico CSS's built-in disclosure pattern, no custom JS) containing one item: a "Logout" link to `GET /web/logout` (see `auth-spec.md`). Used by every `/web/*` handler, including the demo page above.
+
+When `data.Content` contains a diagram block (`<pre class="mermaid">`, see `RenderMarkdown`), the shell also loads Mermaid from the CDN (`mermaid@11`) and starts it with an inline script: `startOnLoad`, `securityLevel: "strict"`, theme `dark` or `default` by `prefers-color-scheme`. Mermaid replaces each block with an SVG in the browser; a diagram with a syntax error shows Mermaid's own error block in its place. A page with no diagram block loads neither the script nor the init.
+
+### `webui.RenderMarkdown(source string, safe bool) template.HTML`
+Renders markdown to HTML via `blackfriday` with `CommonExtensions` — the one markdown renderer for web pages. A fenced code block with the language `mermaid` becomes `<pre class="mermaid">` holding the HTML-escaped diagram source, instead of `<pre><code>`; every other code block is rendered as before. With `safe` set, raw HTML in the source is dropped and links are limited to safe protocols (for user-written text); without it raw HTML is passed through (for the app's own embedded files). Used by Docs (`docs-spec.md`, not safe) and Personal docs (`personaldocs-spec.md`, safe).
 
 ### `webui.RenderTable(data TableData) template.HTML`
 Renders a `TableData` as a Pico CSS card (`<article>` — no extra class needed, Pico styles a bare `<article>` as a card) containing the `<table>`, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template). When `data.Pagination` is non-nil, also renders the pagination controls (prev/next links, "page X of Y") inside a card `<footer>` below the rows — callers needing a paginated list (e.g. Progress browse/finished/future lists, or a drill-down's history table) just set `TableData.Pagination` instead of calling a separate render function. When `data.TagsColumnLabel` is non-empty, the table also gets a column with that header text inserted right after the first `Columns` entry (e.g. Name), and each row's `Tags` render inside its own cell in that column as small `<span role="button" class="outline contrast webui-tag">` elements — Pico's own `.contrast` button styling (dark background/border, no custom color CSS of ours), sized down to fit via `.webui-tag` (padding/font-size only, no color) — with `data-tooltip="{{.Tooltip}}"` set when `Tooltip` is non-empty for Pico's own CSS-only tooltip on hover, no extra script. `TagsColumnLabel` empty (every caller but Progress's activity lists) omits the column entirely. A row with `Heading` set renders as `<tr><td colspan="N">{{.Heading}}</td></tr>` (`N` = total column count, tags column included when present) instead of its (ignored) `Cells`/`Tags` — used by Progress's active-list grouping (see `progress-spec.md`).
@@ -398,15 +413,21 @@ No E2E test: it's a developer tool, not an HTTP handler; the pages it serves are
 
 In `tests/webui_design_system_test.go`:
 
-- `TestDesignSystem_*`: renders OK; loads pico CSS from CDN; loads chart JS from CDN; supports light and dark via media query; nav has active item; shows stat tiles plain and emphasized; shows table with drill down link; shows line charts; shows bar chart; shows combo chart; shows dual axis chart; charts have unique canvas ids; shows drill down detail view; shows action bar with link and POST-form buttons carrying `title` and `aria-label`; escapes fixture text containing markup
+- `TestDesignSystem_*`: renders OK; loads pico CSS from CDN; loads chart JS from CDN; supports light and dark via media query; nav has active item; shows stat tiles plain and emphasized; shows table with drill down link; shows line charts; shows bar chart; shows combo chart; shows dual axis chart; charts have unique canvas ids; shows drill down detail view; shows action bar with link and POST-form buttons carrying `title` and `aria-label`; shows the markdown sample with the `mermaid` block as `<pre class="mermaid">` and the regular code block as `<pre><code>`; loads mermaid JS from CDN with the init script; escapes fixture text containing markup
 
 In `tests/webui_user_menu_test.go`:
 
 - `TestRenderPage_*`: user name set, shows dropdown with logout link; user name empty, hides dropdown; user name containing markup, is escaped
 - `TestDesignSystem_*`: shows logged in user dropdown
 
+In `tests/webui_markdown_test.go`:
+
+- `TestRenderPage_Mermaid*`: content with a diagram block loads mermaid JS and the init script; content without one loads neither
+- `TestRenderMarkdown_*`: renders headings, lists and links; `mermaid` block becomes `<pre class="mermaid">` with the source HTML-escaped; block of another language and block with no language stay `<pre><code>`; safe mode drops raw HTML and unsafe links, also next to a diagram; not safe mode keeps raw HTML
+
 ## Changelog
 
+- **09-10-26** — added the markdown renderer `RenderMarkdown` with Mermaid diagrams for `mermaid` code blocks; the shell loads Mermaid from the CDN only on pages with a diagram (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — `POST /web/design-system` redirects back to the page, so the sample POST buttons of the action bar work (HTTP Handlers)
 - **08-10-26** — added the action bar component: `RenderActionBar`, `ActionBarData`, `.webui-actions` / `.webui-action` (Overview, Go Code Structure, HTTP Handlers, E2E Tests)
 - **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; E2E Tests rewritten as a list of the current tests; added Changelog (Architecture Diagrams, E2E Tests, Changelog)

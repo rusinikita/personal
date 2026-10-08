@@ -208,6 +208,29 @@ func (s *IntegrationTestSuite) TestPersonalDocViewWeb() {
 		assert.Contains(s.T(), html, fmt.Sprintf(`href="/web/personal-docs/%d?edit_doc=1"`, docID))
 	})
 
+	s.Run("mermaid code block is rendered as a diagram block", func() {
+		docID := s.createPersonalDoc(ctx, "Diagram")
+		s.createPersonalDocChunks(ctx, docID, "```mermaid\ngraph LR\n    A --> B\n```", "```go\nfmt.Println(1)\n```\n\n<script>alert(1)</script>")
+
+		html := personalDocsGet(r, fmt.Sprintf("/web/personal-docs/%d", docID)).Body.String()
+
+		assert.Contains(s.T(), html, "<pre class=\"mermaid\">graph LR\n    A --&gt; B\n</pre>")
+		assert.Contains(s.T(), html, `<pre><code class="language-go">`)
+		assert.NotContains(s.T(), html, "<script>alert(1)</script>")
+		assert.Contains(s.T(), html, mermaidScriptSrc)
+		assert.Contains(s.T(), html, mermaidInit)
+	})
+
+	s.Run("document with no diagram does not load mermaid JS", func() {
+		docID := s.createPersonalDoc(ctx, "Plain")
+		s.createPersonalDocChunks(ctx, docID, "```go\nfmt.Println(1)\n```")
+
+		html := personalDocsGet(r, fmt.Sprintf("/web/personal-docs/%d", docID)).Body.String()
+
+		assert.NotContains(s.T(), html, mermaidScriptSrc)
+		assert.NotContains(s.T(), html, mermaidInit)
+	})
+
 	s.Run("single chunk has no move buttons", func() {
 		docID := s.createPersonalDoc(ctx, "Single")
 		s.createPersonalDocChunks(ctx, docID, "only")

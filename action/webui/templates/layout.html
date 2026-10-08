@@ -7,7 +7,15 @@
 <title>{{.Title}}</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<style>
+{{if .Mermaid}}<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  securityLevel: "strict",
+  theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default"
+});
+</script>
+{{end}}<style>
 :root {
   --webui-accent: #0d6efd;
   --webui-stat-emphasis-bg: #e7f1ff;
@@ -59,6 +67,7 @@ nav a[aria-current="page"] { color: var(--webui-accent); font-weight: 700; }
 .webui-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .webui-actions form { margin: 0; }
 .webui-actions .webui-action { width: auto; margin: 0; padding: 0.15rem 0.6rem; font-size: 0.85rem; line-height: 1.4; }
+pre.mermaid { background: none; text-align: center; }
 .docs-layout { display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: 2rem; align-items: start; }
 @media (max-width: 768px) { .docs-layout { grid-template-columns: minmax(0, 1fr); gap: 1rem; } }
 </style>

@@ -34,7 +34,7 @@ graph TB
         Get[get_doc MCP tool]
         FS[Embedded content files<br/>action/docs/content/*.md]
 
-        Web -->|Topics: slugs+titles+descriptions for index + doc-page sidebar, renders content via blackfriday| FS
+        Web -->|Topics: slugs+titles+descriptions for index + doc-page sidebar, renders content via webui.RenderMarkdown| FS
         List -->|Topics: slugs+titles+descriptions| FS
         Get -->|reads one doc's raw markdown| FS
     end
@@ -121,7 +121,7 @@ Index page listing the available docs (title + one-line description each, from `
 
 ### GET /web/docs/{topic}
 
-Renders one document as an HTML page under the shared `webui` layout/nav (new "Docs" nav entry), markdown rendered to HTML via `blackfriday` — read-only, no forms, no query params. A sidebar next to the doc lists every doc from `docs.Topics()` (title, linking to `/web/docs/{slug}`), current one highlighted via `aria-current="page"`. 404 for an unknown topic.
+Renders one document as an HTML page under the shared `webui` layout/nav (new "Docs" nav entry), markdown rendered to HTML via `webui.RenderMarkdown` (not safe mode: the files are the app's own; see `webui-spec.md`), so a `mermaid` code block is drawn as a diagram — read-only, no forms, no query params. A sidebar next to the doc lists every doc from `docs.Topics()` (title, linking to `/web/docs/{slug}`), current one highlighted via `aria-current="page"`. 404 for an unknown topic.
 
 ## E2E Tests
 
@@ -129,7 +129,9 @@ In `tests/docs_test.go`:
 
 - `TestListDocs_*`: discovers embedded content
 - `TestGetDoc`: known topic returns raw markdown; unknown topic; empty topic; path traversal rejected
-- `TestDocsWeb`: index lists docs with links; doc page renders markdown to HTML; unknown topic is 404
+- `TestDocsWeb`: index lists docs with links; doc page renders markdown to HTML; doc page with no diagram does not load mermaid JS; unknown topic is 404
+
+Diagram rendering itself is covered by `TestRenderMarkdown_*` and `TestRenderPage_*` in `webui-spec.md`: no embedded doc has a `mermaid` block yet.
 
 ## `transport/mcp` Instructions Update
 
@@ -145,6 +147,7 @@ Not part of `action/docs` itself, but bundled into this round since it's the fil
 
 ## Changelog
 
+- **09-10-26** — doc page renders through `webui.RenderMarkdown`, so `mermaid` code blocks are drawn as diagrams (Architecture Diagrams, HTTP Handlers, E2E Tests)
 - **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; E2E Tests rewritten as a list of the current tests; added Changelog (Architecture Diagrams, E2E Tests, Changelog)
 - **26-09-26** — goals references renamed to achievements (Overview, `transport/mcp` Instructions Update)
 - **26-09-26** — added sidebar navigation between docs on `/web/docs` pages (Architecture Diagrams, HTTP Handlers, E2E Tests)

@@ -23,8 +23,14 @@ type designSystemPageData struct {
 	CalendarHTML         template.HTML
 	DetailHTML           template.HTML
 	AchievementTilesHTML template.HTML
+	MarkdownHTML         template.HTML
 	ActionBarHTML        template.HTML
 }
+
+const fixtureMarkdown = "### Sample document\n\n" +
+	"A paragraph with **bold** text, a regular code block and a diagram.\n\n" +
+	"```go\nfmt.Println(\"hello\")\n```\n\n" +
+	"```mermaid\ngraph LR\n    Idea --> Spec --> Tests --> Code\n```\n"
 
 // fixtureCalendarWeeks builds a real, correctly-computed August 2026 month
 // grid (Go-computed weeks, not template date math — see the Best Practices
@@ -210,6 +216,7 @@ func DesignSystemHandler(c *gin.Context) {
 		CalendarHTML:         RenderCalendar(calendar),
 		DetailHTML:           RenderDetailView(detail),
 		AchievementTilesHTML: RenderAchievementTiles(achievementTiles),
+		MarkdownHTML:         RenderMarkdown(fixtureMarkdown, true),
 		ActionBarHTML:        RenderActionBar(actionBar),
 	})
 

@@ -26,9 +26,18 @@ var tmpl = template.Must(template.New("webui").Funcs(funcMap).ParseFS(templatesF
 
 // RenderPage executes the shared page shell ("layout" — head/nav/footer +
 // design tokens, light/dark via prefers-color-scheme) with data.Content
-// dropped into the content slot, and writes the resulting HTML to w.
+// dropped into the content slot, and writes the resulting HTML to w. Mermaid
+// is loaded only when the content has a diagram block (see RenderMarkdown).
 func RenderPage(w io.Writer, data PageData) error {
-	return tmpl.ExecuteTemplate(w, "layout", data)
+	return tmpl.ExecuteTemplate(w, "layout", layoutRenderData{
+		PageData: data,
+		Mermaid:  strings.Contains(string(data.Content), mermaidBlockOpen),
+	})
+}
+
+type layoutRenderData struct {
+	PageData
+	Mermaid bool
 }
 
 // tableCellRenderData is one <td>'s text plus its resolved alignment — cells

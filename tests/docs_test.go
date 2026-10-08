@@ -66,10 +66,11 @@ func (s *IntegrationTestSuite) TestGetDoc() {
 
 func (s *IntegrationTestSuite) TestDocsWeb() {
 	tests := []struct {
-		name         string
-		path         string
-		wantStatus   int
-		wantContains []string
+		name            string
+		path            string
+		wantStatus      int
+		wantContains    []string
+		wantNotContains []string
 	}{
 		{
 			name:         "index lists docs with links",
@@ -82,6 +83,12 @@ func (s *IntegrationTestSuite) TestDocsWeb() {
 			path:         "/web/docs/activity-mechanics",
 			wantStatus:   http.StatusOK,
 			wantContains: []string{"<h1>Механика системы</h1>", "<table>", "<blockquote>", "docs-sidebar", `href="/web/docs/activity-rituals"`, `href="/web/docs/activity-mechanics" aria-current="page"`},
+		},
+		{
+			name:            "doc page with no diagram does not load mermaid JS",
+			path:            "/web/docs/activity-mechanics",
+			wantStatus:      http.StatusOK,
+			wantNotContains: []string{mermaidScriptSrc, mermaidInit},
 		},
 		{
 			name:       "unknown topic is 404",
@@ -99,6 +106,9 @@ func (s *IntegrationTestSuite) TestDocsWeb() {
 			assert.Equal(s.T(), tt.wantStatus, w.Code)
 			for _, want := range tt.wantContains {
 				assert.Contains(s.T(), w.Body.String(), want)
+			}
+			for _, notWant := range tt.wantNotContains {
+				assert.NotContains(s.T(), w.Body.String(), notWant)
 			}
 		})
 	}

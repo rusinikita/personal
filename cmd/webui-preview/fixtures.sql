@@ -135,6 +135,13 @@ Become a **staff engineer** who owns a product area end to end, without giving u
 2. Monthly: update this plan
 3. Quarterly: rewrite the "This quarter" section
 
+```mermaid
+graph LR
+    Weekly[Weekly: steps] --> Monthly[Monthly: plan]
+    Monthly --> Quarterly[Quarterly: rewrite]
+    Quarterly --> Weekly
+```
+
 > A plan that is not reviewed is a wish.', NULL, now() - interval '38 days', now() - interval '38 days'),
     (1, 2, 1, '# Tone
 

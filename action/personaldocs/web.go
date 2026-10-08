@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/russross/blackfriday/v2"
 
 	"personal/action/webui"
 	"personal/domain"
@@ -543,7 +542,7 @@ func renderDocPage(c *gin.Context, db gateways.DB, doc *domain.PersonalDoc, mode
 			continue
 		}
 
-		view.HTML = renderMarkdown(chunk.Body)
+		view.HTML = webui.RenderMarkdown(chunk.Body, true)
 		view.Actions = webui.RenderActionBar(chunkActions(doc.ID, chunk, len(chunks)))
 		if chunk.ID == mode.revertChunkID && chunk.PreviousBody != nil {
 			view.Revert = &confirmData{Action: chunkURL(doc.ID, chunk.ID) + "/revert", CancelURL: anchorURL}
@@ -613,16 +612,6 @@ func newBodyForm(action, cancelURL, body, errText string) *bodyFormData {
 		MaxLineLength: maxLineLength,
 		Error:         errText,
 	}
-}
-
-// renderMarkdown renders a chunk's body to HTML. Raw HTML in the body is
-// dropped and links are limited to safe protocols.
-func renderMarkdown(body string) template.HTML {
-	renderer := blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{
-		Flags: blackfriday.CommonHTMLFlags | blackfriday.SkipHTML | blackfriday.Safelink,
-	})
-	html := blackfriday.Run([]byte(body), blackfriday.WithExtensions(blackfriday.CommonExtensions), blackfriday.WithRenderer(renderer))
-	return template.HTML(html)
 }
 
 func writePage(c *gin.Context, status int, title string, content template.HTML) {

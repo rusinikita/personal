@@ -232,3 +232,29 @@ func (s *IntegrationTestSuite) TestDesignSystem_ShowsActionBar() {
 		`<form method="POST" action="/web/design-system"><input type="hidden" name="direction" value="up"><button type="submit" class="outline secondary webui-action" title="Move up" aria-label="Move up">↑</button></form>`,
 		"a POST button must be a form with its hidden fields, title and aria-label")
 }
+
+func (s *IntegrationTestSuite) TestDesignSystem_ShowsMarkdownWithMermaidDiagram() {
+	r := s.designSystemRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/web/design-system", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, "<pre class=\"mermaid\">graph LR\n    Idea --&gt; Spec --&gt; Tests --&gt; Code\n</pre>",
+		"a mermaid code block must render as a diagram block with the escaped source")
+	assert.Contains(s.T(), body, `<pre><code class="language-go">`,
+		"a regular code block must stay a code block")
+}
+
+func (s *IntegrationTestSuite) TestDesignSystem_LoadsMermaidJSFromCDN() {
+	r := s.designSystemRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/web/design-system", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(s.T(), body, mermaidScriptSrc)
+	assert.Contains(s.T(), body, mermaidInit)
+}

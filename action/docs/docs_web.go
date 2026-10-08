@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/russross/blackfriday/v2"
 
 	"personal/action/webui"
 )
@@ -63,13 +62,12 @@ func DocWebHandler(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Failed to load docs: %v", err)
 		return
 	}
-	html := blackfriday.Run(content, blackfriday.WithExtensions(blackfriday.CommonExtensions))
 	var b strings.Builder
 	if err := docLayoutTemplate.Execute(&b, struct {
 		Topics  []Topic
 		Current string
 		Doc     template.HTML
-	}{topics, slug, template.HTML(html)}); err != nil {
+	}{topics, slug, webui.RenderMarkdown(string(content), false)}); err != nil {
 		c.String(http.StatusInternalServerError, "render error: %v", err)
 		return
 	}
