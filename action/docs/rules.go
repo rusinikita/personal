@@ -1,4 +1,4 @@
-package personaldocs
+package docs
 
 import (
 	"fmt"

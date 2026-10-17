@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS docs (
     title TEXT NOT NULL CHECK (title <> ''),
     description TEXT NOT NULL CHECK (description <> ''),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- stored: set by UpdatePersonalDoc and by every chunk write
+    -- stored: set by UpdateDoc and by every chunk write
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

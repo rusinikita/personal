@@ -10,7 +10,6 @@ const (
 	NavAchievements NavSection = "achievements"
 	NavIdeas        NavSection = "ideas"
 	NavDocs         NavSection = "docs"
-	NavPersonalDocs NavSection = "personal-docs"
 	NavDesignSystem NavSection = "design-system"
 )
 
@@ -24,7 +23,6 @@ func BuildNav(active NavSection) []NavItem {
 		{Label: "Achievements", URL: "/web/achievements", Active: active == NavAchievements},
 		{Label: "Ideas", URL: "/web/ideas", Active: active == NavIdeas},
 		{Label: "Docs", URL: "/web/docs", Active: active == NavDocs},
-		{Label: "Personal docs", URL: "/web/personal-docs", Active: active == NavPersonalDocs},
 		{Label: "Design System", URL: "/web/design-system", Active: active == NavDesignSystem},
 	}
 }

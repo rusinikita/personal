@@ -1,9 +1,9 @@
-// Package personaldocs' web pages: GET /web/personal-docs lists the
-// documents, GET /web/personal-docs/new and POST /web/personal-docs create
-// one, and GET /web/personal-docs/:id is the document page, whose modes
+// Package docs' web pages: GET /web/docs lists the
+// documents, GET /web/docs/new and POST /web/docs create
+// one, and GET /web/docs/:id is the document page, whose modes
 // (edit a chunk, add a chunk, confirm a revert or a delete, edit the title
 // and description) are query params served by the POST routes below it.
-package personaldocs
+package docs
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ import (
 	"personal/gateways"
 )
 
-var personalDocsNav = webui.BuildNav(webui.NavPersonalDocs)
+var docsNav = webui.BuildNav(webui.NavDocs)
 
 // displayTimezone is the timezone of the dates shown on the pages.
 const displayTimezone = "Asia/Nicosia"
@@ -112,17 +112,17 @@ const pagesSrc = `{{define "docForm"}}<form method="POST" action="{{.Action}}">
 <div role="group"><button type="submit">Save</button><a role="button" class="secondary" href="{{.CancelURL}}">Cancel</a></div>
 </form>{{end}}
 
-{{define "docsList"}}<p><a role="button" href="/web/personal-docs/new">New document</a></p>
+{{define "docsList"}}<p><a role="button" href="/web/docs/new">New document</a></p>
 {{if .Empty}}<p>No documents yet.</p>{{else}}{{.Table}}{{end}}{{end}}
 
-{{define "newDoc"}}<p><a href="/web/personal-docs">← Personal docs</a></p>
+{{define "newDoc"}}<p><a href="/web/docs">← Docs</a></p>
 {{template "docForm" .}}{{end}}
 
 {{define "contents"}}<ul>
 {{range .}}<li><a href="{{.URL}}">{{.Text}}</a>{{if .Children}}{{template "contents" .Children}}{{end}}</li>
 {{end}}</ul>{{end}}
 
-{{define "docPage"}}<p><a href="/web/personal-docs">← Personal docs</a></p>
+{{define "docPage"}}<p><a href="/web/docs">← Docs</a></p>
 <article>
 {{if .DocForm}}{{template "docForm" .DocForm}}
 {{else}}<hgroup><h2>{{.Title}}</h2><p>{{.Description}}</p></hgroup>
@@ -152,10 +152,10 @@ const pagesSrc = `{{define "docForm"}}<form method="POST" action="{{.Action}}">
 {{end}}{{if .NewForm}}<article id="chunk-new">
 {{template "bodyForm" .NewForm}}
 </article>
-{{else}}<p><a role="button" href="/web/personal-docs/{{.DocID}}?new=1#chunk-new">Add chunk</a></p>
+{{else}}<p><a role="button" href="/web/docs/{{.DocID}}?new=1#chunk-new">Add chunk</a></p>
 {{end}}{{end}}`
 
-var pagesTemplate = template.Must(template.New("personalDocs").Parse(pagesSrc))
+var pagesTemplate = template.Must(template.New("docs").Parse(pagesSrc))
 
 func execute(name string, data any) (template.HTML, error) {
 	var b strings.Builder
@@ -188,20 +188,20 @@ func (m docPageMode) isView() bool {
 }
 
 func docURL(docID int64) string {
-	return fmt.Sprintf("/web/personal-docs/%d", docID)
+	return fmt.Sprintf("/web/docs/%d", docID)
 }
 
 func chunkAnchorURL(docID, chunkID int64) string {
-	return fmt.Sprintf("/web/personal-docs/%d#chunk-%d", docID, chunkID)
+	return fmt.Sprintf("/web/docs/%d#chunk-%d", docID, chunkID)
 }
 
 func chunkURL(docID, chunkID int64) string {
-	return fmt.Sprintf("/web/personal-docs/%d/chunks/%d", docID, chunkID)
+	return fmt.Sprintf("/web/docs/%d/chunks/%d", docID, chunkID)
 }
 
-// PersonalDocsWebHandler renders GET /web/personal-docs: the user's
+// DocsWebHandler renders GET /web/docs: the user's
 // documents as a table.
-func PersonalDocsWebHandler(c *gin.Context) {
+func DocsWebHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
 	if db == nil {
@@ -209,7 +209,7 @@ func PersonalDocsWebHandler(c *gin.Context) {
 		return
 	}
 
-	docs, err := db.ListPersonalDocs(ctx, webui.CurrentUserID(c))
+	docs, err := db.ListDocs(ctx, webui.CurrentUserID(c))
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to load documents: %v", err)
 		return
@@ -244,18 +244,18 @@ func PersonalDocsWebHandler(c *gin.Context) {
 		return
 	}
 
-	writePage(c, http.StatusOK, "Personal docs", content)
+	writePage(c, http.StatusOK, "Docs", content)
 }
 
-// NewPersonalDocWebHandler renders GET /web/personal-docs/new.
-func NewPersonalDocWebHandler(c *gin.Context) {
+// NewDocWebHandler renders GET /web/docs/new.
+func NewDocWebHandler(c *gin.Context) {
 	renderNewDocPage(c, "", "", "")
 }
 
-// CreatePersonalDocWebHandler handles POST /web/personal-docs: creates the
+// CreateDocWebHandler handles POST /web/docs: creates the
 // document, then 303 to its page; an invalid value re-renders the form with
 // an inline error.
-func CreatePersonalDocWebHandler(c *gin.Context) {
+func CreateDocWebHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
 	if db == nil {
@@ -276,8 +276,8 @@ func CreatePersonalDocWebHandler(c *gin.Context) {
 
 func renderNewDocPage(c *gin.Context, title, description, errText string) {
 	content, err := execute("newDoc", docFormData{
-		Action:      "/web/personal-docs",
-		CancelURL:   "/web/personal-docs",
+		Action:      "/web/docs",
+		CancelURL:   "/web/docs",
 		Submit:      "Create",
 		Title:       title,
 		Description: description,
@@ -296,9 +296,9 @@ func renderNewDocPage(c *gin.Context, title, description, errText string) {
 	writePage(c, status, "New document", content)
 }
 
-// PersonalDocWebHandler renders GET /web/personal-docs/:id in the mode
+// DocWebHandler renders GET /web/docs/:id in the mode
 // chosen by the query params; a GET never changes data.
-func PersonalDocWebHandler(c *gin.Context) {
+func DocWebHandler(c *gin.Context) {
 	db, doc, ok := loadDoc(c)
 	if !ok {
 		return
@@ -343,9 +343,9 @@ func PersonalDocWebHandler(c *gin.Context) {
 	renderDocPage(c, db, doc, mode)
 }
 
-// EditPersonalDocWebHandler handles POST /web/personal-docs/:id: saves the
+// EditDocWebHandler handles POST /web/docs/:id: saves the
 // title and description, then 303 back to the document.
-func EditPersonalDocWebHandler(c *gin.Context) {
+func EditDocWebHandler(c *gin.Context) {
 	db, doc, ok := loadDoc(c)
 	if !ok {
 		return
@@ -361,10 +361,10 @@ func EditPersonalDocWebHandler(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, docURL(doc.ID))
 }
 
-// CreatePersonalDocChunkWebHandler handles POST
-// /web/personal-docs/:id/chunks: adds a chunk at the end, then 303 to its
+// CreateDocChunkWebHandler handles POST
+// /web/docs/:id/chunks: adds a chunk at the end, then 303 to its
 // anchor.
-func CreatePersonalDocChunkWebHandler(c *gin.Context) {
+func CreateDocChunkWebHandler(c *gin.Context) {
 	db, doc, ok := loadDoc(c)
 	if !ok {
 		return
@@ -380,10 +380,10 @@ func CreatePersonalDocChunkWebHandler(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, chunkAnchorURL(doc.ID, chunk.ID))
 }
 
-// SavePersonalDocChunkWebHandler handles POST
-// /web/personal-docs/:id/chunks/:chunk_id: replaces the chunk's body, then
+// SaveDocChunkWebHandler handles POST
+// /web/docs/:id/chunks/:chunk_id: replaces the chunk's body, then
 // 303 to its anchor.
-func SavePersonalDocChunkWebHandler(c *gin.Context) {
+func SaveDocChunkWebHandler(c *gin.Context) {
 	db, doc, chunk, ok := loadDocChunk(c)
 	if !ok {
 		return
@@ -398,10 +398,10 @@ func SavePersonalDocChunkWebHandler(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, chunkAnchorURL(doc.ID, chunk.ID))
 }
 
-// MovePersonalDocChunkWebHandler handles POST
-// /web/personal-docs/:id/chunks/:chunk_id/move: moves the chunk one
+// MoveDocChunkWebHandler handles POST
+// /web/docs/:id/chunks/:chunk_id/move: moves the chunk one
 // position up or down, then 303 to its anchor.
-func MovePersonalDocChunkWebHandler(c *gin.Context) {
+func MoveDocChunkWebHandler(c *gin.Context) {
 	db, doc, chunk, ok := loadDocChunk(c)
 	if !ok {
 		return
@@ -427,11 +427,11 @@ func MovePersonalDocChunkWebHandler(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, chunkAnchorURL(doc.ID, chunk.ID))
 }
 
-// RevertPersonalDocChunkWebHandler handles POST
-// /web/personal-docs/:id/chunks/:chunk_id/revert, sent from the revert
+// RevertDocChunkWebHandler handles POST
+// /web/docs/:id/chunks/:chunk_id/revert, sent from the revert
 // confirmation: swaps the body with the previous body, then 303 to the
 // chunk's anchor.
-func RevertPersonalDocChunkWebHandler(c *gin.Context) {
+func RevertDocChunkWebHandler(c *gin.Context) {
 	db, doc, chunk, ok := loadDocChunk(c)
 	if !ok {
 		return
@@ -445,10 +445,10 @@ func RevertPersonalDocChunkWebHandler(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, chunkAnchorURL(doc.ID, chunk.ID))
 }
 
-// DeletePersonalDocChunkWebHandler handles POST
-// /web/personal-docs/:id/chunks/:chunk_id/delete, sent from the delete
+// DeleteDocChunkWebHandler handles POST
+// /web/docs/:id/chunks/:chunk_id/delete, sent from the delete
 // confirmation: deletes the chunk, then 303 to the document.
-func DeletePersonalDocChunkWebHandler(c *gin.Context) {
+func DeleteDocChunkWebHandler(c *gin.Context) {
 	db, doc, chunk, ok := loadDocChunk(c)
 	if !ok {
 		return
@@ -464,7 +464,7 @@ func DeletePersonalDocChunkWebHandler(c *gin.Context) {
 
 // loadDoc loads the user's document from the :id route param, answering
 // 404 itself when there is none.
-func loadDoc(c *gin.Context) (gateways.DB, *domain.PersonalDoc, bool) {
+func loadDoc(c *gin.Context) (gateways.DB, *domain.Doc, bool) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
 	if db == nil {
@@ -478,7 +478,7 @@ func loadDoc(c *gin.Context) (gateways.DB, *domain.PersonalDoc, bool) {
 		return nil, nil, false
 	}
 
-	doc, err := db.GetPersonalDoc(ctx, docID, webui.CurrentUserID(c))
+	doc, err := db.GetDoc(ctx, docID, webui.CurrentUserID(c))
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to load document: %v", err)
 		return nil, nil, false
@@ -493,14 +493,14 @@ func loadDoc(c *gin.Context) (gateways.DB, *domain.PersonalDoc, bool) {
 
 // loadChunk loads the chunk with the id rawID, answering 404 itself when
 // there is none in this document.
-func loadChunk(c *gin.Context, db gateways.DB, doc *domain.PersonalDoc, rawID string) (*domain.PersonalDocChunk, bool) {
+func loadChunk(c *gin.Context, db gateways.DB, doc *domain.Doc, rawID string) (*domain.DocChunk, bool) {
 	chunkID, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil {
 		c.String(http.StatusNotFound, "Chunk not found")
 		return nil, false
 	}
 
-	chunk, err := db.GetPersonalDocChunk(c.Request.Context(), chunkID, doc.UserID)
+	chunk, err := db.GetDocChunk(c.Request.Context(), chunkID, doc.UserID)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to load chunk: %v", err)
 		return nil, false
@@ -515,7 +515,7 @@ func loadChunk(c *gin.Context, db gateways.DB, doc *domain.PersonalDoc, rawID st
 
 // loadDocChunk loads the document and its chunk from the :id and :chunk_id
 // route params.
-func loadDocChunk(c *gin.Context) (gateways.DB, *domain.PersonalDoc, *domain.PersonalDocChunk, bool) {
+func loadDocChunk(c *gin.Context) (gateways.DB, *domain.Doc, *domain.DocChunk, bool) {
 	db, doc, ok := loadDoc(c)
 	if !ok {
 		return nil, nil, nil, false
@@ -529,8 +529,8 @@ func loadDocChunk(c *gin.Context) (gateways.DB, *domain.PersonalDoc, *domain.Per
 	return db, doc, chunk, true
 }
 
-func renderDocPage(c *gin.Context, db gateways.DB, doc *domain.PersonalDoc, mode docPageMode) {
-	chunks, err := db.ListPersonalDocChunks(c.Request.Context(), doc.ID, doc.UserID)
+func renderDocPage(c *gin.Context, db gateways.DB, doc *domain.Doc, mode docPageMode) {
+	chunks, err := db.ListDocChunks(c.Request.Context(), doc.ID, doc.UserID)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to load chunks: %v", err)
 		return
@@ -602,10 +602,10 @@ func renderDocPage(c *gin.Context, db gateways.DB, doc *domain.PersonalDoc, mode
 
 // chunkActions are the icon buttons of one chunk in view mode: the moves
 // act at once, the rest open a page mode.
-func chunkActions(docID int64, chunk domain.PersonalDocChunk, chunkCount int) webui.ActionBarData {
+func chunkActions(docID int64, chunk domain.DocChunk, chunkCount int) webui.ActionBarData {
 	moveURL := chunkURL(docID, chunk.ID) + "/move"
 	modeURL := func(mode string) string {
-		return fmt.Sprintf("/web/personal-docs/%d?%s=%d#chunk-%d", docID, mode, chunk.ID, chunk.ID)
+		return fmt.Sprintf("/web/docs/%d?%s=%d#chunk-%d", docID, mode, chunk.ID, chunk.ID)
 	}
 
 	var buttons []webui.ActionButton
@@ -672,7 +672,7 @@ func writePage(c *gin.Context, status int, title string, content template.HTML) 
 	c.Status(status)
 	if err := webui.RenderPage(c.Writer, webui.PageData{
 		Title:    title,
-		Nav:      personalDocsNav,
+		Nav:      docsNav,
 		UserName: c.GetString("user_name"),
 		Content:  content,
 	}); err != nil {

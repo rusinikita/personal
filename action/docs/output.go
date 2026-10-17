@@ -1,4 +1,4 @@
-package personaldocs
+package docs
 
 import (
 	"time"
@@ -6,7 +6,7 @@ import (
 	"personal/domain"
 )
 
-// DocResult is one document as returned by every personal docs MCP tool.
+// DocResult is one document as returned by every docs MCP tool.
 type DocResult struct {
 	ID          int64  `json:"id" jsonschema:"Document ID"`
 	Title       string `json:"title" jsonschema:"Document title"`
@@ -15,7 +15,7 @@ type DocResult struct {
 	UpdatedAt   string `json:"updated_at" jsonschema:"Last write to the document or any of its chunks (ISO8601, UTC)"`
 }
 
-// ChunkResult is one chunk as returned by every personal docs MCP tool.
+// ChunkResult is one chunk as returned by every docs MCP tool.
 type ChunkResult struct {
 	ID        int64  `json:"id" jsonschema:"Chunk ID"`
 	Position  int    `json:"position" jsonschema:"1-based order inside the document"`
@@ -23,7 +23,7 @@ type ChunkResult struct {
 	UpdatedAt string `json:"updated_at" jsonschema:"Last body edit (ISO8601, UTC)"`
 }
 
-func docToResult(doc domain.PersonalDoc) DocResult {
+func docToResult(doc domain.Doc) DocResult {
 	return DocResult{
 		ID:          doc.ID,
 		Title:       doc.Title,
@@ -33,7 +33,7 @@ func docToResult(doc domain.PersonalDoc) DocResult {
 	}
 }
 
-func chunkToResult(chunk domain.PersonalDocChunk) ChunkResult {
+func chunkToResult(chunk domain.DocChunk) ChunkResult {
 	return ChunkResult{
 		ID:        chunk.ID,
 		Position:  chunk.Position,

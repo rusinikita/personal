@@ -1,11 +1,11 @@
 Personal tracking system: food/nutrition, workouts, life-progress activities & achievements, personal finance, and quick Telegram messages to the user.
 
-This file is loaded into every session, so it stays a dispatcher — route a request to the right subdomain and its first call, don't reconstruct the whole procedure here. Go deeper only via 'list_docs' then 'get_doc' — today that only covers activities/achievements (`activity-mechanics`, `activity-rituals`); food, workout, and finance have no deeper doc yet, so this section is still their only guidance.
+This file is loaded into every session, so it stays a dispatcher — route a request to the right subdomain and its first call, don't reconstruct the whole procedure here. Go deeper only via 'list_docs' then 'get_doc' — today that only covers activities/achievements (the documents «Механика системы» and «Ритуалы и процесс»); food, workout, and finance have no deeper doc yet, so this section is still their only guidance.
 
 ## Cross-cutting rules
 
 - Never state a fact (balance, activity status, streak, personal record, nutrition total) without having called the matching tool this session — don't reconstruct data from memory or an earlier session.
-- Delete tools (`delete_activity`, `delete_progress_point`, `delete_step`, `delete_transaction`, `delete_workout_set`, `delete_personal_doc_chunk`) are hard, irreversible deletes — confirm with the user before calling one unless they explicitly asked for that deletion by name.
+- Delete tools (`delete_activity`, `delete_progress_point`, `delete_step`, `delete_transaction`, `delete_workout_set`, `delete_doc_chunk`) are hard, irreversible deletes — confirm with the user before calling one unless they explicitly asked for that deletion by name.
 - Free-text fields (progress point `note`, activity `description`, step `name`) should carry what the user actually said, not your paraphrase or interpretation of it.
 
 ## Food
@@ -28,7 +28,7 @@ Tools: `create_exercise`, `list_exercises`, `search_exercises`, `edit_exercise`,
 Tools live in `action/progress` and `action/achievements`.
 
 - Reflection / check-in session: call `get_progress_type_examples` first (metaphor ↔ value mapping), then `get_activity_list` for what's due.
-- Everything else — activity lifecycle, steps, achievements, limits, rituals — isn't repeated here: call `list_docs` then `get_doc` for `activity-mechanics` (schema/tools, normative against the code) or `activity-rituals` (when/why/process, the user's own operating manual).
+- Everything else — activity lifecycle, steps, achievements, limits, rituals — isn't repeated here: call `list_docs` to find the id of «Механика системы» (schema/tools, normative against the code) or «Ритуалы и процесс» (when/why/process, the user's own operating manual), then `get_doc` with it — use its `table_of_contents` to jump to the section you need.
 
 ## Ideas
 
@@ -37,12 +37,12 @@ Tools: `create_idea`, `list_ideas`, `search_ideas`, `update_idea`, `resolve_idea
 - A raw thought outside existing activities: `search_ideas` first (key words, synonyms, translations as variants). An older similar open idea → `create_idea`, then `resolve_idea(merged, merged_into_id: older)`; otherwise just `create_idea`. `body` is the user's own words.
 - Reviews read by status via `list_ideas`; the lifecycle (inbox → someday → spike → resolved) is in `docs/functions/ideas-spec.md`.
 
-## Personal docs
+## Docs
 
-Tools: `list_personal_docs`, `get_personal_doc`, `create_personal_doc`, `edit_personal_doc`, `create_personal_doc_chunk`, `edit_personal_doc_chunk`, `revert_personal_doc_chunk`, `delete_personal_doc_chunk`.
+Tools: `list_docs`, `get_doc`, `create_doc`, `edit_doc`, `create_doc_chunk`, `edit_doc_chunk`, `revert_doc_chunk`, `delete_doc_chunk`.
 
-- The user's own documents (e.g. development plan, personal instructions), stored in the database — not the convention docs of `list_docs`/`get_doc`. Nothing is loaded automatically at the start of a session: `list_personal_docs` to find a document, `get_personal_doc` to load it on demand. It returns the chunks in pages (`offset`, `limit`, default the first 5) with `total_chunks` and a `table_of_contents` of the whole document: read on with a bigger `offset`, or jump to a section with `offset` = its heading's `position` - 1.
-- Edit chunk by chunk, never the whole document: `edit_personal_doc_chunk` (replace, append or move), `create_personal_doc_chunk` for a new section. A chunk is max 60 lines of max 200 characters; split a section that doesn't fit. `revert_personal_doc_chunk` undoes the last edit of a chunk, one step only.
+- The user's own documents (e.g. development plan, personal instructions, the tracking system's mechanics and rituals), stored in the database. Nothing is loaded automatically at the start of a session: `list_docs` to find a document, `get_doc` to load it on demand. It returns the chunks in pages (`offset`, `limit`, default the first 5) with `total_chunks` and a `table_of_contents` of the whole document: read on with a bigger `offset`, or jump to a section with `offset` = its heading's `position` - 1.
+- Edit chunk by chunk, never the whole document: `edit_doc_chunk` (replace, append or move), `create_doc_chunk` for a new section. A chunk is max 60 lines of max 200 characters; split a section that doesn't fit. `revert_doc_chunk` undoes the last edit of a chunk, one step only.
 
 ## Finance
 

@@ -194,7 +194,7 @@ type ActionButton struct {
 }
 
 // ActionBarData is a row of compact buttons acting on one item of a page
-// (e.g. move / edit / delete on a chunk in personaldocs-spec.md).
+// (e.g. move / edit / delete on a chunk in docs-spec.md).
 type ActionBarData struct {
 	Buttons []ActionButton // empty renders nothing
 }

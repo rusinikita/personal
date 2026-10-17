@@ -111,7 +111,7 @@ INSERT INTO ideas (id, user_id, body, status, resolution, merged_into_id, resolv
     (7, 1, 'Blog: how the tracker is built', 'resolved', 'merged', 3, now() - interval '10 days', now() - interval '10 days', now() - interval '10 days');
 
 -- =====================================================
--- Personal docs
+-- Docs
 -- =====================================================
 INSERT INTO docs (id, user_id, title, description, created_at, updated_at) VALUES
     (1, 1, 'Development plan', 'Where I am going this year and what I do about it each quarter', now() - interval '40 days', now() - interval '2 days'),

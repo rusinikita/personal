@@ -24,11 +24,11 @@ New subdomain (`action/learning`) for structured, long-running study tracking �
 
 Check the WIP limit (max 6 active activities total, max 3 per `progress_type`) in `create_activity`, and the max-6 cap in `create_achievement`, instead of leaving both counts to be tallied by hand at each weekly review.
 
-**Why:** `action/docs/content/activity-rituals.md` (§2.6, §2.10) treats these limits as load-bearing rules ("новое — только ценой вытеснения"), currently enforced only by the agent counting rows during review — a tool-level check makes the limit hold even outside a review session, instead of depending on the agent remembering to check.
+**Why:** the document «Ритуалы и процесс» (§2.6, §2.10) treats these limits as load-bearing rules ("новое — только ценой вытеснения"), currently enforced only by the agent counting rows during review — a tool-level check makes the limit hold even outside a review session, instead of depending on the agent remembering to check.
 
 ## 25-09-26 — Mechanics/rituals docs for food, workout, finance
 
-Write `action/docs/content/{subject}-mechanics.md` and/or `-rituals.md` for food, workout, and finance, same shape as the activities pair — mechanics normative against the code, rituals covering the actual day-to-day process (when/why, not just what fields exist).
+Write mechanics and/or rituals documents for food, workout, and finance through `create_doc` / `create_doc_chunk`, same shape as the activities pair («Механика системы», «Ритуалы и процесс») — mechanics normative against the code, rituals covering the actual day-to-day process (when/why, not just what fields exist).
 
 **Why:** `transport/mcp/instructions.md` was trimmed to a dispatcher (subdomain → first tool call) for every subdomain, including food/workout/finance — but unlike activities, they have no `get_doc` fallback yet, so anything beyond "which tool to call first" that used to live in the old instructions text (metaphor scripts, exact wording, detailed procedure) is currently just gone until this is written.
 
@@ -63,7 +63,7 @@ Store users in the database and give each user a profile with their own settings
 
 **Depends on:** 23-09-26 — Enforce activity/achievement limits in create_activity / create_achievement (the enforced limits should read their values from the user's settings once this exists).
 
-**Open question:** define what the manifest is and how the agent uses it; decide in the feature doc whether it overlaps with personal documents (`docs/functions/personaldocs-spec.md`), e.g. stored as one of those documents instead of a profile field.
+**Open question:** define what the manifest is and how the agent uses it; decide in the feature doc whether it overlaps with documents (`docs/functions/docs-spec.md`), e.g. stored as one of those documents instead of a profile field.
 
 ## 13-10-26 — Rework life_parts into Values
 
@@ -74,7 +74,7 @@ Rename and rework `life_parts` into `values` — the user's personal values — 
 - Activity ↔ value link: replaces `activities.life_part_ids` with a link that carries its own free-text description of how the activity supports, advances or protects that value. Existing `life_part_ids` are migrated into links.
 - `create_activity` / `edit_activity` / `get_activity_list` and the Progress web pages switch from life part ids to value links with their descriptions.
 
-**Why:** Life parts can only be inserted by hand via SQL and attach to an activity as a bare id, so the link says nothing about why the activity matters. Values are what `activity-rituals.md` actually reasons about ("Ценности: Влияние, Мастерство, Независимость, Здоровье, Близкие"); making them editable and requiring each activity to state how it serves a value turns the link into something reviews can check, not just a category tag.
+**Why:** Life parts can only be inserted by hand via SQL and attach to an activity as a bare id, so the link says nothing about why the activity matters. Values are what «Ритуалы и процесс» actually reasons about ("Ценности: Влияние, Мастерство, Независимость, Здоровье, Близкие"); making them editable and requiring each activity to state how it serves a value turns the link into something reviews can check, not just a category tag.
 
 **Use cases:**
 - Add, rename or reword a value in conversation with the agent, without a SQL insert.

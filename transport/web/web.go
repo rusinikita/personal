@@ -15,7 +15,6 @@ import (
 	"personal/action/docs"
 	"personal/action/ideas"
 	"personal/action/money"
-	"personal/action/personaldocs"
 	"personal/action/progress"
 	"personal/action/webui"
 	"personal/action/workout"
@@ -102,23 +101,18 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.GET("/web/ideas/spike", webAuth, dbMiddleware(db), ideas.SpikeIdeasWebHandler)
 	router.GET("/web/ideas/search", webAuth, dbMiddleware(db), ideas.SearchIdeasWebHandler)
 
-	// Docs — hand-written convention documents embedded in action/docs,
-	// read-only, no DB access.
-	router.GET("/web/docs", webAuth, docs.IndexWebHandler)
-	router.GET("/web/docs/:topic", webAuth, docs.DocWebHandler)
-
-	// Personal docs — user-owned markdown documents stored in the database,
+	// Docs — user-owned markdown documents stored in the database,
 	// read and edited one chunk at a time on a single document page.
-	router.GET("/web/personal-docs", webAuth, dbMiddleware(db), personaldocs.PersonalDocsWebHandler)
-	router.GET("/web/personal-docs/new", webAuth, dbMiddleware(db), personaldocs.NewPersonalDocWebHandler)
-	router.POST("/web/personal-docs", webAuth, dbMiddleware(db), personaldocs.CreatePersonalDocWebHandler)
-	router.GET("/web/personal-docs/:id", webAuth, dbMiddleware(db), personaldocs.PersonalDocWebHandler)
-	router.POST("/web/personal-docs/:id", webAuth, dbMiddleware(db), personaldocs.EditPersonalDocWebHandler)
-	router.POST("/web/personal-docs/:id/chunks", webAuth, dbMiddleware(db), personaldocs.CreatePersonalDocChunkWebHandler)
-	router.POST("/web/personal-docs/:id/chunks/:chunk_id", webAuth, dbMiddleware(db), personaldocs.SavePersonalDocChunkWebHandler)
-	router.POST("/web/personal-docs/:id/chunks/:chunk_id/move", webAuth, dbMiddleware(db), personaldocs.MovePersonalDocChunkWebHandler)
-	router.POST("/web/personal-docs/:id/chunks/:chunk_id/revert", webAuth, dbMiddleware(db), personaldocs.RevertPersonalDocChunkWebHandler)
-	router.POST("/web/personal-docs/:id/chunks/:chunk_id/delete", webAuth, dbMiddleware(db), personaldocs.DeletePersonalDocChunkWebHandler)
+	router.GET("/web/docs", webAuth, dbMiddleware(db), docs.DocsWebHandler)
+	router.GET("/web/docs/new", webAuth, dbMiddleware(db), docs.NewDocWebHandler)
+	router.POST("/web/docs", webAuth, dbMiddleware(db), docs.CreateDocWebHandler)
+	router.GET("/web/docs/:id", webAuth, dbMiddleware(db), docs.DocWebHandler)
+	router.POST("/web/docs/:id", webAuth, dbMiddleware(db), docs.EditDocWebHandler)
+	router.POST("/web/docs/:id/chunks", webAuth, dbMiddleware(db), docs.CreateDocChunkWebHandler)
+	router.POST("/web/docs/:id/chunks/:chunk_id", webAuth, dbMiddleware(db), docs.SaveDocChunkWebHandler)
+	router.POST("/web/docs/:id/chunks/:chunk_id/move", webAuth, dbMiddleware(db), docs.MoveDocChunkWebHandler)
+	router.POST("/web/docs/:id/chunks/:chunk_id/revert", webAuth, dbMiddleware(db), docs.RevertDocChunkWebHandler)
+	router.POST("/web/docs/:id/chunks/:chunk_id/delete", webAuth, dbMiddleware(db), docs.DeleteDocChunkWebHandler)
 
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))

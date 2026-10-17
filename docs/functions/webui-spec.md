@@ -54,7 +54,6 @@ graph TB
         ImportH[action/money import_web.go]
         AchievementsH[action/achievements handlers<br/>+ BuildAchievementTiles helper, called by<br/>MoneyH/ProgressH/WorkoutH for their own embedded tiles]
         DocsH[action/docs handlers]
-        PersonalDocsH[action/personaldocs handlers]
     end
 
     Browser -->|GET /web/design-system| Demo
@@ -67,8 +66,7 @@ graph TB
     Browser --> ChartJS
     Browser -->|only when the page has a diagram| Mermaid
     Browser -->|only when the page has a diagram| PanZoom
-    Browser -->|GET /web/docs/:topic| DocsH
-    Browser -->|GET /web/personal-docs/:id| PersonalDocsH
+    Browser -->|GET /web/docs/:id| DocsH
 
     Demo -->|renders fixture data through every component| Shell
     MoneyH -->|builds Table/StatTile/BarChart/DetailView data,<br/>calls webui.Render*| Shell
@@ -76,8 +74,7 @@ graph TB
     WorkoutH -->|builds DualAxisChartData| Shell
     ImportH --> Shell
     AchievementsH -->|builds AchievementTilesData, calls webui.RenderAchievementTiles| Shell
-    DocsH -->|calls webui.RenderMarkdown for the doc| Markdown
-    PersonalDocsH -->|calls webui.RenderMarkdownWithHeadings per chunk, safe mode| Markdown
+    DocsH -->|calls webui.RenderMarkdownWithHeadings per chunk, safe mode| Markdown
     MoneyH -.->|"achievements.BuildAchievementTiles types=money_saving/money_spend"| AchievementsH
     ProgressH -.->|"achievements.BuildAchievementTiles types=activity_*"| AchievementsH
     WorkoutH -.->|"achievements.BuildAchievementTiles types=exercise_*"| AchievementsH
@@ -308,7 +305,7 @@ type ActionButton struct {
 }
 
 // ActionBarData is a row of compact buttons acting on one item of a page
-// (e.g. move / edit / delete on a chunk in personaldocs-spec.md).
+// (e.g. move / edit / delete on a chunk in docs-spec.md).
 type ActionBarData struct {
     Buttons []ActionButton // empty renders nothing
 }
@@ -364,8 +361,8 @@ The one real route this package owns. Renders a single page built entirely from 
 - A month-grid calendar with real, correctly-computed leading/trailing days and a few sample linked/unlinked days (previewing the Money transaction calendar use)
 - A drill-down/detail view section (stat tiles + table, as a linked sub-page)
 - An achievement tile grid with a few sample tiles (mixed progress percentages, one with a deadline, one `OverTarget`) previewing both the dedicated Achievements page and an embedded subset use
-- A markdown sample with a heading, a regular code block and a `mermaid` code block (previewing diagrams and their zoom controls in Docs and Personal docs)
-- An action bar under a sample card, mixing link buttons and POST-form buttons (previewing the per-chunk buttons of Personal docs); its POST buttons point at the design-system page itself and change nothing (`POST /web/design-system` only redirects `303` back to the page)
+- A markdown sample with a heading, a regular code block and a `mermaid` code block (previewing diagrams and their zoom controls in Docs)
+- An action bar under a sample card, mixing link buttons and POST-form buttons (previewing the per-chunk buttons of Docs); its POST buttons point at the design-system page itself and change nothing (`POST /web/design-system` only redirects `303` back to the page)
 
 Behind `WebMiddleware` (see `auth-spec.md`'s "Authorization for web dashboards" flow) like every other `/web/*` dashboard — it renders through the same shell, and the shell now shows the logged-in username, so it needs a real session to demo that correctly.
 
@@ -382,10 +379,10 @@ When `data.Content` contains a diagram block (`<pre class="mermaid">`, see `Rend
 With Mermaid the shell loads svg-pan-zoom from the CDN (`svg-pan-zoom@3.6.2`). After the diagrams are drawn, the same inline script turns it on for every drawn diagram (not for Mermaid's error block): the library's own control icons (zoom in, reset, zoom out) are shown in the corner of the diagram, the diagram can be grabbed and dragged, and a double click zooms in. Mouse wheel zoom is off, so the wheel keeps scrolling the page. Scale limits are 50%–1000%. The diagram's frame takes the full width of the content and the height the diagram was drawn with (at least 96px, the height of the control icons), so the icons stay beside the diagram rather than over it; zooming and dragging happen inside the frame. Nothing is kept across page loads.
 
 ### `webui.RenderMarkdown(source string, safe bool) template.HTML`
-Renders markdown to HTML via `blackfriday` with `CommonExtensions` — the one markdown renderer for web pages. A fenced code block with the language `mermaid` becomes `<pre class="mermaid">` holding the HTML-escaped diagram source, instead of `<pre><code>`; every other code block is rendered as before. With `safe` set, raw HTML in the source is dropped and links are limited to safe protocols (for user-written text); without it raw HTML is passed through (for the app's own embedded files). Used by Docs (`docs-spec.md`, not safe); Personal docs use it through `RenderMarkdownWithHeadings` (safe).
+Renders markdown to HTML via `blackfriday` with `CommonExtensions` — the one markdown renderer for web pages. A fenced code block with the language `mermaid` becomes `<pre class="mermaid">` holding the HTML-escaped diagram source, instead of `<pre><code>`; every other code block is rendered as before. With `safe` set, raw HTML in the source is dropped and links are limited to safe protocols (for user-written text); without it raw HTML is passed through (for the app's own embedded files). Used by the design-system page (safe); Docs use it through `RenderMarkdownWithHeadings` (safe, `docs-spec.md`).
 
 ### `webui.RenderMarkdownWithHeadings(source string, safe bool, idPrefix string) (template.HTML, []MarkdownHeading)`
-The same rendering as `RenderMarkdown` (which stays as it is, headings without ids), plus anchors: every heading is rendered with the id `{idPrefix}h{n}`, where `n` is the 1-based number of the heading in the source, and is returned as a `MarkdownHeading` in source order. The caller passes a prefix unique on its page, so ids of several sources rendered on one page never collide. An id written in the source (`{#id}`) is replaced by the generated one. Used by Personal docs to build the table of contents of a document (`personaldocs-spec.md`).
+The same rendering as `RenderMarkdown` (which stays as it is, headings without ids), plus anchors: every heading is rendered with the id `{idPrefix}h{n}`, where `n` is the 1-based number of the heading in the source, and is returned as a `MarkdownHeading` in source order. The caller passes a prefix unique on its page, so ids of several sources rendered on one page never collide. An id written in the source (`{#id}`) is replaced by the generated one. Used by Docs to build the table of contents of a document (`docs-spec.md`).
 
 ### `webui.RenderTable(data TableData) template.HTML`
 Renders a `TableData` as a Pico CSS card (`<article>` — no extra class needed, Pico styles a bare `<article>` as a card) containing the `<table>`, to be embedded as `PageData.Content` (directly, or composed inside a page's own content template). When `data.Pagination` is non-nil, also renders the pagination controls (prev/next links, "page X of Y") inside a card `<footer>` below the rows — callers needing a paginated list (e.g. Progress browse/finished/future lists, or a drill-down's history table) just set `TableData.Pagination` instead of calling a separate render function. When `data.TagsColumnLabel` is non-empty, the table also gets a column with that header text inserted right after the first `Columns` entry (e.g. Name), and each row's `Tags` render inside its own cell in that column as small `<span role="button" class="outline contrast webui-tag">` elements — Pico's own `.contrast` button styling (dark background/border, no custom color CSS of ours), sized down to fit via `.webui-tag` (padding/font-size only, no color) — with `data-tooltip="{{.Tooltip}}"` set when `Tooltip` is non-empty for Pico's own CSS-only tooltip on hover, no extra script. `TagsColumnLabel` empty (every caller but Progress's activity lists) omits the column entirely. A row with `Heading` set renders as `<tr><td colspan="N">{{.Heading}}</td></tr>` (`N` = total column count, tags column included when present) instead of its (ignored) `Cells`/`Tags` — used by Progress's active-list grouping (see `progress-spec.md`).
@@ -443,6 +440,7 @@ In `tests/webui_markdown_test.go`:
 
 ## Changelog
 
+- **17-10-26** — `personaldocs` renamed to `docs` and the embedded docs pages removed: one Docs handler group renders chunks through `RenderMarkdownWithHeadings` (C4 Context Diagram, Go Code Structure, HTTP Handlers)
 - **09-10-26** — diagram zoom is done by svg-pan-zoom (its own control icons, drag to move) instead of hand-written buttons; `RenderMarkdown` output is back to a plain `<pre class="mermaid">` (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — Mermaid diagrams get zoom controls (zoom out, reset, zoom in): `RenderMarkdown` renders them with each diagram block, the shell's script runs them (Overview, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — added `RenderMarkdownWithHeadings` and `MarkdownHeading` (heading anchors and the list of headings for a table of contents); the Mermaid init script scrolls to the URL's anchor again after the diagrams are drawn (Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
