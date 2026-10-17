@@ -64,3 +64,35 @@ Store users in the database and give each user a profile with their own settings
 **Depends on:** 23-09-26 — Enforce activity/achievement limits in create_activity / create_achievement (the enforced limits should read their values from the user's settings once this exists).
 
 **Open question:** define what the manifest is and how the agent uses it; decide in the feature doc whether it overlaps with personal documents (`docs/functions/personaldocs-spec.md`), e.g. stored as one of those documents instead of a profile field.
+
+## 13-10-26 — Rework life_parts into Values
+
+Rename and rework `life_parts` into `values` — the user's personal values — and make them a first-class, editable entity instead of a read-only tag list.
+
+- A value: name, description, created_at, updated_at. Replaces the `life_parts` table; existing rows are migrated.
+- Full MCP for the user's values: create, edit, delete and list (replaces the read-only `list_life_parts`).
+- Activity ↔ value link: replaces `activities.life_part_ids` with a link that carries its own free-text description of how the activity supports, advances or protects that value. Existing `life_part_ids` are migrated into links.
+- `create_activity` / `edit_activity` / `get_activity_list` and the Progress web pages switch from life part ids to value links with their descriptions.
+
+**Why:** Life parts can only be inserted by hand via SQL and attach to an activity as a bare id, so the link says nothing about why the activity matters. Values are what `activity-rituals.md` actually reasons about ("Ценности: Влияние, Мастерство, Независимость, Здоровье, Близкие"); making them editable and requiring each activity to state how it serves a value turns the link into something reviews can check, not just a category tag.
+
+**Use cases:**
+- Add, rename or reword a value in conversation with the agent, without a SQL insert.
+- When creating an activity, write down how it supports, advances or protects each value it is linked to.
+- At a review, read an activity together with its value links and decide whether it still serves them; see which values have no active activity.
+
+**Open question:** decide in the feature doc whether the link description is required or optional, and whether the kind of contribution (supports / advances / protects) is a structured field or stays inside the free text.
+
+## 17-10-26 — Rework OAuth on an embedded KV store (like my_saas)
+
+Rework the OAuth flow in `action/auth/oauth.go` so it works fully, keeping its temporary state in an embedded KV store the same way `my_saas` does (`pkg/kvstore` on `dgraph-io/badger`, see `my_saas/docs/specification/database/kv.md` and `internal/usecase/appauth`).
+
+- Embedded KV store (badger) with TTL as a gateway, behind an interface, with JSON get/set helpers — ported from `my_saas/pkg/kvstore`.
+- Authorization codes move from the in-memory `AuthCodes` map to the KV store with a TTL, single-use (deleted on exchange).
+- PKCE: store `code_challenge` with the code and verify `code_verifier` at the token endpoint (S256), since it is advertised in the well-known metadata.
+- Real dynamic client registration: `RegisterClientHandler` creates and stores a new client (id, secret, redirect URIs) instead of always returning the hardcoded Claude client; `redirect_uri` is checked against the registered ones.
+- Refresh tokens: short-lived access token plus a stored, rotating refresh token (`refresh_token` grant) instead of a single 14-day JWT.
+
+**Why:** All OAuth state lives in process memory, so every restart or deploy drops in-flight codes, and the flow only "works" because registration hands every client the same hardcoded credentials. PKCE and redirect URIs are not checked, and when the 14-day token expires the MCP connector has to be re-authorized by hand. `my_saas` already solves this with a zero-ops embedded KV, so the same approach can be reused here without adding Redis.
+
+**Open question:** decide in the feature doc which data goes to KV with TTL (codes, auth state) and which belongs in Postgres (registered clients, refresh tokens), as in `my_saas` where refresh tokens live in the `devices` table.
