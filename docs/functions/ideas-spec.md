@@ -2,7 +2,7 @@
 
 ## Overview
 
-An **idea** is a raw thought captured outside any existing activity. It lives through the inbox lifecycle from `action/docs/content/activity-rituals.md` §2.1–2.5:
+An **idea** is a raw thought captured outside any existing activity. It lives through the inbox lifecycle from the document «Ритуалы и процесс» (`list_docs` → `get_doc`) §2.1–2.5:
 
 ```
 capture → inbox → weekly review ─┬─ resolved (dropped / merged / promoted)
@@ -297,6 +297,7 @@ Search input joined with a «Search» button (`q`, comma-separated phrases). Emp
 
 ## Changelog
 
+- **17-10-26** — the lifecycle reference points to the database document «Ритуалы и процесс» instead of the removed embedded file (Overview)
 - **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; Configuration narrowed to constants; added Changelog (Architecture Diagrams, Configuration, Changelog)
 - **29-09-26** — web UI reworked into inbox cards, a spike page and a search page (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
 - **29-09-26** — initial version: ideas inbox with MCP tools and a web capture page
