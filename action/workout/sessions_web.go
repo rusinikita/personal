@@ -53,36 +53,41 @@ const historySrc = `<p><a href="/web/workouts/sessions/new" role="button">New wo
 
 var historyTemplate = template.Must(template.New("workoutHistory").Parse(historySrc))
 
-// exerciseOption is one selector option. PrevSet is the first set logged for
-// the exercise in the previous workout that had it, empty when there is none.
+// exerciseOption is one dropdown item. Label is the exercise name plus the
+// first set logged for it in the previous workout that had it, when there is
+// one. URL reloads the workout screen with this exercise chosen.
 type exerciseOption struct {
-	ID       int64
-	Name     string
-	PrevSet  string
-	Selected bool
+	Label string
+	URL   string
 }
 
 // setFormData feeds setFormTemplate. WeightKg and Reps are the raw inputs,
-// kept as typed when the form is re-rendered with an error.
+// kept as typed when the form is re-rendered with an error. ExerciseID and
+// ExerciseLabel are empty until an exercise is selected.
 type setFormData struct {
-	Title     string
-	Error     string
-	ActionURL string
-	Exercises []exerciseOption
-	WeightKg  string
-	Reps      string
+	Title         string
+	Error         string
+	ActionURL     string
+	Exercises     []exerciseOption
+	ExerciseID    string
+	ExerciseLabel string
+	WeightKg      string
+	Reps          string
 }
 
 const setFormSrc = `<p><a href="/web/workouts/sessions">← Sessions</a></p>
 <h2>{{.Title}}</h2>
 {{if .Error}}<p style="color: var(--pico-del-color)">{{.Error}}</p>{{end}}
 <form method="POST" action="{{.ActionURL}}">
-    <label for="exercise-id">Exercise</label>
-    <select id="exercise-id" name="exercise_id" required>
-        <option value="">Choose exercise</option>
-        {{range .Exercises}}<option value="{{.ID}}"{{if .Selected}} selected{{end}}>{{.Name}}{{if .PrevSet}} — {{.PrevSet}}{{end}}</option>
-        {{end}}
-    </select>
+    <label>Exercise</label>
+    <details class="dropdown">
+        <summary>{{if .ExerciseLabel}}{{.ExerciseLabel}}{{else}}Choose exercise{{end}}</summary>
+        <ul>
+            {{range .Exercises}}<li><a href="{{.URL}}">{{.Label}}</a></li>
+            {{end}}
+        </ul>
+    </details>
+    <input type="hidden" name="exercise_id" value="{{.ExerciseID}}">
     <div class="grid">
         <label>Weight / difficulty (kg)
             <input type="number" name="weight_kg" min="0" step="0.5" inputmode="decimal" value="{{.WeightKg}}">
@@ -420,6 +425,42 @@ func previousFirstSets(ctx context.Context, db gateways.DB, userID, excludeWorko
 	return first, nil
 }
 
+// latestFirstSet returns the first set of the exercise's latest workout,
+// skipping excludeWorkoutID, or nil when there is none. Unlike
+// previousFirstSets it has no workout window.
+func latestFirstSet(ctx context.Context, db gateways.DB, userID, exerciseID, excludeWorkoutID int64) (*domain.Set, error) {
+	// At most one of the two workouts is the excluded one.
+	workouts, err := db.GetExerciseHistory(ctx, userID, exerciseID, 2, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range workouts {
+		if w.ID == excludeWorkoutID {
+			continue
+		}
+		sets, err := db.ListSetsByExerciseAndWorkouts(ctx, userID, exerciseID, []int64{w.ID})
+		if err != nil {
+			return nil, err
+		}
+		if len(sets) > 0 {
+			return &sets[0], nil
+		}
+	}
+	return nil, nil
+}
+
+// fillSetInputs replaces the form's weight and reps with the set's numbers; a
+// number the set doesn't have stays empty.
+func fillSetInputs(form *setFormData, s domain.Set) {
+	form.WeightKg, form.Reps = "", ""
+	if s.WeightKg > 0 {
+		form.WeightKg = strconv.FormatFloat(s.WeightKg, 'f', -1, 64)
+	}
+	if s.Reps > 0 {
+		form.Reps = strconv.FormatInt(s.Reps, 10)
+	}
+}
+
 // setFormDataFromPost keeps the submitted values so a re-rendered form with
 // an error doesn't lose what was typed.
 func setFormDataFromPost(c *gin.Context, errMsg string) setFormData {
@@ -434,7 +475,8 @@ func setFormDataFromPost(c *gin.Context, errMsg string) setFormData {
 // existing workout) its sets in logging order. w is nil for the new screen.
 // On a re-render with an error the form keeps the posted values; otherwise
 // it is prefilled with the workout's last set (exercise, weight, reps), so
-// the next set of the same exercise is a single submit.
+// the next set of the same exercise is a single submit. A valid ?exercise_id
+// overrides that with the chosen exercise and its latest first set.
 func renderSessionPage(c *gin.Context, w *domain.Workout, form setFormData) {
 	ctx := c.Request.Context()
 	db := gateways.DBFromContext(ctx)
@@ -479,34 +521,51 @@ func renderSessionPage(c *gin.Context, w *domain.Workout, form setFormData) {
 	if form.Error == "" && len(workoutSets) > 0 {
 		last := workoutSets[len(workoutSets)-1]
 		selected = strconv.FormatInt(last.ExerciseID, 10)
-		if last.WeightKg > 0 {
-			form.WeightKg = strconv.FormatFloat(last.WeightKg, 'f', -1, 64)
-		}
-		if last.Reps > 0 {
-			form.Reps = strconv.FormatInt(last.Reps, 10)
-		}
+		fillSetInputs(&form, last)
 	}
+
+	form.Title = "New workout"
+	screenURL := "/web/workouts/sessions/new"
+	if w != nil {
+		form.Title = "Workout " + w.StartedAt.Format("2006-01-02")
+		screenURL = fmt.Sprintf("/web/workouts/sessions/%d", w.ID)
+	}
+	form.ActionURL = screenURL + "/sets"
 
 	exerciseNames := make(map[int64]string, len(exercises))
 	form.Exercises = make([]exerciseOption, 0, len(exercises))
 	for _, ex := range exercises {
 		exerciseNames[ex.ID] = ex.Name
 		option := exerciseOption{
-			ID:       ex.ID,
-			Name:     ex.Name,
-			Selected: strconv.FormatInt(ex.ID, 10) == selected,
+			Label: ex.Name,
+			URL:   fmt.Sprintf("%s?exercise_id=%d", screenURL, ex.ID),
 		}
 		if prev, ok := prevSets[ex.ID]; ok {
-			option.PrevSet = formatSet(prev)
+			option.Label += " — " + formatSet(prev)
 		}
 		form.Exercises = append(form.Exercises, option)
 	}
 
-	form.Title = "New workout"
-	form.ActionURL = "/web/workouts/sessions/new/sets"
-	if w != nil {
-		form.Title = "Workout " + w.StartedAt.Format("2006-01-02")
-		form.ActionURL = fmt.Sprintf("/web/workouts/sessions/%d/sets", w.ID)
+	// exerciseNames only holds this user's exercises, so a foreign or unknown
+	// id is ignored here.
+	if chosen, err := strconv.ParseInt(c.Query("exercise_id"), 10, 64); err == nil && form.Error == "" && exerciseNames[chosen] != "" {
+		selected = strconv.FormatInt(chosen, 10)
+		form.WeightKg, form.Reps = "", ""
+		set, err := latestFirstSet(ctx, db, userID, chosen, excludeWorkoutID)
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Failed to load previous set: %v", err)
+			return
+		}
+		if set != nil {
+			fillSetInputs(&form, *set)
+		}
+	}
+
+	for i, ex := range exercises {
+		if strconv.FormatInt(ex.ID, 10) == selected {
+			form.ExerciseID = selected
+			form.ExerciseLabel = form.Exercises[i].Label
+		}
 	}
 
 	content, err := executeTemplate(setFormTemplate, form)

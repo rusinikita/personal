@@ -74,8 +74,8 @@ graph TB
     Web[Web handlers /web/workouts/sessions]
     Web -->|SQL queries| DB
     Browser -->|GET /web/workouts/sessions| Web
-    Browser -->|GET /web/workouts/sessions/new| Web
-    Browser -->|GET /web/workouts/sessions/:id| Web
+    Browser -->|GET /web/workouts/sessions/new?exercise_id=N| Web
+    Browser -->|GET /web/workouts/sessions/:id?exercise_id=N| Web
     Browser -->|POST .../sessions/new/sets, .../sessions/:id/sets| Web
     
     DB -.->|exercises table| DB
@@ -328,13 +328,15 @@ Drill-down for a single exercise: title subtitle shows the exercise's descriptio
 History: "Personal records · Sessions" cross-links, a "New workout" button (link to `/web/workouts/sessions/new`), then the last 10 workouts, newest first. Each workout shows its date (links to `/web/workouts/sessions/{id}`) and, per exercise in order of first set, the exercise name and its first set (e.g. "80 kg × 8"). Empty state: "No workouts yet".
 
 ### GET /web/workouts/sessions/new
-Empty workout screen: the set-adding form (exercise selector sorted by usage, each option labelled "name — first set of the previous workout with it", e.g. "Bench press — 80 kg × 8"; weight kg, reps) posting to `/web/workouts/sessions/new/sets`. Creates nothing in the DB.
+Empty workout screen: the set-adding form (exercise dropdown sorted by usage, each item labelled "name — first set of the previous workout with it", e.g. "Bench press — 80 kg × 8"; weight kg, reps) posting to `/web/workouts/sessions/new/sets`. Creates nothing in the DB.
+
+The exercise field is a Pico `<details class="dropdown">` (no JS, same pattern as the header user menu) whose items are links to the current screen with `?exercise_id=N`; the chosen exercise is posted through a hidden `exercise_id` input, and the closed field shows the same label as its dropdown item. With a valid `exercise_id`, the page selects that exercise and fills weight and reps from the first set of its latest workout, found through `GetExerciseHistory` + `ListSetsByExerciseAndWorkouts`, so older workouts count even when the item label is empty because of the 10-workout window. The workout on screen is skipped, same as in labels. The fill replaces anything prefilled or typed; a field the source set doesn't have, or an exercise with no earlier set, stays empty. An unknown, malformed or another user's `exercise_id` is ignored.
 
 ### POST /web/workouts/sessions/new/sets
 Logs the first set of a new workout: validates the form, closes any still-open workout, creates the workout and the set, redirects to `/web/workouts/sessions/{workout_id}`. On a validation error re-renders the `new` screen with an inline error and creates nothing.
 
 ### GET /web/workouts/sessions/:id
-Workout screen for an existing workout: header with the workout date, the set-adding form posting to `/web/workouts/sessions/{id}/sets` (prefilled with this workout's last set: exercise, weight, reps; selector options labelled with the first set of the previous workout, this workout excluded), then this workout's sets in logging order. 404s if the workout doesn't exist or doesn't belong to the current user.
+Workout screen for an existing workout: header with the workout date, the set-adding form posting to `/web/workouts/sessions/{id}/sets` (prefilled with this workout's last set: exercise, weight, reps, unless `?exercise_id=N` picks an exercise, same dropdown and prefill as on the `new` screen; dropdown items labelled with the first set of the previous workout, this workout excluded), then this workout's sets in logging order. 404s if the workout doesn't exist or doesn't belong to the current user.
 
 ### POST /web/workouts/sessions/:id/sets
 Adds a set to the given workout (created_at = now), redirects back to its workout screen. Validation errors re-render the workout screen with an inline error; 404 for a missing/foreign workout.
@@ -352,8 +354,10 @@ In `tests/workout_sessions_web_test.go`:
 
 - `TestWorkoutSessions_History`: 11 workouts with sets → page shows only the newest 10, newest first; each workout shows its exercises with the first set of each (not later sets); "New workout" link present; empty state when no workouts
 - `TestWorkoutSessions_NewScreen_CreatesNothing`: GET `/new` renders the form, workout count in DB unchanged
-- `TestWorkoutSessions_NewScreen_ExercisesSortedByUsage`: exercises with 3, 1, 0 sets appear in the selector in that order
-- `TestWorkoutSessions_Selector_ShowsPreviousWorkoutFirstSet`: exercise A logged in an older workout (60×10) and a newer one (80×8, then 80×6), exercise B bodyweight (12 reps), exercise C never logged, exercise D logged only in a workout older than the last 10 → on `/new` options read "A — 80 kg × 8", "B — 12 reps", "C", "D"; on the newer workout's own screen A's option reads "A — 60 kg × 10" (current workout excluded); another user's sets never show up
+- `TestWorkoutSessions_NewScreen_ExercisesSortedByUsage`: exercises with 3, 1, 0 sets appear in the dropdown in that order
+- `TestWorkoutSessions_Selector_ShowsPreviousWorkoutFirstSet`: exercise A logged in an older workout (60×10) and a newer one (80×8, then 80×6), exercise B bodyweight (12 reps), exercise C never logged, exercise D logged only in a workout older than the last 10 → on `/new` items read "A — 80 kg × 8", "B — 12 reps", "C", "D"; on the newer workout's own screen A's item reads "A — 60 kg × 10" (current workout excluded); another user's sets never show up
+- `TestWorkoutSessions_Dropdown_LinksToScreenWithExercise`: items link to `/new?exercise_id=N` on the new screen and `/{id}?exercise_id=N` on a workout screen
+- `TestWorkoutSessions_ChooseExercise_*`: new screen fills the first set of the latest workout, not a later set, and the closed field shows the item label with the set; workout on screen is excluded and its last set is replaced; exercise logged only outside the last 10 workouts still fills with an empty label; bodyweight fills reps only; duration-only set or no history selects the exercise with empty fields; unknown, malformed and another user's id are ignored; POST with the chosen exercise logs the set
 - `TestWorkoutSessions_FirstSet_CreatesWorkoutAndRedirects`: POST `/new/sets` → one new workout with one set (weight, reps), 302 to `/web/workouts/sessions/{id}`; a still-open older workout gets closed
 - `TestWorkoutSessions_AddSet_ToExistingWorkout`: POST `/{id}/sets` → set added to that workout, no new workout, redirect back
 - `TestWorkoutSessions_Validation`: missing exercise / missing reps → 200 with inline error, nothing created
@@ -403,6 +407,8 @@ In `tests/workout_search_exercises_test.go`:
 
 ## Changelog
 
+- **01-11-26** — closed exercise field shows the full item label with the previous set, not only the name (HTTP Handlers, E2E Tests)
+- **01-11-26** — workout screen exercise selector replaced by a no-JS dropdown of links with `?exercise_id=N` that prefills weight and reps from the first set of the exercise's latest workout (Architecture Diagrams, HTTP Handlers, E2E Tests)
 - **03-10-26** — migrated to the new spec template: removed Best Practices Applied and the sequence diagrams together with every reference to them; E2E Tests extended with the MCP tests and the remaining web tests; added Changelog (Architecture Diagrams, E2E Tests, Changelog)
 - **03-10-26** — new-workout exercise selector shows the previous workout's first set; exercise page shows set history (Go Code Structure, HTTP Handlers, E2E Tests)
 - **02-10-26** — added web sessions pages: workout history, new workout, logging sets (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)

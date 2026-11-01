@@ -198,14 +198,164 @@ func (s *IntegrationTestSuite) TestWorkoutSessions_Selector_ShowsPreviousWorkout
 	s.createSet(otherCtx, s.createWorkout(otherCtx, otherAt), gammaID, 9, 99, otherAt)
 
 	body := s.getSessionsPage(ctx, "/web/workouts/sessions/new").Body.String()
-	assert.Contains(s.T(), body, ">Alpha — 80 kg × 8</option>", "first set of the latest workout with the exercise")
-	assert.Contains(s.T(), body, ">Beta — 12 reps</option>")
-	assert.Contains(s.T(), body, ">Gamma</option>", "never logged by this user")
-	assert.Contains(s.T(), body, ">Delta</option>", "not done in the last 10 workouts")
+	assert.Contains(s.T(), body, ">Alpha — 80 kg × 8</a>", "first set of the latest workout with the exercise")
+	assert.Contains(s.T(), body, ">Beta — 12 reps</a>")
+	assert.Contains(s.T(), body, ">Gamma</a>", "never logged by this user")
+	assert.Contains(s.T(), body, ">Delta</a>", "not done in the last 10 workouts")
 
 	body = s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/%d", newer)).Body.String()
-	assert.Contains(s.T(), body, ">Alpha — 60 kg × 10</option>", "the workout on screen is excluded")
-	assert.Contains(s.T(), body, ">Beta</option>", "only logged in the workout on screen")
+	assert.Contains(s.T(), body, ">Alpha — 60 kg × 10</a>", "the workout on screen is excluded")
+	assert.Contains(s.T(), body, ">Beta</a>", "only logged in the workout on screen")
+}
+
+func (s *IntegrationTestSuite) TestWorkoutSessions_Dropdown_LinksToScreenWithExercise() {
+	ctx := s.Context()
+	exID := s.createExercise(ctx, "Bench Press", "barbell")
+	at := time.Now().Add(-time.Hour)
+	wID := s.createWorkout(ctx, at)
+	s.createSet(ctx, wID, exID, 8, 80, at)
+
+	body := s.getSessionsPage(ctx, "/web/workouts/sessions/new").Body.String()
+	assert.Contains(s.T(), body, fmt.Sprintf(`href="/web/workouts/sessions/new?exercise_id=%d"`, exID))
+	assert.Contains(s.T(), body, "<summary>Choose exercise</summary>")
+
+	body = s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/%d", wID)).Body.String()
+	assert.Contains(s.T(), body, fmt.Sprintf(`href="/web/workouts/sessions/%d?exercise_id=%d"`, wID, exID))
+}
+
+// --- GET /web/workouts/sessions/...?exercise_id=N ----------------------------
+
+func (s *IntegrationTestSuite) TestWorkoutSessions_ChooseExercise_NewScreen_FillsFirstSetOfLatestWorkout() {
+	ctx := s.Context()
+	exID := s.createExercise(ctx, "Bench Press", "barbell")
+	olderAt := time.Now().AddDate(0, 0, -2)
+	s.createSet(ctx, s.createWorkout(ctx, olderAt), exID, 10, 60, olderAt)
+	newerAt := time.Now().AddDate(0, 0, -1)
+	newer := s.createWorkout(ctx, newerAt)
+	s.createSet(ctx, newer, exID, 8, 80, newerAt)
+	s.createSet(ctx, newer, exID, 6, 75, newerAt.Add(time.Minute))
+
+	body := s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/new?exercise_id=%d", exID)).Body.String()
+
+	assert.Contains(s.T(), body, fmt.Sprintf(`name="exercise_id" value="%d"`, exID))
+	assert.Contains(s.T(), body, "<summary>Bench Press — 80 kg × 8</summary>", "same label as the dropdown item")
+	assert.Contains(s.T(), body, `inputmode="decimal" value="80"`)
+	assert.Contains(s.T(), body, `inputmode="numeric" value="8"`)
+	assert.Len(s.T(), s.listUserWorkouts(ctx), 2, "choosing an exercise creates nothing")
+}
+
+func (s *IntegrationTestSuite) TestWorkoutSessions_ChooseExercise_WorkoutScreen_ReplacesLastSetAndSkipsCurrentWorkout() {
+	ctx := s.Context()
+	benchID := s.createExercise(ctx, "Bench Press", "barbell")
+	squatID := s.createExercise(ctx, "Squat", "barbell")
+	prevAt := time.Now().AddDate(0, 0, -3)
+	prev := s.createWorkout(ctx, prevAt)
+	s.createSet(ctx, prev, squatID, 5, 100, prevAt)
+	s.createSet(ctx, prev, benchID, 8, 70, prevAt.Add(time.Minute))
+	at := time.Now().Add(-time.Hour)
+	current := s.createWorkout(ctx, at)
+	s.createSet(ctx, current, squatID, 3, 110, at)
+	s.createSet(ctx, current, benchID, 6, 77.5, at.Add(time.Minute))
+
+	body := s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/%d?exercise_id=%d", current, squatID)).Body.String()
+	assert.Contains(s.T(), body, fmt.Sprintf(`name="exercise_id" value="%d"`, squatID))
+	assert.Contains(s.T(), body, `inputmode="decimal" value="100"`, "the workout on screen is excluded")
+	assert.Contains(s.T(), body, `inputmode="numeric" value="5"`)
+	assert.NotContains(s.T(), body, `value="77.5"`, "the last set's numbers are replaced")
+}
+
+func (s *IntegrationTestSuite) TestWorkoutSessions_ChooseExercise_OutsideLabelWindow_StillFills() {
+	ctx := s.Context()
+	deltaID := s.createExercise(ctx, "Delta", "machine")
+	fillerID := s.createExercise(ctx, "Filler", "machine")
+
+	deltaAt := time.Now().AddDate(0, 0, -20)
+	s.createSet(ctx, s.createWorkout(ctx, deltaAt), deltaID, 12, 40, deltaAt)
+	for i := 10; i >= 1; i-- {
+		at := time.Now().AddDate(0, 0, -i)
+		s.createSet(ctx, s.createWorkout(ctx, at), fillerID, 10, 20, at)
+	}
+
+	body := s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/new?exercise_id=%d", deltaID)).Body.String()
+
+	assert.Contains(s.T(), body, ">Delta</a>", "the label keeps its 10-workout window")
+	assert.Contains(s.T(), body, `inputmode="decimal" value="40"`)
+	assert.Contains(s.T(), body, `inputmode="numeric" value="12"`)
+}
+
+func (s *IntegrationTestSuite) TestWorkoutSessions_ChooseExercise_PartialOrNoNumbers() {
+	ctx := s.Context()
+	pullupID := s.createExercise(ctx, "Pull-up", "bodyweight")
+	plankID := s.createExercise(ctx, "Plank", "bodyweight")
+	neverID := s.createExercise(ctx, "Never", "machine")
+	at := time.Now().Add(-time.Hour)
+	wID := s.createWorkout(ctx, at)
+	s.createSet(ctx, wID, pullupID, 12, 0, at)
+	_, err := s.Repo().CreateSet(ctx, &domain.Set{
+		UserID: gateways.UserIDFromContext(ctx), WorkoutID: wID, ExerciseID: plankID, DurationSeconds: 60, CreatedAt: at,
+	})
+	require.NoError(s.T(), err)
+
+	tests := []struct {
+		name       string
+		exerciseID int64
+		wantWeight string
+		wantReps   string
+	}{
+		{"reps only", pullupID, "", "12"},
+		{"duration only", plankID, "", ""},
+		{"no history", neverID, "", ""},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			body := s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/new?exercise_id=%d", tt.exerciseID)).Body.String()
+
+			assert.Contains(s.T(), body, fmt.Sprintf(`name="exercise_id" value="%d"`, tt.exerciseID))
+			assert.Contains(s.T(), body, fmt.Sprintf(`inputmode="decimal" value="%s"`, tt.wantWeight))
+			assert.Contains(s.T(), body, fmt.Sprintf(`inputmode="numeric" value="%s"`, tt.wantReps))
+		})
+	}
+}
+
+func (s *IntegrationTestSuite) TestWorkoutSessions_ChooseExercise_InvalidID_Ignored() {
+	ctx := s.Context()
+	exID := s.createExercise(ctx, "Bench Press", "barbell")
+	foreignExID := s.createExercise(s.otherUserContext(ctx), "Foreign", "barbell")
+	at := time.Now().Add(-time.Hour)
+	wID := s.createWorkout(ctx, at)
+	s.createSet(ctx, wID, exID, 8, 80, at)
+
+	for _, id := range []string{"999999999", "abc", fmt.Sprint(foreignExID)} {
+		s.Run(id, func() {
+			body := s.getSessionsPage(ctx, "/web/workouts/sessions/new?exercise_id="+id).Body.String()
+			assert.Contains(s.T(), body, `name="exercise_id" value=""`)
+			assert.Contains(s.T(), body, "<summary>Choose exercise</summary>")
+
+			body = s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/%d?exercise_id=%s", wID, id)).Body.String()
+			assert.Contains(s.T(), body, fmt.Sprintf(`name="exercise_id" value="%d"`, exID), "falls back to the last set")
+			assert.Contains(s.T(), body, `inputmode="decimal" value="80"`)
+		})
+	}
+}
+
+func (s *IntegrationTestSuite) TestWorkoutSessions_ChooseExercise_PostLogsChosenExercise() {
+	ctx := s.Context()
+	exID := s.createExercise(ctx, "Bench Press", "barbell")
+	at := time.Now().AddDate(0, 0, -1)
+	s.createSet(ctx, s.createWorkout(ctx, at), exID, 8, 80, at)
+
+	body := s.getSessionsPage(ctx, fmt.Sprintf("/web/workouts/sessions/new?exercise_id=%d", exID)).Body.String()
+	require.Contains(s.T(), body, fmt.Sprintf(`name="exercise_id" value="%d"`, exID))
+
+	w := s.postSetForm(ctx, "/web/workouts/sessions/new/sets", url.Values{
+		"exercise_id": {fmt.Sprint(exID)}, "weight_kg": {"80"}, "reps": {"8"},
+	})
+
+	require.Equal(s.T(), http.StatusFound, w.Code)
+	sets := s.workoutSets(ctx, s.listUserWorkouts(ctx)[0].ID)
+	require.Len(s.T(), sets, 1)
+	assert.Equal(s.T(), exID, sets[0].ExerciseID)
 }
 
 // --- POST /web/workouts/sessions/new/sets ------------------------------------
@@ -315,8 +465,9 @@ func (s *IntegrationTestSuite) TestWorkoutSessions_WorkoutScreen() {
 	require.Equal(s.T(), http.StatusOK, w.Code)
 	body := w.Body.String()
 	assert.Contains(s.T(), body, fmt.Sprintf(`action="/web/workouts/sessions/%d/sets"`, w1))
-	assert.Contains(s.T(), body, fmt.Sprintf(`<option value="%d" selected>`, benchID))
-	assert.NotContains(s.T(), body, fmt.Sprintf(`<option value="%d" selected>`, squatID))
+	assert.Contains(s.T(), body, fmt.Sprintf(`name="exercise_id" value="%d"`, benchID))
+	assert.Contains(s.T(), body, "<summary>Bench Press</summary>")
+	assert.NotContains(s.T(), body, fmt.Sprintf(`name="exercise_id" value="%d"`, squatID))
 	assert.Contains(s.T(), body, `inputmode="decimal" value="72.5"`, "weight prefilled from the workout's last set")
 	assert.Contains(s.T(), body, `inputmode="numeric" value="5"`, "reps prefilled from the workout's last set")
 	i1 := strings.Index(body, "70 kg × 6")
