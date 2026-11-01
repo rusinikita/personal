@@ -121,3 +121,19 @@ Come up with a new visualization for the e-ink displays and for a tablet hanging
 **Why:** The goal is to not forget, not give up, and actually do what was planned, with the execution gamified. The e-ink displays were built for this same goal, but the concept of the system has changed a lot since then, so they no longer seem useful and the user has stopped looking at them.
 
 **Open question:** decide in the feature doc what the concept is before any screens: which information earns a place, whether it is one screen or a rotation, what the game mechanic is, and whether the rotation is an accepted exception to the "no client-side JS" rule for web pages.
+
+## 01-11-26 — Dynamic transaction parsing rules in Lua
+
+Move transaction import rules out of Go code into Lua scripts stored in the user's profile settings, so the user can tell their agent to add a new import, with its column parsing and category rules, without any Go change or deploy.
+
+- Account types as a profile setting: each account type carries its own Lua CSV parser. The accounts supported on import come from settings instead of the hardcoded list in `ParserFor` and the import form.
+- CSV parsing in Lua: the script for an account type turns a bank export's columns into raw transactions. It replaces the Go `RevolutParser` and `BankOfCyprusParser`, whose logic is ported to Lua.
+- Category rules in Lua: the script that turns a merchant and description into a category replaces the hardcoded `InferCategory` rules in `action/money/parser.go`.
+- MCP: the agent can read, edit and revert these scripts and add a new account type, so a bad change can be rolled back.
+- Import: `action/money/import_web.go` reads the scripts' content from the profile and executes them.
+
+**Why:** Every new bank, export format, merchant or category fix currently needs a code change and a deploy. Keeping the rules as per-user scripts lets the agent handle them in conversation, right when a new export or a wrong category shows up, and the rules become personal data instead of being compiled into the app.
+
+**Depends on:** 02-10-26 — User profile with settings (the scripts and the account types are settings tied to the profile).
+
+**Open question:** decide in the feature doc how the scripts are sandboxed (no file or network access, time and memory limits), what import does when a script fails, how versions are stored for revert (reuse the docs approach or a separate history), what the Lua contract is (does Go read the CSV and pass rows, or does the script get the raw file), how the agent tests a script on a sample file before saving it, whether merchant recognition (`RecognizeMerchant`) and transaction type rules move to Lua too, and whether category rules are one script per user or per account type.
