@@ -96,3 +96,28 @@ Rework the OAuth flow in `action/auth/oauth.go` so it works fully, keeping its t
 **Why:** All OAuth state lives in process memory, so every restart or deploy drops in-flight codes, and the flow only "works" because registration hands every client the same hardcoded credentials. PKCE and redirect URIs are not checked, and when the 14-day token expires the MCP connector has to be re-authorized by hand. `my_saas` already solves this with a zero-ops embedded KV, so the same approach can be reused here without adding Redis.
 
 **Open question:** decide in the feature doc which data goes to KV with TTL (codes, auth state) and which belongs in Postgres (registered clients, refresh tokens), as in `my_saas` where refresh tokens live in the `devices` table.
+
+## 01-11-26 — Move the web UI to a PWA
+
+Turn the web pages into an installable Progressive Web App, so they open from the phone's home screen like a native app instead of as a browser tab.
+
+- Web app manifest: name, icons, theme color, `display: standalone`, linked from the shared `webui` shell.
+- Service worker: registered from the shell, served from the root path so its scope covers all pages; caches static assets.
+- Mobile fit: the shared shell and `webui` components work in standalone mode (safe areas, no browser back button).
+
+**Why:** The web pages are used on the go, for example logging sets during a workout, and reaching them through a browser tab is slower than opening an app. A PWA gives an app-like entry point without building and maintaining a native client.
+
+**Open question:** decide in the feature doc whether the service worker is an accepted exception to the "no client-side JS" rule for web pages, and how much offline support is needed: only caching static assets and an offline page, or also queuing writes such as logged sets.
+
+## 01-11-26 — New glanceable dashboard for e-ink displays and a desk tablet
+
+Come up with a new visualization for the e-ink displays and for a tablet hanging on the desk: one shared dashboard that shows the most important things at once, or rotates through them one at a time.
+
+- Decide what is worth showing: choose across subdomains rather than mirroring one list per page.
+- Design it for both devices: e-ink (black and white, slow refresh, fixed viewport) and the tablet (color, can rotate content).
+- Add a gamified layer that makes following through on plans visible and rewarding.
+- Replaces the current `/web/progress` and `/web/achievements/eink` screens if the new concept covers them.
+
+**Why:** The goal is to not forget, not give up, and actually do what was planned, with the execution gamified. The e-ink displays were built for this same goal, but the concept of the system has changed a lot since then, so they no longer seem useful and the user has stopped looking at them.
+
+**Open question:** decide in the feature doc what the concept is before any screens: which information earns a place, whether it is one screen or a rotation, what the game mechanic is, and whether the rotation is an accepted exception to the "no client-side JS" rule for web pages.
