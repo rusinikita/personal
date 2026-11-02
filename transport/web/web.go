@@ -14,6 +14,7 @@ import (
 	"personal/action/auth"
 	"personal/action/docs"
 	"personal/action/ideas"
+	"personal/action/learning"
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/webui"
@@ -113,6 +114,19 @@ func Register(router gin.IRouter, db gateways.DB, authDisabled bool) {
 	router.POST("/web/docs/:id/chunks/:chunk_id/move", webAuth, dbMiddleware(db), docs.MoveDocChunkWebHandler)
 	router.POST("/web/docs/:id/chunks/:chunk_id/revert", webAuth, dbMiddleware(db), docs.RevertDocChunkWebHandler)
 	router.POST("/web/docs/:id/chunks/:chunk_id/delete", webAuth, dbMiddleware(db), docs.DeleteDocChunkWebHandler)
+
+	// Learning — plans, exercise history, flashcards and vocabulary; plans,
+	// skills, exercises and planning stay MCP-only.
+	router.GET("/web/learning", webAuth, dbMiddleware(db), learning.PlansWebHandler)
+	router.GET("/web/learning/:id", webAuth, dbMiddleware(db), learning.PlanWebHandler)
+	router.GET("/web/learning/:id/exercises", webAuth, dbMiddleware(db), learning.ExercisesWebHandler)
+	router.GET("/web/learning/:id/review", webAuth, dbMiddleware(db), learning.ReviewWebHandler)
+	router.POST("/web/learning/:id/review", webAuth, dbMiddleware(db), learning.RecordReviewWebHandler)
+	router.GET("/web/learning/:id/vocabulary", webAuth, dbMiddleware(db), learning.VocabularyWebHandler)
+	router.POST("/web/learning/:id/vocabulary", webAuth, dbMiddleware(db), learning.AddVocabularyWebHandler)
+	router.GET("/web/learning/:id/vocabulary/:word_id", webAuth, dbMiddleware(db), learning.WordWebHandler)
+	router.POST("/web/learning/:id/vocabulary/:word_id", webAuth, dbMiddleware(db), learning.EditWordWebHandler)
+	router.POST("/web/learning/:id/vocabulary/:word_id/delete", webAuth, dbMiddleware(db), learning.DeleteWordWebHandler)
 
 	// Money CSV import — protected by the shared web session cookie.
 	moneyImport := router.Group("/money", webAuth, dbMiddleware(db))

@@ -54,6 +54,7 @@ graph TB
         ImportH[action/money import_web.go]
         AchievementsH[action/achievements handlers<br/>+ BuildAchievementTiles helper, called by<br/>MoneyH/ProgressH/WorkoutH for their own embedded tiles]
         DocsH[action/docs handlers]
+        LearningH[action/learning handlers]
     end
 
     Browser -->|GET /web/design-system| Demo
@@ -67,6 +68,7 @@ graph TB
     Browser -->|only when the page has a diagram| Mermaid
     Browser -->|only when the page has a diagram| PanZoom
     Browser -->|GET /web/docs/:id| DocsH
+    Browser -->|GET /web/learning| LearningH
 
     Demo -->|renders fixture data through every component| Shell
     MoneyH -->|builds Table/StatTile/BarChart/DetailView data,<br/>calls webui.Render*| Shell
@@ -75,6 +77,7 @@ graph TB
     ImportH --> Shell
     AchievementsH -->|builds AchievementTilesData, calls webui.RenderAchievementTiles| Shell
     DocsH -->|calls webui.RenderMarkdownWithHeadings per chunk, safe mode| Markdown
+    LearningH -->|builds Table/StatTile data, calls webui.Render*| Shell
     MoneyH -.->|"achievements.BuildAchievementTiles types=money_saving/money_spend"| AchievementsH
     ProgressH -.->|"achievements.BuildAchievementTiles types=activity_*"| AchievementsH
     WorkoutH -.->|"achievements.BuildAchievementTiles types=exercise_*"| AchievementsH
@@ -440,6 +443,7 @@ In `tests/webui_markdown_test.go`:
 
 ## Changelog
 
+- **02-11-26** — «Learning» nav item and the `action/learning` handlers as a consumer (C4 Context Diagram)
 - **17-10-26** — `personaldocs` renamed to `docs` and the embedded docs pages removed: one Docs handler group renders chunks through `RenderMarkdownWithHeadings` (C4 Context Diagram, Go Code Structure, HTTP Handlers)
 - **09-10-26** — diagram zoom is done by svg-pan-zoom (its own control icons, drag to move) instead of hand-written buttons; `RenderMarkdown` output is back to a plain `<pre class="mermaid">` (Overview, Architecture Diagrams, Go Code Structure, HTTP Handlers, E2E Tests)
 - **09-10-26** — Mermaid diagrams get zoom controls (zoom out, reset, zoom in): `RenderMarkdown` renders them with each diagram block, the shell's script runs them (Overview, Go Code Structure, HTTP Handlers, E2E Tests)

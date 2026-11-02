@@ -4,21 +4,47 @@ List of ideas for future work. Each idea must be turned into a feature document 
 
 Each item is headed by the date it was added (DD-MM-YY), not a sequence number — that way removing a done item never forces renumbering the rest. When one item depends on another, reference it by date + title. Items are listed in rough priority order (top = next), not by date.
 
-## 21-09-26 — New subdomain: learning (learning_plan, skill, learning_exercise, vocabulary)
+## 02-11-26 — Learning: active word review modes instead of plain flashcards
 
-New subdomain (`action/learning`) for structured, long-running study tracking — first two use cases are learning Greek and learning Kubernetes, which is why the model needs to cover both a language (vocabulary-heavy) and a technical skill (exercise/practice-heavy) without forcing one shape onto the other.
+Today a word review on `/web/learning/:id/review` is a flashcard: the user sees the term, opens the answer and grades themselves with one of four buttons. Replace it with review modes where the user produces or picks the answer and the app checks it and sets the score:
 
-- `learning_plan`: the top-level course/track being followed (e.g. "Greek A1", "Kubernetes fundamentals") — name, description/goal, created_at, status.
-- `skill`: a specific topic or competency within a plan (e.g. "present tense verb conjugation", "pods & deployments") — name, learning_plan_id, some notion of proficiency/mastery level, created_at.
-- `learning_exercise`: a practice attempt/drill tied to a skill (e.g. a conjugation drill, a `kubectl` exercise) — logs that practice happened and how it went, analogous to how `set` logs a workout attempt against an `exercise`.
-- `vocabulary`: term entries for language learning specifically (Greek word, translation, notes) — likely tied to `learning_plan_id` and/or `skill_id`, with some review/recall tracking (last reviewed, confidence) given the spaced-repetition nature of vocabulary.
+- **Match pairs**: several due words at once, each term matched to its translation from a shuffled list (a dropdown per term, no JS)
+- **Type the translation**: term shown, the user types the translation
+- **Type the term**: translation shown, the user types the term (production, harder)
+- **Fill the gap**: a sentence with the word left out, the user types the missing form
 
-**Why:** Currently there's no structured way to track progress through a language or a technical skill — this would live either nowhere or awkwardly inside the generic `activities`/progress-point model, which doesn't capture skills, exercises, or vocabulary as first-class things. A dedicated subdomain models the actual shape of studying: a plan broken into skills, skills practiced via exercises, and (for language specifically) a growing vocabulary list with recall tracking.
+Each mode is a different kind of practice, so the review keeps its mode, and the score comes from the check (e.g. exact → 5, right apart from an accent or letter case → 4, wrong → 1), not from self-grading. Mastery and the weekly cycle stay as they are.
+
+Open questions for the feature document: who picks the mode (the agent at `plan_vocabulary`, or a rule like recognition modes for new words and production modes for strong ones); where gap sentences come from (written by the agent when planning, per review, or stored as word examples); how strict the check is for Greek accents and for answers with several valid translations; whether the flashcard stays as one of the modes.
+
+**Why:** a self-graded flashcard is passive recognition and easy to overrate; typing or picking the answer is active recall, closer to real use, and it gives honest scores, so mastery means more.
 
 **Use cases:**
-- Track a Greek study plan broken into skills (grammar topics, tenses) plus a running vocabulary list with recall/review state.
-- Track a Kubernetes study plan broken into skills (networking, workloads, storage) practiced via hands-on exercises, without a vocabulary component.
-- See progress per skill within a plan rather than one flat undifferentiated activity.
+- New words: match pairs and type the translation, to learn to recognize them
+- Words the user knows: type the term from the translation, fill the gap in a sentence
+- Weekly analysis: the agent sees which mode a word failed in, not only that it failed
+
+**Depends on:** `docs/functions/learning-spec.md` (implemented)
+
+## 02-11-26 — Learning: pronunciation audio for words
+
+A play button next to a word on the flashcard / review page, the vocabulary list and the word page, so the user hears how the term is pronounced (mainly Greek; terms of a plan without a language, like Kubernetes, have no audio).
+
+Two ways to do it, to choose in the feature document:
+
+- **Text-to-speech in the browser** (Web Speech API, `speechSynthesis` with `lang="el-GR"`): free, nothing stored, works for any word right away. But it needs client-side JS, an exception to the "no client-side JS" rule for these pages, and the voice depends on the device: macOS/iOS have a Greek voice, other systems may have none or a poor one, so the same word can sound different on phone and laptop.
+- **Audio files prepared on the server** with a TTS API (e.g. Google Cloud TTS, Azure, OpenAI): one stable, good voice everywhere, played with a plain `<audio controls>` element, no JS. Costs a paid API, an API key env var, and storage: generate when a word is added or edited (term changed → regenerate), or on the first request and cache it; store in the database or in file storage.
+
+Open questions: which language a plan's terms are in (a `language` field on the plan, which also tells whether audio applies at all); whether to also voice gap sentences and example phrases; what happens when the TTS API is down (the word saves without audio and gets it later).
+
+**Why:** words are learned from text only, so the user doesn't know how a word sounds and memorizes a wrong pronunciation, especially the stress, which Greek marks but which is easy to ignore when reading.
+
+**Use cases:**
+- Hear a new word on its first flashcard
+- Replay a word in the vocabulary list before speaking practice
+- A future "listen and type the word" review mode
+
+**Depends on:** `docs/functions/learning-spec.md` (implemented); related to 02-11-26 — Learning: active word review modes instead of plain flashcards (a listening mode)
 
 ## 23-09-26 — Enforce activity/achievement limits in create_activity / create_achievement
 

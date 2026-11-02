@@ -11,6 +11,7 @@ import (
 	"personal/action/docs"
 	"personal/action/food"
 	"personal/action/ideas"
+	"personal/action/learning"
 	"personal/action/money"
 	"personal/action/progress"
 	"personal/action/telegram"
@@ -127,6 +128,29 @@ func Server(db gateways.DB, tg gateways.Telegram) *mcp.Server {
 	mcp.AddTool(server, &docs.EditDocChunkMCPDefinition, docs.EditDocChunk)
 	mcp.AddTool(server, &docs.RevertDocChunkMCPDefinition, docs.RevertDocChunk)
 	mcp.AddTool(server, &docs.DeleteDocChunkMCPDefinition, docs.DeleteDocChunk)
+
+	// Learning
+	mcp.AddTool(server, &learning.CreateLearningPlanMCPDefinition, learning.CreateLearningPlan)
+	mcp.AddTool(server, &learning.EditLearningPlanMCPDefinition, learning.EditLearningPlan)
+	mcp.AddTool(server, &learning.ListLearningPlansMCPDefinition, learning.ListLearningPlans)
+	mcp.AddTool(server, &learning.GetLearningPlanMCPDefinition, learning.GetLearningPlan)
+	mcp.AddTool(server, &learning.CreateSkillMCPDefinition, learning.CreateSkill)
+	mcp.AddTool(server, &learning.EditSkillMCPDefinition, learning.EditSkill)
+	mcp.AddTool(server, &learning.CreateLearningExercisesMCPDefinition, learning.CreateLearningExercises)
+	mcp.AddTool(server, &learning.EditLearningExerciseMCPDefinition, learning.EditLearningExercise)
+	mcp.AddTool(server, &learning.SubmitLearningExerciseMCPDefinition, learning.SubmitLearningExercise)
+	mcp.AddTool(server, &learning.ReviewLearningExercisesMCPDefinition, learning.ReviewLearningExercises)
+	mcp.AddTool(server, &learning.DeleteLearningExerciseMCPDefinition, learning.DeleteLearningExercise)
+	mcp.AddTool(server, &learning.ListLearningExercisesMCPDefinition, learning.ListLearningExercises)
+	mcp.AddTool(server, &learning.AddVocabularyMCPDefinition, learning.AddVocabulary)
+	mcp.AddTool(server, &learning.EditVocabularyMCPDefinition, learning.EditVocabulary)
+	mcp.AddTool(server, &learning.DeleteVocabularyMCPDefinition, learning.DeleteVocabulary)
+	mcp.AddTool(server, &learning.ListVocabularyMCPDefinition, learning.ListVocabulary)
+	mcp.AddTool(server, &learning.SearchVocabularyMCPDefinition, learning.SearchVocabulary)
+	mcp.AddTool(server, &learning.PlanVocabularyMCPDefinition, learning.PlanVocabulary)
+	mcp.AddTool(server, &learning.CancelVocabularyReviewsMCPDefinition, learning.CancelVocabularyReviews)
+	mcp.AddTool(server, &learning.LogVocabularyReviewsMCPDefinition, learning.LogVocabularyReviews)
+	mcp.AddTool(server, &learning.ListVocabularyReviewsMCPDefinition, learning.ListVocabularyReviews)
 
 	// Telegram notifications
 	mcp.AddTool(server, &telegram.SendTelegramMessageMCPDefinition, telegram.SendTelegramMessage)

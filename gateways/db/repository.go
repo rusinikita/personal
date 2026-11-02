@@ -180,6 +180,12 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 		return err
 	}
 
+	for _, table := range []string{"vocabulary_reviews", "vocabulary", "learning_exercises", "skills", "learning_plans"} {
+		if _, err := r.db.Exec(ctx, `DELETE FROM `+table+` WHERE user_id = $1`, userID); err != nil {
+			return err
+		}
+	}
+
 	_, err = r.db.Exec(ctx, `DELETE FROM doc_chunks WHERE user_id = $1`, userID)
 	if err != nil {
 		return err

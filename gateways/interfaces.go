@@ -124,6 +124,46 @@ type DB interface {
 	UpdateDocChunk(ctx context.Context, chunk *domain.DocChunk) error                        // body, previous_body, updated_at, position; caller has already merged the change onto a fetched chunk; a new position first shifts the chunks between the old and the new position, then places the chunk, in one transaction
 	DeleteDocChunk(ctx context.Context, chunkID int64, userID int64) error                   // hard delete; moves the following chunks of the document up, in one transaction
 
+	// Learning plans (see docs/functions/learning-spec.md)
+	CreateLearningPlan(ctx context.Context, plan *domain.LearningPlan) (int64, error)
+	GetLearningPlan(ctx context.Context, planID int64, userID int64) (*domain.LearningPlan, error)          // nil when not found
+	ListLearningPlans(ctx context.Context, filter domain.LearningPlanFilter) ([]domain.LearningPlan, error) // active first, then paused, then completed; newest first inside a status
+	UpdateLearningPlan(ctx context.Context, plan *domain.LearningPlan) error
+
+	// Skills
+	CreateSkill(ctx context.Context, skill *domain.Skill) (int64, error)
+	GetSkill(ctx context.Context, skillID int64, userID int64) (*domain.Skill, error)   // nil when not found; fills read-only fields
+	ListSkills(ctx context.Context, planID int64, userID int64) ([]domain.Skill, error) // one query: fills read-only fields, Scores via ARRAY_AGG(score ORDER BY reviewed_at) grouped by skill; ordered by created_at ASC
+	UpdateSkill(ctx context.Context, skill *domain.Skill) error
+
+	// Learning exercises
+	CreateLearningExercises(ctx context.Context, exercises []domain.LearningExercise) ([]int64, error)         // one transaction
+	GetLearningExercise(ctx context.Context, exerciseID int64, userID int64) (*domain.LearningExercise, error) // nil when not found
+	ListLearningExercises(ctx context.Context, filter domain.LearningExerciseFilter) ([]domain.LearningExercise, error)
+	CountLearningExercises(ctx context.Context, filter domain.LearningExerciseFilter) (int, error) // ignores Limit and Offset
+	GetLearningExerciseStats(ctx context.Context, userID int64, planIDs []int64, dueAt time.Time) ([]domain.LearningExerciseStats, error)
+	UpdateLearningExercise(ctx context.Context, exercise *domain.LearningExercise) error // kind, content, planned_for
+	SubmitLearningExerciseAnswer(ctx context.Context, exerciseID int64, userID int64, answer string, answeredAt time.Time) error
+	ReviewLearningExercises(ctx context.Context, userID int64, reviews []domain.LearningExerciseReview) error // one transaction
+	DeleteLearningExercise(ctx context.Context, exerciseID int64, userID int64) error
+
+	// Vocabulary
+	CreateVocabulary(ctx context.Context, words []domain.VocabularyWord) ([]int64, error)                                 // one transaction
+	ListVocabulary(ctx context.Context, filter domain.VocabularyFilter) ([]domain.VocabularyWord, error)                  // one query: fills read-only fields, Scores via ARRAY_AGG(score ORDER BY reviewed_at) grouped by word
+	CountVocabulary(ctx context.Context, filter domain.VocabularyFilter) (int, error)                                     // ignores Limit and Offset
+	SearchVocabulary(ctx context.Context, filter domain.VocabularySearchFilter) ([]domain.VocabularyWord, error)          // one query, same read-only fields and Scores as ListVocabulary
+	FindVocabularyTerms(ctx context.Context, planID int64, userID int64, terms []string) ([]string, error)                // case-insensitive; returns terms already in the plan
+	CountDueVocabularyReviews(ctx context.Context, userID int64, planIDs []int64, dueAt time.Time) (map[int64]int, error) // per plan
+	UpdateVocabulary(ctx context.Context, word *domain.VocabularyWord) error                                              // term, translation, notes, skill
+	DeleteVocabulary(ctx context.Context, wordID int64, userID int64) error                                               // its reviews go with it
+
+	// Vocabulary reviews
+	CreateVocabularyReviews(ctx context.Context, reviews []domain.VocabularyReview) ([]int64, error) // one transaction; pending ones from plan_vocabulary, done ones from log_vocabulary_reviews
+	ListVocabularyReviews(ctx context.Context, filter domain.VocabularyReviewFilter) ([]domain.VocabularyReview, error)
+	CountVocabularyReviews(ctx context.Context, filter domain.VocabularyReviewFilter) (int, error)                   // ignores Limit and Offset
+	RecordVocabularyReview(ctx context.Context, reviewID int64, userID int64, score int, reviewedAt time.Time) error // pending only
+	DeleteVocabularyReviews(ctx context.Context, userID int64, reviewIDs []int64) error                              // one transaction; pending only
+
 	// Achievements tracking methods (see docs/functions/achievements-spec.md)
 
 	// CreateAchievement and UpdateAchievement are the only two write methods on the whole

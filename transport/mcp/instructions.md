@@ -5,7 +5,7 @@ This file is loaded into every session, so it stays a dispatcher — route a req
 ## Cross-cutting rules
 
 - Never state a fact (balance, activity status, streak, personal record, nutrition total) without having called the matching tool this session — don't reconstruct data from memory or an earlier session.
-- Delete tools (`delete_activity`, `delete_progress_point`, `delete_step`, `delete_transaction`, `delete_workout_set`, `delete_doc_chunk`) are hard, irreversible deletes — confirm with the user before calling one unless they explicitly asked for that deletion by name.
+- Delete tools (`delete_activity`, `delete_progress_point`, `delete_step`, `delete_transaction`, `delete_workout_set`, `delete_doc_chunk`, `delete_learning_exercise`, `delete_vocabulary`) are hard, irreversible deletes — confirm with the user before calling one unless they explicitly asked for that deletion by name.
 - Free-text fields (progress point `note`, activity `description`, step `name`) should carry what the user actually said, not your paraphrase or interpretation of it.
 
 ## Food
@@ -36,6 +36,13 @@ Tools: `create_idea`, `list_ideas`, `search_ideas`, `update_idea`, `resolve_idea
 
 - A raw thought outside existing activities: `search_ideas` first (key words, synonyms, translations as variants). An older similar open idea → `create_idea`, then `resolve_idea(merged, merged_into_id: older)`; otherwise just `create_idea`. `body` is the user's own words.
 - Reviews read by status via `list_ideas`; the lifecycle (inbox → someday → spike → resolved) is in `docs/functions/ideas-spec.md`.
+
+## Learning
+
+Tools: `create_learning_plan`, `edit_learning_plan`, `list_learning_plans`, `get_learning_plan`, `create_skill`, `edit_skill`, `create_learning_exercises`, `edit_learning_exercise`, `submit_learning_exercise`, `review_learning_exercises`, `delete_learning_exercise`, `list_learning_exercises`, `add_vocabulary`, `edit_vocabulary`, `delete_vocabulary`, `list_vocabulary`, `search_vocabulary`, `plan_vocabulary`, `cancel_vocabulary_reviews`, `log_vocabulary_reviews`, `list_vocabulary_reviews`.
+
+- Daily exercises in chat: `list_learning_exercises` (states [planned], `due_only`) → give one, then `submit_learning_exercise` with the answer word for word (a photo of handwriting: the recognized text, mistakes included). Word reviews happen on the web as flashcards, never in chat.
+- Weekly cycle: `get_learning_plan` first; analyze with `list_learning_exercises` (states [answered]) → `review_learning_exercises`, and `log_vocabulary_reviews` for words used in the answers; plan with `create_learning_exercises` and `plan_vocabulary` (candidates from `list_vocabulary` with `max_mastery: 79` or `unscheduled`). Mastery and uncertainty rules are in `docs/functions/learning-spec.md`.
 
 ## Docs
 
