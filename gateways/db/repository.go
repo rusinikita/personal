@@ -175,6 +175,12 @@ func (r *repository) TruncateUserData(ctx context.Context, userID int64) error {
 		return err
 	}
 
+	for _, table := range []string{"oauth_code", "oauth_refresh_token"} {
+		if _, err := r.db.Exec(ctx, `DELETE FROM `+table+` WHERE user_id = $1`, userID); err != nil {
+			return err
+		}
+	}
+
 	_, err = r.db.Exec(ctx, `DELETE FROM ideas WHERE user_id = $1`, userID)
 	if err != nil {
 		return err

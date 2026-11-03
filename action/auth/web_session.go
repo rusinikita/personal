@@ -113,8 +113,8 @@ func generateRandomToken() (string, error) {
 
 // WebLoginHandler validates the CSRF token (double-submit cookie vs. form
 // field) and the username/password against the USERS env var, then issues
-// a session cookie carrying the same Claims shape/secret/expiry as the
-// OAuth bearer token. See docs/functions/auth-spec.md ("Web Session Login").
+// a session cookie carrying the same Claims shape and secret as the OAuth
+// access token, without an audience. See docs/functions/auth-spec.md ("Web Session Login").
 func WebLoginHandler(c *gin.Context) {
 	redirect := c.PostForm("redirect")
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
+
 	"personal/domain"
 )
 
@@ -184,6 +186,21 @@ type DB interface {
 	// GetExerciseVolume sums sets.weight_kg * sets.reps for an exercise
 	// since a given time — powers exercise_total_volume achievements.
 	GetExerciseVolume(ctx context.Context, userID int64, exerciseID int64, since time.Time) (float64, error)
+
+	// OAuth authorization server state (see docs/functions/auth-spec.md)
+
+	CreateOAuthCode(ctx context.Context, code domain.OAuthCode) error
+	// ConsumeOAuthCode deletes an unexpired code and returns it; nil if absent.
+	ConsumeOAuthCode(ctx context.Context, codeHash string) (*domain.OAuthCode, error)
+
+	CreateOAuthRefreshToken(ctx context.Context, token domain.OAuthRefreshToken) error
+	GetOAuthRefreshToken(ctx context.Context, tokenHash string) (*domain.OAuthRefreshToken, error)
+	// RotateOAuthRefreshToken marks the old token used and stores the next one in one transaction.
+	RotateOAuthRefreshToken(ctx context.Context, oldHash string, next domain.OAuthRefreshToken) error
+	DeleteOAuthRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) error
+
+	// DeleteExpiredOAuthState removes expired codes and refresh tokens.
+	DeleteExpiredOAuthState(ctx context.Context) error
 }
 
 type DBMaintainer interface {

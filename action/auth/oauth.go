@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,7 +15,21 @@ import (
 	"personal/gateways"
 )
 
+const (
+	accessTokenExpiry  = time.Hour
+	refreshTokenExpiry = 30 * 24 * time.Hour
+	refreshReuseWindow = 30 * time.Second
+	authCodeExpiry     = 10 * time.Minute
+
+	mcpPath = "/app/mcp"
+)
+
 var BaseAuthURL = "http://localhost:8081"
+
+var (
+	users     []User
+	jwtSecret []byte
+)
 
 // InitializeAuth initializes users and JWT secret from environment variables.
 // This function must be called before using any OAuth functionality.
@@ -27,7 +39,6 @@ func InitializeAuth() {
 		log.Fatal("BASE_URL environment variable not set")
 	}
 
-	// Load users from environment variable
 	usersEnv := os.Getenv("USERS")
 	if usersEnv == "" {
 		log.Fatal("USERS environment variable not set")
@@ -39,7 +50,6 @@ func InitializeAuth() {
 		log.Fatalf("Failed to parse USERS: %v", err)
 	}
 
-	// Load JWT secret from environment variable
 	jwtSecretEnv := os.Getenv("JWT_SECRET")
 	if jwtSecretEnv == "" {
 		log.Fatal("JWT_SECRET environment variable not set")
@@ -78,190 +88,30 @@ func parseUsers(usersEnv string) ([]User, error) {
 	return users, nil
 }
 
-// Claims represents the JWT claims. UserName is only consumed by the web
-// session flow (rendered into the shell's user menu) but is set on every
-// token, OAuth included, since both flows share this one struct.
+// MCPResourceURL is the protected resource: the audience of every access token.
+func MCPResourceURL() string {
+	return BaseAuthURL + mcpPath
+}
+
+func protectedResourceMetadataURL() string {
+	return BaseAuthURL + "/.well-known/oauth-protected-resource" + mcpPath
+}
+
+// Claims are the custom JWT claims of both the OAuth access token and the
+// web session cookie. UserName is only consumed by the web session flow
+// (rendered into the shell's user menu, see webui-spec.md). Access tokens
+// additionally set Audience to the MCP URL; session cookies leave it empty.
 type Claims struct {
 	UserID   int64  `json:"user_id"`
 	UserName string `json:"username"`
 	jwt.RegisteredClaims
 }
 
-// OAuthAuthorizationServer represents the response for the `/.well-known/oauth-authorization-server` endpoint.
-type OAuthAuthorizationServer struct {
-	Issuer                            string   `json:"issuer"`
-	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
-	TokenEndpoint                     string   `json:"token_endpoint"`
-	RegistrationEndpoint              string   `json:"registration_endpoint,omitempty"`
-	JWKSURI                           string   `json:"jwks_uri,omitempty"`
-	ResponseTypesSupported            []string `json:"response_types_supported"`
-	ScopesSupported                   []string `json:"scopes_supported"`
-	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
-	GrantTypesSupported               []string `json:"grant_types_supported"`
-	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
-	RevocationEndpoint                string   `json:"revocation_endpoint,omitempty"`
-	IntrospectionEndpoint             string   `json:"introspection_endpoint,omitempty"`
-	SubjectTypesSupported             []string `json:"subject_types_supported"`
-	IDTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported"`
-	ResponseModesSupported            []string `json:"response_modes_supported"`
-}
-
-// Client represents an OAuth 2.1 client.
-type Client struct {
-	ID     string `json:"id"`
-	Secret string `json:"secret"`
-}
-
-// User represents a user.
+// User represents a login credential, loaded from the USERS env var.
 type User struct {
 	ID       int64  `json:"id"`
 	UserName string `json:"username"`
 	Password string `json:"password"`
-}
-
-// AuthorizationCode represents an authorization code.
-type AuthorizationCode struct {
-	Code        string    `json:"code"`
-	ClientID    string    `json:"client_id"`
-	UserID      string    `json:"user_id"`
-	RedirectURI string    `json:"redirect_uri"`
-	State       string    `json:"state"`
-	ExpiresAt   time.Time `json:"expires_at"`
-}
-
-var (
-	claudeClientID = "bgqalwyS2sUsAfJa"
-	// Client storage - starts with hardcoded client and allows dynamic registration.
-	clients = map[string]*Client{
-		// Claude client
-		claudeClientID: {
-			ID:     claudeClientID,
-			Secret: "qWuZ-JuSv-CtLqgxk88xMQMTMgSitb9k_J-lKRE9ck0=",
-		},
-	}
-	users     []User
-	jwtSecret []byte
-
-	// In-memory storage for authorization codes.
-	AuthCodes = make(map[string]*AuthorizationCode)
-)
-
-// WellKnownHandler handles the `/.well-known/oauth-authorization-server` endpoint.
-func WellKnownHandler(c *gin.Context) {
-	serverMeta := &OAuthAuthorizationServer{
-		Issuer:                            BaseAuthURL,
-		AuthorizationEndpoint:             BaseAuthURL + "/oauth/authorize",
-		TokenEndpoint:                     BaseAuthURL + "/oauth/token",
-		RegistrationEndpoint:              BaseAuthURL + "/oauth/register",
-		ResponseTypesSupported:            []string{"code"},
-		ScopesSupported:                   []string{"openid", "profile", "email"},
-		TokenEndpointAuthMethodsSupported: []string{"client_secret_post"},
-		GrantTypesSupported:               []string{"authorization_code"},
-		CodeChallengeMethodsSupported:     []string{"S256", "plain"},
-		SubjectTypesSupported:             []string{"public"},
-		IDTokenSigningAlgValuesSupported:  []string{"HS256"},
-		ResponseModesSupported:            []string{"query", "fragment"},
-	}
-
-	c.JSON(http.StatusOK, serverMeta)
-}
-
-// ClientRegistrationRequest represents a client registration request.
-type ClientRegistrationRequest struct {
-	RedirectURIs []string `json:"redirect_uris"`
-	ClientName   string   `json:"client_name,omitempty"`
-	GrantTypes   []string `json:"grant_types,omitempty"`
-}
-
-// ClientRegistrationResponse represents a client registration response.
-type ClientRegistrationResponse struct {
-	ClientID     string   `json:"client_id"`
-	ClientSecret string   `json:"client_secret"`
-	RedirectURIs []string `json:"redirect_uris"`
-	GrantTypes   []string `json:"grant_types"`
-}
-
-// RegisterClientHandler handles dynamic client registration.
-func RegisterClientHandler(c *gin.Context) {
-	var req ClientRegistrationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": "Invalid JSON"})
-		return
-	}
-
-	// Generate client ID and secret
-	client := clients[claudeClientID]
-
-	// Default grant types if not specified
-	grantTypes := req.GrantTypes
-	if len(grantTypes) == 0 {
-		grantTypes = []string{"authorization_code"}
-	}
-
-	response := ClientRegistrationResponse{
-		ClientID:     client.ID,
-		ClientSecret: client.Secret,
-		RedirectURIs: req.RedirectURIs,
-		GrantTypes:   grantTypes,
-	}
-
-	c.JSON(http.StatusCreated, response)
-}
-
-// AuthorizeHandler handles the `/oauth/authorize` endpoint.
-func AuthorizeHandler(c *gin.Context) {
-	if c.Request.Method == http.MethodGet {
-		LoginPageHandler(c)
-		return
-	}
-
-	clientID := c.PostForm("client_id")
-	redirectURI := c.PostForm("redirect_uri")
-	responseType := c.PostForm("response_type")
-	state := c.PostForm("state")
-
-	_, ok := clients[clientID]
-	if !ok {
-		c.String(http.StatusBadRequest, "Invalid client ID")
-		return
-	}
-
-	if responseType != "code" {
-		c.String(http.StatusBadRequest, "Invalid response type")
-		return
-	}
-
-	username := c.PostForm("username")
-	password := c.PostForm("password")
-
-	user := authenticateUser(username, password)
-	if user == nil {
-		c.String(http.StatusUnauthorized, "Invalid username or password")
-		return
-	}
-
-	code := generateAuthorizationCode()
-	AuthCodes[code] = &AuthorizationCode{
-		Code:        code,
-		ClientID:    clientID,
-		UserID:      strconv.Itoa(int(user.ID)),
-		RedirectURI: redirectURI,
-		State:       state,
-		ExpiresAt:   time.Now().Add(10 * time.Minute),
-	}
-
-	redirectURL := redirectURI + "?code=" + code
-	if state != "" {
-		redirectURL += "&state=" + state
-	}
-
-	c.Redirect(http.StatusFound, redirectURL)
-}
-
-func generateAuthorizationCode() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return base64.URLEncoding.EncodeToString(b)
 }
 
 // authenticateUser returns the matching User for a username/password pair
@@ -286,115 +136,56 @@ func findUserByID(id int64) *User {
 	return nil
 }
 
-// TokenHandler handles the `/oauth/token` endpoint.
-func TokenHandler(c *gin.Context) {
-	grantType := c.PostForm("grant_type")
-	if grantType != "authorization_code" {
-		c.String(http.StatusBadRequest, "Invalid grant type")
-		return
-	}
+// authorizationServerMetadata is the RFC 8414 document.
+type authorizationServerMetadata struct {
+	Issuer                                     string   `json:"issuer"`
+	AuthorizationEndpoint                      string   `json:"authorization_endpoint"`
+	TokenEndpoint                              string   `json:"token_endpoint"`
+	ResponseTypesSupported                     []string `json:"response_types_supported"`
+	ResponseModesSupported                     []string `json:"response_modes_supported"`
+	GrantTypesSupported                        []string `json:"grant_types_supported"`
+	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported"`
+	CodeChallengeMethodsSupported              []string `json:"code_challenge_methods_supported"`
+	ScopesSupported                            []string `json:"scopes_supported"`
+	ClientIDMetadataDocumentSupported          bool     `json:"client_id_metadata_document_supported"`
+	AuthorizationResponseISSParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
+}
 
-	code := c.PostForm("code")
-	authCode, ok := AuthCodes[code]
-	if !ok || authCode.ExpiresAt.Before(time.Now()) {
-		c.String(http.StatusBadRequest, "Invalid or expired authorization code")
-		return
-	}
-
-	delete(AuthCodes, code)
-
-	clientID := c.PostForm("client_id")
-	clientSecret := c.PostForm("client_secret")
-
-	client, ok := clients[clientID]
-	if !ok || client.Secret != clientSecret {
-		c.String(http.StatusBadRequest, "Invalid client ID or secret")
-		return
-	}
-
-	userID, err := strconv.Atoi(authCode.UserID)
-	if err != nil {
-		c.String(http.StatusInternalServerError, "User not found: %s", err.Error())
-		return
-	}
-
-	expiresIn := 14 * 24 * time.Hour
-
-	var userName string
-	if u := findUserByID(int64(userID)); u != nil {
-		userName = u.UserName
-	}
-
-	claims := &Claims{
-		UserID:   int64(userID),
-		UserName: userName,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: &jwt.NumericDate{
-				Time: time.Now().Add(expiresIn),
-			},
-			Issuer: BaseAuthURL,
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtSecret)
-	if err != nil {
-		c.String(http.StatusInternalServerError, "Failed to generate token")
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"access_token": tokenString,
-		"token_type":   "Bearer",
-		"expires_in":   expiresIn.Seconds(),
+// WellKnownHandler serves `/.well-known/oauth-authorization-server`.
+func WellKnownHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, authorizationServerMetadata{
+		Issuer:                                     BaseAuthURL,
+		AuthorizationEndpoint:                      BaseAuthURL + "/oauth/authorize",
+		TokenEndpoint:                              BaseAuthURL + "/oauth/token",
+		ResponseTypesSupported:                     []string{"code"},
+		ResponseModesSupported:                     []string{"query"},
+		GrantTypesSupported:                        []string{"authorization_code", "refresh_token"},
+		TokenEndpointAuthMethodsSupported:          []string{"none"},
+		CodeChallengeMethodsSupported:              []string{"S256"},
+		ScopesSupported:                            []string{"offline_access"},
+		ClientIDMetadataDocumentSupported:          true,
+		AuthorizationResponseISSParameterSupported: true,
 	})
 }
 
-// LoginPageHandler handles the login page.
-func LoginPageHandler(c *gin.Context) {
-	c.Writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-	c.String(http.StatusOK, `
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light dark">
-	<link
-	  rel="stylesheet"
-	  href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.violet.min.css"
-	>
-	<title>Authorization</title>
-  </head>
-  <body>
-    <main>
-      	<h1>Authorization</h1>
-		<form action="/oauth/authorize" method="post">
-			<fieldset>
-				<input type="hidden" name="client_id" value="%s"/>
-				<input type="hidden" name="redirect_uri" value="%s"/>
-				<input type="hidden" name="response_type" value="%s"/>
-				<input type="hidden" name="state" value="%s"/>
-
-				<label for="username">Username</label>
-				<input type="text" id="username" name="username">
-				<label for="password">Password</label>
-				<input type="password" id="password" name="password">
-			<fieldset>
-			<input type="submit" value="Submit">
-		</form>
-    </main>
-  </body>
-</html>
-`, c.Query("client_id"), c.Query("redirect_uri"), c.Query("response_type"), c.Query("state"))
+// ProtectedResourceHandler serves the RFC 9728 document for the MCP endpoint.
+func ProtectedResourceHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"resource":                 MCPResourceURL(),
+		"authorization_servers":    []string{BaseAuthURL},
+		"bearer_methods_supported": []string{"header"},
+		"scopes_supported":         []string{"offline_access"},
+	})
 }
 
-// Middleware creates a new OAuth middleware.
+// Middleware protects the MCP endpoint with a bearer access token.
 func Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		challenge := `Bearer resource_metadata="` + protectedResourceMetadataURL() + `"`
+
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.Header("WWW-Authenticate", `Bearer realm="mcp", authorization_uri="`+BaseAuthURL+`/oauth/authorize"`)
+			c.Header("WWW-Authenticate", challenge)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":             "invalid_request",
 				"error_description": "Authorization header is missing",
@@ -402,8 +193,9 @@ func Middleware() gin.HandlerFunc {
 			return
 		}
 
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			c.Header("WWW-Authenticate", `Bearer realm="mcp", authorization_uri="`+BaseAuthURL+`/oauth/authorize", error="invalid_request", error_description="Invalid authorization header format"`)
+		tokenString, ok := strings.CutPrefix(authHeader, "Bearer ")
+		if !ok {
+			c.Header("WWW-Authenticate", challenge+`, error="invalid_request"`)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":             "invalid_request",
 				"error_description": "Invalid authorization header format",
@@ -411,14 +203,17 @@ func Middleware() gin.HandlerFunc {
 			return
 		}
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		claims := &Claims{}
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			return jwtSecret, nil
-		})
-
+		},
+			jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+			jwt.WithIssuer(BaseAuthURL),
+			jwt.WithAudience(MCPResourceURL()),
+			jwt.WithExpirationRequired(),
+		)
 		if err != nil || !token.Valid {
-			c.Header("WWW-Authenticate", `Bearer realm="mcp", authorization_uri="`+BaseAuthURL+`/oauth/authorize", error="invalid_token", error_description="Invalid or expired token"`)
+			c.Header("WWW-Authenticate", challenge+`, error="invalid_token"`)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":             "invalid_token",
 				"error_description": "Invalid or expired token",

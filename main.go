@@ -112,12 +112,10 @@ func main() {
 	authDisabled := os.Getenv("AUTH_DISABLED") != ""
 
 	if !authDisabled {
-		router.GET("/.well-known/oauth-authorization-server", auth.WellKnownHandler)
-		router.GET("/.well-known/oauth-authorization-server/*path", auth.WellKnownHandler)
-		router.GET("/.well-known/oauth-protected-resource/*path", auth.WellKnownHandler)
-		router.Any("/oauth/authorize", auth.AuthorizeHandler)
-		router.POST("/oauth/token", auth.TokenHandler)
-		router.POST("/oauth/register", auth.RegisterClientHandler)
+		if err := repo.DeleteExpiredOAuthState(context.Background()); err != nil {
+			log.Printf("Warning: Failed to delete expired OAuth state: %v", err)
+		}
+		web.RegisterOAuth(router, repo)
 
 		authRequired.Use(auth.Middleware())
 	}
