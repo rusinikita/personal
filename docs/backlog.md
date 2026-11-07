@@ -52,6 +52,20 @@ Check the WIP limit (max 6 active activities total, max 3 per `progress_type`) i
 
 **Why:** the document «Ритуалы и процесс» (§2.6, §2.10) treats these limits as load-bearing rules ("новое — только ценой вытеснения"), currently enforced only by the agent counting rows during review — a tool-level check makes the limit hold even outside a review session, instead of depending on the agent remembering to check.
 
+## 07-11-26 — Achievements on steps
+
+Let `create_achievement` target a step, not only a whole activity. Most likely as a new achievement type, `step_execution_count`: reach X executions of a `repeatable` step (progress points with `executed_step_id` pointing at it) since the achievement was created. For example: "go to the Greek speaking club 10 times" as a repeatable step of the Greek activity. Its value is computed and cached the same way as `activity_occurrence_count`, through `refresh_achievements`. It shows on the Achievements page and in the Progress browse tile grid.
+
+Open questions for the feature document: whether a streak type is needed too (`step_streak_count`, and what "consecutive" means, since a step has no `frequency_days` of its own); whether a `one_time` step can be a target at all (a done/not done achievement, or rather a group of one-time steps, e.g. "close 5 steps of activity X"); what happens to the achievement when the step is closed or deleted (block it like `delete_activity` does, or mark the achievement done/failed).
+
+**Why:** today achievements count only check-ins of a whole activity, but the concrete action the user wants to repeat is often a step inside it. An activity check-in doesn't tell which step was done, so such an achievement can't be tracked without a separate `manual` tally kept by hand.
+
+**Use cases:**
+- "Do the long run 20 times" on a repeatable step of the running activity
+- A progress bar for a step that gets skipped often, so it stays visible on the dashboard
+
+**Depends on:** `docs/functions/achievements-spec.md`, `docs/functions/progress-spec.md` (repeatable steps and `executed_step_id`, implemented)
+
 ## 25-09-26 — Mechanics/rituals docs for food, workout, finance
 
 Write mechanics and/or rituals documents for food, workout, and finance through `create_doc` / `create_doc_chunk`, same shape as the activities pair («Механика системы», «Ритуалы и процесс») — mechanics normative against the code, rituals covering the actual day-to-day process (when/why, not just what fields exist).
@@ -133,6 +147,25 @@ Come up with a new visualization for the e-ink displays and for a tablet hanging
 **Why:** The goal is to not forget, not give up, and actually do what was planned, with the execution gamified. The e-ink displays were built for this same goal, but the concept of the system has changed a lot since then, so they no longer seem useful and the user has stopped looking at them.
 
 **Open question:** decide in the feature doc what the concept is before any screens: which information earns a place, whether it is one screen or a rotation, what the game mechanic is, and whether the rotation is an accepted exception to the "no client-side JS" rule for web pages.
+
+## 06-11-26 — Money: retune category inference from existing transactions
+
+Go through all existing transactions, compare the category `InferCategory` would give from each one's properties (merchant, raw description, MCC, country, account, amount, type) with the category the transaction ended up with after manual fixes (`edit_transactions`, web edits), and update the rules in `action/money/parser.go` (`categoryRules`, `mccCategories`, the country fallback, `InferTypeOverride`) so new imports land in the right category without fixing them by hand.
+
+- Analysis: list mismatches grouped by merchant / keyword / MCC, with counts, to see which rules are missing, wrong or too broad
+- Rule changes: add or fix keyword and MCC rules where the final category is consistent for a merchant or MCC; leave ambiguous merchants (same merchant, different final categories) to manual fixing
+- Check: after the change, re-running inference over the existing transactions matches the final categories better than before (report the share before and after)
+
+Open questions for the feature document: whether the re-categorization report is a one-off agent session over `get_transactions` or a repeatable MCP tool / web page; whether existing transactions are re-categorized by the new rules or keep their current categories (they already hold the final ones, so likely keep).
+
+**Why:** the hardcoded rules were written from a few exports, and many imported transactions still need their category fixed by hand; the fixed categories already in the database are the best ground truth for what the rules should say.
+
+**Use cases:**
+- A merchant that is always moved from one category to another gets its own rule
+- An MCC whose transactions mostly end up in one category maps to it
+- Spotting rules that misfire on unrelated merchants because a keyword is too short or too common
+
+**Depends on:** `docs/functions/money-spec.md` (implemented); related to 01-11-26 — Dynamic transaction parsing rules in Lua (better to retune the rules before they are ported to Lua, or retune them in Lua if that lands first)
 
 ## 01-11-26 — Dynamic transaction parsing rules in Lua
 
