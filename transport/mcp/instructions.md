@@ -7,6 +7,7 @@ This file is loaded into every session, so it stays a dispatcher — route a req
 - Never state a fact (balance, activity status, streak, personal record, nutrition total) without having called the matching tool this session — don't reconstruct data from memory or an earlier session.
 - Delete tools (`delete_activity`, `delete_progress_point`, `delete_step`, `delete_transaction`, `delete_workout_set`, `delete_doc_chunk`, `delete_learning_exercise`, `delete_vocabulary`) are hard, irreversible deletes — confirm with the user before calling one unless they explicitly asked for that deletion by name.
 - Free-text fields (progress point `note`, activity `description`, step `name`) should carry what the user actually said, not your paraphrase or interpretation of it.
+- Never refer to an object by a bare id or section number — in replies to the user or in anything you write (notes, descriptions, calendar events), even if it was just mentioned. Always pair it with a human-readable identifier: name, slug or heading. Applies to activities, ideas, steps, achievements, progress points, life parts, calendar events and document sections. Examples: 17 «Греческий язык», idea 30 «Написать знакомым…», section «Застревание activity».
 
 ## Food
 
